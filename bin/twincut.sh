@@ -104,19 +104,119 @@ BACKUP_DUPE_SUBDIR="_backup_dupes"; BACKUP_DUPE_LOG="_backup_dupes_map.csv"
 REPORT_SOURCE_DUPES=false; FIX_SOURCE_DUPES=false
 SOURCE_DUPE_SUBDIR="_source_dupes"; SOURCE_DUPE_LOG="_source_dupes_map.csv"
 
+# P0: manifest / run-id
+RUN_ID=""
+MANIFEST_FILE=""
+MANIFEST_INITED=false
+
+# P0: skip counters
+SKIPPED_HARDLINK=0
+SKIPPED_SYMLINK=0
+
+# P0: symlink policy (default: do NOT follow)
+FOLLOW_SYMLINKS=false
+FIND_FOLLOW=""   # set to "-L" when FOLLOW_SYMLINKS=true
+
+# P0: exit code policy
+EXIT_CODE_ON_DUPES=false
+
+# P0: restore mode
+RESTORE_MODE=false
+RESTORE_MANIFEST=""
+RESTORE_DRY_RUN=false
+
 # ------------------------------ Small helpers --------------------------------
-die(){ echo "ERROR: $*" >&2; exit 2; }
+die(){  echo "ERROR: $*" >&2; exit 2; }   # usage / arg errors
+die3(){ echo "ERROR: $*" >&2; exit 3; }   # runtime errors
 mtime(){ stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
 fsize(){ stat -f %z "$1" 2>/dev/null || stat -c %s "$1" 2>/dev/null || echo 0; }
 
-move_unique(){ # move_unique SRC DIR
-  local src="$1" dir="$2" base dest i=1
-  mkdir -p "$dir"
+# (device,inode) — true if a and b are the same physical file (hardlink / same path)
+same_inode(){
+  [[ -e "$1" && -e "$2" ]] || return 1
+  local a b
+  a="$(stat -f '%d:%i' "$1" 2>/dev/null || stat -c '%d:%i' "$1" 2>/dev/null || echo "")"
+  b="$(stat -f '%d:%i' "$2" 2>/dev/null || stat -c '%d:%i' "$2" 2>/dev/null || echo "")"
+  [[ -n "$a" && "$a" == "$b" ]]
+}
+
+# ------------------------------ Manifest -------------------------------------
+init_manifest(){
+  $MANIFEST_INITED && return 0
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mkdir -p "$QUAR_DIR" || die3 "cannot create quarantine dir: $QUAR_DIR"
+  local suffix=""
+  $DRY_RUN && suffix=".dryrun"
+  MANIFEST_FILE="$QUAR_DIR/_manifest-${RUN_ID}${suffix}.tsv"
+  {
+    printf '# twincut manifest v1  run_id=%s  started=%s  dry_run=%s  source=%s\n' \
+      "$RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$DRY_RUN" "${SOURCE_DIR:-}"
+    printf 'run_id\ttimestamp\toriginal_path\tquarantine_path\tmatched\talgo\thash\tdecision\tsize\tmtime\n'
+  } > "$MANIFEST_FILE" || die3 "cannot write manifest: $MANIFEST_FILE"
+  MANIFEST_INITED=true
+  echo "[*] Manifest: $MANIFEST_FILE"
+}
+
+# manifest_append ORIG QUAR_PATH MATCHED HASH DECISION
+manifest_append(){
+  init_manifest
+  local orig="$1" quar="$2" matched="$3" hh="$4" dec="$5"
+  local sz="" mt=""
+  if [[ -n "$quar" && -e "$quar" ]]; then sz="$(fsize "$quar")"; mt="$(mtime "$quar")"
+  elif [[ -e "$orig" ]]; then sz="$(fsize "$orig")"; mt="$(mtime "$orig")"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$orig" "$quar" "$matched" "$ALGO" "$hh" "$dec" "$sz" "$mt" \
+    >> "$MANIFEST_FILE"
+}
+
+# qmove SRC DEST_DIR MATCHED HASH DECISION
+# Centralized "move into quarantine" with hardlink check + manifest write.
+# Returns 0 on action taken, 1 on skip (e.g. hardlink), 2 on error.
+qmove(){
+  local src="$1" dir="$2" matched="$3" hh="$4" dec="$5"
+  if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
+    SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
+    echo "[=] hardlink-skip: '$src' == '$matched'"
+    return 1
+  fi
+  mkdir -p "$dir" || { echo "ERROR: mkdir $dir failed" >&2; return 2; }
+  local base dest i=1
   base="$(basename -- "$src")"
   dest="$dir/$base"
-  while [[ -e "$dest" ]]; do dest="$dir/${base%.*}_$i.${base##*.}"; i=$((i+1)); done
-  if $DRY_RUN; then echo "[DRY] mv \"$src\" \"$dest\""; else mv -- "$src" "$dest"; fi
+  while [[ -e "$dest" ]]; do
+    if [[ "$base" == *.* ]]; then dest="$dir/${base%.*}_$i.${base##*.}"
+    else                          dest="$dir/${base}_$i"; fi
+    i=$((i+1))
+  done
+  if $DRY_RUN; then
+    echo "[DRY] mv \"$src\" \"$dest\""
+  else
+    mv -- "$src" "$dest" || { echo "ERROR: mv failed: $src -> $dest" >&2; return 2; }
+  fi
+  manifest_append "$src" "$dest" "$matched" "$hh" "$dec"
+  return 0
 }
+
+# qdelete SRC MATCHED HASH DECISION
+qdelete(){
+  local src="$1" matched="$2" hh="$3" dec="$4"
+  if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
+    SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
+    echo "[=] hardlink-skip: '$src' == '$matched'"
+    return 1
+  fi
+  if $DRY_RUN; then
+    echo "[DRY] rm \"$src\""
+  else
+    rm -f -- "$src" || { echo "ERROR: rm failed: $src" >&2; return 2; }
+  fi
+  manifest_append "$src" "" "$matched" "$hh" "${dec}:deleted"
+  return 0
+}
+
+# Backwards-compatible wrapper. Kept so older callers/tests still work.
+move_unique(){ qmove "$1" "$2" "" "" "legacy_move" >/dev/null || true; }
 
 # Hashers
 hash_file(){
@@ -261,7 +361,7 @@ ensure_video_meta_index(){
   set --; for e in "${_vexts[@]}"; do set -- "$@" -iname "*.$e" -o; done; [[ "$#" -gt 0 ]] && set -- "${@:1:$#-1}"
   while IFS= read -r -d '' vf; do
     awk -F'\t' -v p="$vf" 'NR>2 && $1==p{found=1;exit} END{exit found?0:1}' "$vcsv" || append_video_meta "$vcsv" "$vf"
-  done < <(find -L "$dir" -type f \( "$@" \) -size +"$MIN_SIZE" -print0)
+  done < <(find $FIND_FOLLOW "$dir" -type f \( "$@" \) -size +"$MIN_SIZE" -print0)
   echo "$vcsv"
 }
 
@@ -270,8 +370,19 @@ handle_bad_video(){
   local f="$1"
   case "$BAD_VIDEO_ACTION" in
     list)   echo "[BAD-VIDEO] $f" ;;
-    delete) $DRY_RUN && echo "[DRY][BAD-VIDEO] rm \"$f\"" || rm -f -- "$f" ;;
-    move)   move_unique "$f" "$QUAR_DIR/$BAD_VIDEO_SUBDIR" ;;
+    delete) qdelete "$f" "" "" "bad_video" ;;
+    move)   qmove   "$f" "$QUAR_DIR/$BAD_VIDEO_SUBDIR" "" "" "bad_video" ;;
+    ignore) : ;;
+  esac
+}
+
+# AppleDouble dispatcher (centralized so we can manifest it)
+handle_appledouble(){
+  local f="$1"
+  case "$APPLEDOUBLE_ACTION" in
+    list)   echo "[APPLEDOUBLE] $f" ;;
+    delete) qdelete "$f" "" "" "appledouble" ;;
+    move)   qmove   "$f" "$QUAR_DIR/$APPLEDOUBLE_SUBDIR" "" "" "appledouble" ;;
     ignore) : ;;
   esac
 }
@@ -284,6 +395,7 @@ is_bad_video_row(){ # echo 1 if bad; else 0
 
 # ------------------------------ CLI / Usage ----------------------------------
 usage(){
+  local rc="${1:-2}"
   cat <<EOF
 Usage:
   $(basename "$0") --source <DIR> --backup <DIR> [--backup <DIR2> ...]
@@ -301,17 +413,110 @@ Usage:
                    [--ignore-appledouble|--no-ignore-appledouble] [--appledouble-action move|list|delete|ignore]
                    [--fps-pct N] [--fps-abs-min N] [--bps-pct N]
                    [--rebuild-video-meta]
+                   [--follow-symlinks|--no-follow-symlinks]
+                   [--exit-code-on-dupes]
+
+Restore mode:
+  $(basename "$0") --restore <manifest.tsv> [--restore-dry-run]
+                   [--quarantine <DIR>]   # only needed if manifest paths are relative
+
+Exit codes:
+  0  normal completion
+  1  normal completion AND duplicates were processed (only with --exit-code-on-dupes)
+  2  usage / argument error
+  3  runtime error (I/O, missing dep, mv/rm failure, etc.)
+
 Notes:
   - During --dry-run, a source-side cache (<source>/.source_hashindex.txt) is created/updated.
   - After a successful non-dry run, the source cache is removed unless --keep-source-cache.
   - Default video-fast is enabled (size±0.5%, dur±0.3s). Use --exact for hash-only.
   - In --video-fast-strict, join also compares fps/bitrate (if present) and does a full vid_eq check.
+  - Symlinks are NOT followed by default. Use --follow-symlinks to opt in.
+  - Every action (move/delete) is recorded in <quarantine>/_manifest-<RUN_ID>.tsv.
+    Use --restore <manifest> to roll back a previous run.
   - Modes:
     * Self-check: --report/--fix-*-dupes limit the run to that side and SKIP cross/similar.
     * Cross-check runs only when neither self-check flag is present.
 EOF
-  exit 1
-# End of usage()
+  exit "$rc"
+}
+
+# ------------------------------ Restore --------------------------------------
+# Reads a manifest written by a prior run and moves files back to original_path.
+# Conflict policy: if original_path already exists, SKIP and report; never overwrite.
+# Delete-actions are unrecoverable and reported as such.
+do_restore(){
+  local mf="$1"
+  [[ -f "$mf" ]] || die "manifest not found: $mf"
+
+  local restored=0 skipped_exists=0 missing=0 unrecoverable=0 errors=0
+  local done_marker="${mf}.restored"
+  local already_done=""
+  [[ -f "$done_marker" ]] && already_done="$(cat "$done_marker")"
+
+  echo "[*] Restoring from manifest: $mf"
+  $RESTORE_DRY_RUN && echo "[*] (restore dry-run; no files will move)"
+
+  # Skip comment lines and the header row.
+  while IFS=$'\t' read -r run_id ts orig quar matched algo hh dec sz mt; do
+    [[ -z "${run_id:-}" ]] && continue
+    [[ "$run_id" == "run_id" ]] && continue            # header
+    [[ "${run_id:0:1}" == "#" ]] && continue           # comment
+
+    # Skip rows already restored in a prior partial run
+    if [[ -n "$already_done" ]] && grep -Fqx -- "$orig" <<<"$already_done"; then
+      continue
+    fi
+
+    if [[ "$dec" == *":deleted" ]]; then
+      echo "[unrecoverable] deleted: $orig"
+      unrecoverable=$((unrecoverable+1))
+      continue
+    fi
+
+    if [[ -z "$quar" ]]; then
+      echo "[skip] no quarantine path recorded: $orig"
+      missing=$((missing+1))
+      continue
+    fi
+
+    if [[ ! -e "$quar" ]]; then
+      echo "[missing] quarantine file gone: $quar"
+      missing=$((missing+1))
+      continue
+    fi
+
+    if [[ -e "$orig" ]]; then
+      echo "[conflict] original exists, skipping: $orig"
+      skipped_exists=$((skipped_exists+1))
+      continue
+    fi
+
+    if $RESTORE_DRY_RUN; then
+      echo "[DRY] mv \"$quar\" \"$orig\""
+      restored=$((restored+1))
+      continue
+    fi
+
+    mkdir -p "$(dirname -- "$orig")" || { errors=$((errors+1)); continue; }
+    if mv -- "$quar" "$orig"; then
+      restored=$((restored+1))
+      printf '%s\n' "$orig" >> "$done_marker"
+    else
+      echo "ERROR: mv failed: $quar -> $orig" >&2
+      errors=$((errors+1))
+    fi
+  done < "$mf"
+
+  echo "===== RESTORE SUMMARY ====="
+  echo "Restored:        $restored"
+  echo "Skipped (exists): $skipped_exists"
+  echo "Missing:         $missing"
+  echo "Unrecoverable:   $unrecoverable"
+  echo "Errors:          $errors"
+  echo "==========================="
+  if [[ "$errors" -gt 0 ]]; then exit 3; fi
+  exit 0
 }
 
 # ------------------------------ Parse CLI ----------------------------------
@@ -366,10 +571,27 @@ while [[ $# -gt 0 ]]; do
 
     --rebuild-video-meta) REBUILD_VMETA=true; shift;;
 
-    -h|--help) usage;;
-    *) echo "Unknown option: $1"; usage;;
+    --follow-symlinks)    FOLLOW_SYMLINKS=true;  shift;;
+    --no-follow-symlinks) FOLLOW_SYMLINKS=false; shift;;
+
+    --exit-code-on-dupes) EXIT_CODE_ON_DUPES=true; shift;;
+
+    --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
+    --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
+
+    -h|--help) usage 0;;
+    *) echo "Unknown option: $1" >&2; usage 2;;
   esac
 done
+
+# Apply symlink policy
+if $FOLLOW_SYMLINKS; then FIND_FOLLOW="-L"; else FIND_FOLLOW=""; fi
+
+# Restore mode short-circuits everything else
+if $RESTORE_MODE; then
+  [[ -n "$RESTORE_MANIFEST" ]] || die "--restore requires a manifest path"
+  do_restore "$RESTORE_MANIFEST"
+fi
 
 # -------------------------- Mode resolution/guards -------------------------
 if ! $DO_BACKUP_SELF && ! $DO_SOURCE_SELF; then
@@ -399,7 +621,7 @@ if $DO_CROSS || $DO_BACKUP_SELF; then
 for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
   LOCAL_CACHE="$BDIR/$CACHE_FILE"
   build_name_predicate
-  TOTAL_B=$(find -L "$BDIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" | wc -l | tr -d ' ')
+  TOTAL_B=$(find $FIND_FOLLOW "$BDIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" | wc -l | tr -d ' ')
   [[ -z "$TOTAL_B" ]] && TOTAL_B=0
   echo "[*] Candidates in backup: $TOTAL_B"
 
@@ -429,7 +651,7 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
     printf "%s\t%s\n" "$H" "$f" >> "$TMP_CACHE"
     ADDED_B=$((ADDED_B+1))
     (( CNT_B % PROG_STEP == 0 )) && printf "\r[+] Caching %-7d / %s" "$CNT_B" "$TOTAL_B"
-  done < <(find -L "$BDIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
+  done < <(find $FIND_FOLLOW "$BDIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
   echo; rm -f "$ALREADY_INDEXED_SET" 2>/dev/null || true
   echo "[+] Cache ready: $LOCAL_CACHE (added $ADDED_B records)"
 
@@ -468,12 +690,10 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
           $REPORT_BACKUP_DUPES && echo "[BACKUP-DUPE] hash=$h keep='$KEEP_PATH' dupe='$dp'"
           BK_DUPE_CNT=$((BK_DUPE_CNT+1))
           if $FIX_BACKUP_DUPES; then
-            base="$(basename "$dp")"; dest="$BK_DUPE_DIR/$base"; i=1
-            DUPES=$((DUPES+1)); MOVED=$((MOVED+1))
-            while [[ -e "$dest" ]]; do dest="$BK_DUPE_DIR/${base%.*}_$i.${base##*.}"; i=$((i+1)); done
-            if $DRY_RUN; then echo "[DRY][BACKUP-DUPE] mv \"$dp\" \"$dest\" (keep: $KEEP_PATH)"
-            else mv -- "$dp" "$dest"; fi
-            printf '"%s","%s","%s"\n' "$h" "$KEEP_PATH" "$dp" >> "$BK_DUPE_CSV"
+            if qmove "$dp" "$BK_DUPE_DIR" "$KEEP_PATH" "$h" "backup_self_hash"; then
+              DUPES=$((DUPES+1)); $DRY_RUN || MOVED=$((MOVED+1))
+              printf '"%s","%s","%s"\n' "$h" "$KEEP_PATH" "$dp" >> "$BK_DUPE_CSV"
+            fi
           fi
         done < "$MAP_FILE"
         rm -f "$MAP_FILE" 2>/dev/null || true
@@ -504,17 +724,7 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
           fi
         fi
         if [[ "$s_bad" == "1" ]]; then
-          case "$BAD_VIDEO_ACTION" in
-            list)   echo "[BAD-VIDEO] $bf" ;;
-            delete) $DRY_RUN && echo "[DRY][BAD-VIDEO] rm \"$bf\"" || rm -f -- "$bf" ;;
-            move)
-              bdir="$QUAR_DIR/$BAD_VIDEO_SUBDIR"; mkdir -p "$bdir"
-              base_b="$(basename -- "$bf")"; dest="$bdir/$base_b"; i=1
-              while [[ -e "$dest" ]]; do dest="$bdir/${base_b%.*}_$i.${base_b##*.}"; i=$((i+1)); done
-              $DRY_RUN && echo "[DRY][BAD-VIDEO] mv \"$bf\" \"$dest\"" || mv -- "$bf" "$dest"
-              ;;
-            ignore) : ;;
-          esac
+          handle_bad_video "$bf"
           continue
         fi
       fi
@@ -546,11 +756,11 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
             echo "[BACKUP-SIMILAR(video-fast)] keep='$KEEP' move='$MOVE'"
           fi
           if $FIX_BACKUP_DUPES; then
-            base="$(basename "$MOVE")"; dest="$B_SIM_DIR/$base"; i=1
-            while [[ -e "$dest" ]]; do dest="$B_SIM_DIR/${base%.*}_$i.${base##*.}"; i=$((i+1)); done
-            if $DRY_RUN; then echo "[DRY][BACKUP-SIMILAR] mv \"$MOVE\" \"$dest\" (keep: $KEEP)"
-            else mv -- "$MOVE" "$dest"; echo "\"$MOVE\",\"$KEEP\"" >> "$B_SIM_CSV"; fi
-            SIMILAR_CNT=$((SIMILAR_CNT+1)); MOVED=$((MOVED+1))
+            DEC="backup_self_video_fast"; $VIDEO_FAST_STRICT && DEC="backup_self_video_strict"
+            if qmove "$MOVE" "$B_SIM_DIR" "$KEEP" "" "$DEC"; then
+              $DRY_RUN || echo "\"$MOVE\",\"$KEEP\"" >> "$B_SIM_CSV"
+              SIMILAR_CNT=$((SIMILAR_CNT+1)); $DRY_RUN || MOVED=$((MOVED+1))
+            fi
           fi
           break
         fi
@@ -577,7 +787,7 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
             if (ok) print $1
           }' "$VMETA_FILE"
       )
-    done < <(find -L "$BDIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
+    done < <(find $FIND_FOLLOW "$BDIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
   fi
 done
 fi
@@ -626,9 +836,13 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
   [[ -f "$SRC_DUPE_CSV" ]] || echo "hash,keep_path,dupe_path" > "$SRC_DUPE_CSV"
 fi
 
-TOTAL_SRC=$(find -L "$SOURCE_DIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" | wc -l | tr -d ' ')
+TOTAL_SRC=$(find $FIND_FOLLOW "$SOURCE_DIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" | wc -l | tr -d ' ')
 [[ -z "$TOTAL_SRC" ]] && TOTAL_SRC=0
 echo "[*] Candidates in source: $TOTAL_SRC"
+if ! $FOLLOW_SYMLINKS; then
+  SKIPPED_SYMLINK=$(find "$SOURCE_DIR" -type l 2>/dev/null | wc -l | tr -d ' ')
+  [[ "${SKIPPED_SYMLINK:-0}" -gt 0 ]] && echo "[*] Symlinks not followed in source: $SKIPPED_SYMLINK (use --follow-symlinks to opt in)"
+fi
 
 if ( $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES ) && ! $USE_SRC_CACHE; then
   SRC_HASH_RUN_FILE="$(mktemp)"
@@ -642,16 +856,7 @@ while IFS= read -r -d '' f; do
   if ${IGNORE_APPLEDOUBLE:-true}; then
     base_f="$(basename -- "$f")"
     if [[ "$base_f" == "._"* ]]; then
-      case "$APPLEDOUBLE_ACTION" in
-        list) echo "[APPLEDOUBLE] $f" ;;
-        delete) $DRY_RUN && echo "[DRY][APPLEDOUBLE] rm \"$f\"" || rm -f -- "$f" ;;
-        move)
-          adir="$QUAR_DIR/$APPLEDOUBLE_SUBDIR"; mkdir -p "$adir"
-          dest="$adir/$base_f"; i=1; while [[ -e "$dest" ]]; do dest="$adir/${base_f%.*}_$i.${base_f##*.}"; i=$((i+1)); done
-          $DRY_RUN && echo "[DRY][APPLEDOUBLE] mv \"$f\" \"$dest\"" || mv -- "$f" "$dest"
-          ;;
-        ignore) : ;;
-      esac
+      handle_appledouble "$f"
       continue
     fi
   fi
@@ -679,19 +884,21 @@ while IFS= read -r -d '' f; do
 
   # --- MD5 exact cross-dup against backup TMP_CACHE (only in cross mode) ---
   if $DO_CROSS; then
-    if grep -q "^${H}[[:space:]]" "$TMP_CACHE"; then
+    MATCH_LINE="$(grep -m1 "^${H}"$'\t' "$TMP_CACHE" || true)"
+    if [[ -n "$MATCH_LINE" ]]; then
+      MATCHED_PATH="${MATCH_LINE#*$'\t'}"
       DUPES=$((DUPES+1))
       case "$DEST_ACTION" in
-        list) echo "[DUPE] $f" ;;
+        list) echo "[DUPE] $f  ~~  $MATCHED_PATH" ;;
         delete)
-          if $DRY_RUN; then echo "[DRY] rm \"$f\""
-          else rm -f -- "$f"; DELETED=$((DELETED+1)); fi ;;
+          if qdelete "$f" "$MATCHED_PATH" "$H" "cross_hash"; then
+            $DRY_RUN || DELETED=$((DELETED+1))
+          fi ;;
         move)
-          base=$(basename "$f"); dest="$QUAR_DIR/$base"; i=1
-          while [[ -e "$dest" ]]; do dest="$QUAR_DIR/${base%.*}_$i.${base##*.}"; i=$((i+1)); done
-          if $DRY_RUN; then echo "[DRY] mv \"$f\" \"$dest\""
-          else mv -- "$f" "$dest"; MOVED=$((MOVED+1)); fi ;;
-        *) echo "Unknown action: $DEST_ACTION"; exit 3;;
+          if qmove "$f" "$QUAR_DIR" "$MATCHED_PATH" "$H" "cross_hash"; then
+            $DRY_RUN || MOVED=$((MOVED+1))
+          fi ;;
+        *) die3 "Unknown action: $DEST_ACTION";;
       esac
     fi
   fi
@@ -727,17 +934,7 @@ while IFS= read -r -d '' f; do
           fi
         fi
         if [[ "$s_bad" == "1" ]]; then
-          case "$BAD_VIDEO_ACTION" in
-            list)   echo "[BAD-VIDEO] $f" ;;
-            delete) $DRY_RUN && echo "[DRY][BAD-VIDEO] rm \"$f\"" || rm -f -- "$f" ;;
-            move)
-              bdir="$QUAR_DIR/$BAD_VIDEO_SUBDIR"; mkdir -p "$bdir"
-              base_f="$(basename -- "$f")"; dest="$bdir/$base_f"; i=1
-              while [[ -e "$dest" ]]; do dest="$bdir/${base_f%.*}_$i.${base_f##*.}"; i=$((i+1)); done
-              $DRY_RUN && echo "[DRY][BAD-VIDEO] mv \"$f\" \"$dest\"" || mv -- "$f" "$dest"
-              ;;
-            ignore) : ;;
-          esac
+          handle_bad_video "$f"
           continue
         fi
       fi
@@ -763,16 +960,12 @@ while IFS= read -r -d '' f; do
             echo "$out2" | grep -q "EQUAL:yes" || { continue; }
           fi
           if $DO_CROSS; then
-            base="$(basename "$f")"; dest="$SIM_DIR/$base"; i=1
-            while [[ -e "$dest" ]]; do dest="$SIM_DIR/${base%.*}_$i.${base##*.}"; i=$((i+1)); done
-            if $DRY_RUN; then
-              echo "[DRY][SIMILAR(video-fast)] $f  ~~  $b"
-              echo "[DRY] mv \"$f\" \"$dest\""
-            else
-              mv -- "$f" "$dest"; echo "\"$f\",\"$b\"" >> "$SIMILAR_CSV"
+            DEC="cross_video_fast"; $VIDEO_FAST_STRICT && DEC="cross_video_strict"
+            if qmove "$f" "$SIM_DIR" "$b" "" "$DEC"; then
+              $DRY_RUN || echo "\"$f\",\"$b\"" >> "$SIMILAR_CSV"
               echo "[SIMILAR(video-fast)] $f  ~~  $b"
+              SIMILAR_CNT=$((SIMILAR_CNT+1)); $DRY_RUN || MOVED=$((MOVED+1))
             fi
-            SIMILAR_CNT=$((SIMILAR_CNT+1)); MOVED=$((MOVED+1))
           else
             # Source self-check: prefer oldest keep
             mt_src=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
@@ -782,11 +975,11 @@ while IFS= read -r -d '' f; do
               echo "[SOURCE-SIMILAR(video-fast)] keep='$KEEP' move='$MOVE'"
             fi
             if $FIX_SOURCE_DUPES; then
-              base="$(basename "$MOVE")"; dest="$SIM_DIR/$base"; i=1
-              while [[ -e "$dest" ]]; do dest="$SIM_DIR/${base%.*}_$i.${base##*.}"; i=$((i+1)); done
-              if $DRY_RUN; then echo "[DRY][SOURCE-SIMILAR] mv \"$MOVE\" \"$dest\" (keep: $KEEP)"
-              else mv -- "$MOVE" "$dest"; echo "\"$MOVE\",\"$KEEP\"" >> "$SIMILAR_CSV"; fi
-              SIMILAR_CNT=$((SIMILAR_CNT+1)); MOVED=$((MOVED+1))
+              DEC="source_self_video_fast"; $VIDEO_FAST_STRICT && DEC="source_self_video_strict"
+              if qmove "$MOVE" "$SIM_DIR" "$KEEP" "" "$DEC"; then
+                $DRY_RUN || echo "\"$MOVE\",\"$KEEP\"" >> "$SIMILAR_CSV"
+                SIMILAR_CNT=$((SIMILAR_CNT+1)); $DRY_RUN || MOVED=$((MOVED+1))
+              fi
             fi
           fi
           break
@@ -818,7 +1011,7 @@ while IFS= read -r -d '' f; do
   fi
 
   (( TOTAL % PROG_STEP == 0 )) && printf "\r[*] Scanned %-7d / %s | dupes: %-7d" "$TOTAL" "$TOTAL_SRC" "$DUPES"
-done < <(find -L "$SOURCE_DIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
+done < <(find $FIND_FOLLOW "$SOURCE_DIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
 echo
 fi
 
@@ -864,15 +1057,10 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
           $REPORT_SOURCE_DUPES && echo "[SOURCE-DUPE] hash=$sh keep='$KEEP_SPATH' dupe='$sdp'"
           SRC_DUPE_CNT=$((SRC_DUPE_CNT+1))
           if $FIX_SOURCE_DUPES; then
-            base="$(basename "$sdp")"; sdest="$SRC_DUPE_DIR/$base"; i=1
-            while [[ -e "$sdest" ]]; do sdest="$SRC_DUPE_DIR/${base%.*}_$i.${base##*.}"; i=$((i+1)); done
-            if $DRY_RUN; then
-              echo "[DRY][SOURCE-DUPE] mv \"$sdp\" \"$sdest\" (keep: $KEEP_SPATH)"
-            else
-              mv -- "$sdp" "$sdest"
+            if qmove "$sdp" "$SRC_DUPE_DIR" "$KEEP_SPATH" "$sh" "source_self_hash"; then
+              printf '"%s","%s","%s"\n' "$sh" "$KEEP_SPATH" "$sdp" >> "$SRC_DUPE_CSV"
+              DUPES=$((DUPES+1)); $DRY_RUN || MOVED=$((MOVED+1))
             fi
-            printf '"%s","%s","%s"\n' "$sh" "$KEEP_SPATH" "$sdp" >> "$SRC_DUPE_CSV"
-            DUPES=$((DUPES+1)); MOVED=$((MOVED+1))
           fi
         done < "$SMAP_FILE"
         rm -f "$SMAP_FILE" 2>/dev/null || true
@@ -913,4 +1101,17 @@ echo "Backup-internal dupes: $BK_DUPE_CNT$BK_DUPE_NOTE"
 if $VIDEO_FAST && ! $EXACT; then echo "Similar (video-fast) flagged: $SIMILAR_CNT"; fi
 if ${BAD_VIDEO_DETECT:-true}; then echo "Bad videos auto-handled: ON (${BAD_VIDEO_ACTION})"; fi
 if ${IGNORE_APPLEDOUBLE:-true}; then echo "AppleDouble sidecars (._*) handled: ${APPLEDOUBLE_ACTION}"; fi
+[[ $SKIPPED_HARDLINK -gt 0 ]] && echo "Skipped (hardlink): $SKIPPED_HARDLINK"
+[[ $SKIPPED_SYMLINK  -gt 0 ]] && echo "Skipped (symlink):  $SKIPPED_SYMLINK"
+$MANIFEST_INITED && echo "Manifest:           $MANIFEST_FILE"
 echo "===================="
+
+# Exit code policy:
+#   0 = normal
+#   1 = normal AND duplicates were processed (only when --exit-code-on-dupes)
+#   2 = arg error (handled inline via die / usage)
+#   3 = runtime error (handled inline via die3)
+if $EXIT_CODE_ON_DUPES && [[ $DUPES -gt 0 || $SIMILAR_CNT -gt 0 || $BK_DUPE_CNT -gt 0 || $SRC_DUPE_CNT -gt 0 ]]; then
+  exit 1
+fi
+exit 0
