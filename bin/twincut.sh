@@ -77,8 +77,18 @@ BPS_PCT=${BPS_PCT:-0.5}        # bitrate tolerance in %
 # Force rebuild of video meta index
 REBUILD_VMETA=false
 
-# vid_eq helper
+# vid_eq helper / lib loading
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+LIB_DIR=""
+if   [[ -d "$SELF_DIR/../lib" ]]; then LIB_DIR="$(cd -- "$SELF_DIR/../lib" && pwd -P)"
+elif [[ -d "$SELF_DIR/lib"     ]]; then LIB_DIR="$(cd -- "$SELF_DIR/lib"     && pwd -P)"
+fi
+THUMB_LIB_LOADED=false
+if [[ -n "$LIB_DIR" && -f "$LIB_DIR/thumb.sh" ]]; then
+  # shellcheck source=../lib/thumb.sh
+  source "$LIB_DIR/thumb.sh"
+  THUMB_LIB_LOADED=true
+fi
 if [[ -z "${V_EQ_BIN:-}" ]]; then
   if   [[ -x "$SELF_DIR/vid_eq"      ]]; then V_EQ_BIN="$SELF_DIR/vid_eq"
   elif [[ -x "$SELF_DIR/vid_eq.sh"   ]]; then V_EQ_BIN="$SELF_DIR/vid_eq.sh"
@@ -124,6 +134,19 @@ EXIT_CODE_ON_DUPES=false
 RESTORE_MODE=false
 RESTORE_MANIFEST=""
 RESTORE_DRY_RUN=false
+
+# P1: thumbnail detect
+THUMB_DETECT=false
+THUMB_DIR=""
+THUMB_REVIEW_CSV=""
+THUMB_ACTION="move"            # move | list | review
+THUMB_MAX_EDGE=512
+THUMB_MAYBE_MAX_EDGE=1024
+THUMB_REQUIRE_EXIF_MATCH=false
+THUMB_CONFIRM_FILE=""
+
+# Mode flag
+DO_THUMB=false
 
 # ------------------------------ Small helpers --------------------------------
 die(){  echo "ERROR: $*" >&2; exit 2; }   # usage / arg errors
@@ -416,6 +439,17 @@ Usage:
                    [--follow-symlinks|--no-follow-symlinks]
                    [--exit-code-on-dupes]
 
+Thumbnail detection (L1 resolution + L2 EXIF cluster + L3 embedded thumb):
+  $(basename "$0") --source <DIR> --thumbnail-detect
+                   [--thumb-action move|list|review]
+                   [--thumb-dir <DIR>]            (default: <source>/_thumbnails)
+                   [--thumb-max-edge 512] [--thumb-maybe-max-edge 1024]
+                   [--thumb-require-exif-match]
+                   [--thumb-review-csv <PATH>]
+
+Confirm review (process rows from a (possibly user-edited) review.csv):
+  $(basename "$0") --thumb-confirm <review.csv> [--thumb-dir <DIR>]
+
 Restore mode:
   $(basename "$0") --restore <manifest.tsv> [--restore-dry-run]
                    [--quarantine <DIR>]   # only needed if manifest paths are relative
@@ -579,6 +613,15 @@ while [[ $# -gt 0 ]]; do
     --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
     --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
 
+    --thumbnail-detect)        THUMB_DETECT=true; DO_THUMB=true; shift;;
+    --thumb-action)            THUMB_ACTION="${2:-}"; shift 2;;
+    --thumb-dir)               THUMB_DIR="${2:-}"; shift 2;;
+    --thumb-max-edge)          THUMB_MAX_EDGE="${2:-}"; shift 2;;
+    --thumb-maybe-max-edge)    THUMB_MAYBE_MAX_EDGE="${2:-}"; shift 2;;
+    --thumb-require-exif-match) THUMB_REQUIRE_EXIF_MATCH=true; shift;;
+    --thumb-review-csv)        THUMB_REVIEW_CSV="${2:-}"; shift 2;;
+    --thumb-confirm)           THUMB_CONFIRM_FILE="${2:-}"; shift 2;;
+
     -h|--help) usage 0;;
     *) echo "Unknown option: $1" >&2; usage 2;;
   esac
@@ -593,7 +636,16 @@ if $RESTORE_MODE; then
   do_restore "$RESTORE_MANIFEST"
 fi
 
+# --thumb-confirm short-circuits as well (read review.csv → qmove rows).
+if [[ -n "$THUMB_CONFIRM_FILE" ]]; then
+  $THUMB_LIB_LOADED || die "thumbnail lib not loaded; expected $LIB_DIR/thumb.sh"
+  thumb_confirm_review "$THUMB_CONFIRM_FILE"
+  exit 0
+fi
+
 # -------------------------- Mode resolution/guards -------------------------
+# Cross-check auto-enables whenever source+backup are both provided AND no
+# self-check mode is requested. --thumbnail-detect coexists peacefully.
 if ! $DO_BACKUP_SELF && ! $DO_SOURCE_SELF; then
   if [[ -n "$SOURCE_DIR" && ${#BACKUP_DIRS[@]} -gt 0 ]]; then DO_CROSS=true; fi
 fi
@@ -605,6 +657,12 @@ if $DO_CROSS; then
   [[ -z "$SOURCE_DIR" ]] && die "--source required for cross-check"
   [[ ${#BACKUP_DIRS[@]} -eq 0 ]] && die "--backup <DIR> required for cross-check"
 fi
+if $DO_THUMB; then
+  [[ -z "$SOURCE_DIR" ]] && die "--thumbnail-detect requires --source"
+  $THUMB_LIB_LOADED || die "thumbnail lib not loaded; expected $LIB_DIR/thumb.sh"
+fi
+# If only --thumbnail-detect is set with no other mode, that's fine (standalone).
+# It can also coexist with cross/self checks; thumb phase runs after them.
 
 # Re-apply strict thresholds after CLI is parsed (parser runs after initial defaults)
 if $VIDEO_FAST_STRICT; then SIZE_PCT=0.2; DUR_SEC=0.15; fi
@@ -1091,6 +1149,11 @@ if ! $DRY_RUN && ${USE_SRC_CACHE:-false} && [[ -n "${SOURCE_CACHE:-}" && -f "$SO
   echo "[*] Removed source cache: $SOURCE_CACHE"
 fi
 
+# --- Thumbnail detect phase (P1: L1+L2+L3) ---
+if $DO_THUMB; then
+  thumb_detect_run || true
+fi
+
 echo "===== SUMMARY ====="
 echo "Checked: $TOTAL files  | Duplicates: $DUPES"
 [[ "$DEST_ACTION" == "move" ]] && echo "Moved to quarantine: $MOVED -> $QUAR_DIR"
@@ -1105,13 +1168,14 @@ if ${IGNORE_APPLEDOUBLE:-true}; then echo "AppleDouble sidecars (._*) handled: $
 [[ $SKIPPED_SYMLINK  -gt 0 ]] && echo "Skipped (symlink):  $SKIPPED_SYMLINK"
 $MANIFEST_INITED && echo "Manifest:           $MANIFEST_FILE"
 echo "===================="
+$DO_THUMB && thumb_print_summary
 
 # Exit code policy:
 #   0 = normal
 #   1 = normal AND duplicates were processed (only when --exit-code-on-dupes)
 #   2 = arg error (handled inline via die / usage)
 #   3 = runtime error (handled inline via die3)
-if $EXIT_CODE_ON_DUPES && [[ $DUPES -gt 0 || $SIMILAR_CNT -gt 0 || $BK_DUPE_CNT -gt 0 || $SRC_DUPE_CNT -gt 0 ]]; then
+if $EXIT_CODE_ON_DUPES && [[ $DUPES -gt 0 || $SIMILAR_CNT -gt 0 || $BK_DUPE_CNT -gt 0 || $SRC_DUPE_CNT -gt 0 || ${THUMB_L2_HITS:-0} -gt 0 || ${THUMB_L3_HITS:-0} -gt 0 ]]; then
   exit 1
 fi
 exit 0
