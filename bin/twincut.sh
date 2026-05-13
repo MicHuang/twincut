@@ -114,6 +114,11 @@ BACKUP_DUPE_SUBDIR="_backup_dupes"; BACKUP_DUPE_LOG="_backup_dupes_map.csv"
 REPORT_SOURCE_DUPES=false; FIX_SOURCE_DUPES=false
 SOURCE_DUPE_SUBDIR="_source_dupes"; SOURCE_DUPE_LOG="_source_dupes_map.csv"
 
+# Self-check (single-folder mode; sugar over source self-check)
+SELF_CHECK_MODE=false
+SELF_CHECK_DIR=""
+INCLUDE_SIMILAR_VIDEO=false
+
 # P0: manifest / run-id
 RUN_ID=""
 MANIFEST_FILE=""
@@ -308,7 +313,7 @@ prune_cache_missing(){ # keep header + live files only
   [[ -f "$cache_file" ]] || return 0
   before=$(grep -v '^#' "$cache_file" 2>/dev/null | wc -l | tr -d ' ')
   tmp="$(mktemp)"; grep '^#' "$cache_file" 2>/dev/null > "$tmp" || true
-  grep -v '^#' "$cache_file" 2>/dev/null | awk -F '\t' 'NF>=2 {print $1"\t"$2}' | while IFS=$'\t' read -r hh pp; do [[ -e "$pp" ]] && printf "%s\t%s\n" "$hh" "$pp" >> "$tmp"; done
+  grep -v '^#' "$cache_file" 2>/dev/null | awk -F '\t' 'NF>=2 {print $1"\t"$2}' | while IFS=$'\t' read -r hh pp; do [[ -e "$pp" ]] && printf "%s\t%s\n" "$hh" "$pp" >> "$tmp" || true; done
   mv "$tmp" "$cache_file"
   after=$(grep -v '^#' "$cache_file" 2>/dev/null | wc -l | tr -d ' ')
   local removed=$(( before - after )); (( removed > 0 )) && echo "[*] Pruned cache: $cache_file (removed $removed stale entries)" || true
@@ -450,6 +455,15 @@ Thumbnail detection (L1 resolution + L2 EXIF cluster + L3 embedded thumb):
 Confirm review (process rows from a (possibly user-edited) review.csv):
   $(basename "$0") --thumb-confirm <review.csv> [--thumb-dir <DIR>]
 
+Self-check (find duplicates within a single folder, role-agnostic):
+  $(basename "$0") --self-check <DIR> [--dry-run] [--include-similar-video]
+                   [--algo md5|sha1] [--min-size 300k] [--ext "jpg,png,..."]
+                   [--quarantine <DIR>]
+  Default action: move duplicates into <DIR>/_QUARANTINE/_self_dupes/ and
+  write a manifest. Use --dry-run to preview without moving anything. The
+  full restore command is printed at the end of the run; you can also call
+  $(basename "$0") --restore <manifest.tsv> manually to roll back.
+
 Restore mode:
   $(basename "$0") --restore <manifest.tsv> [--restore-dry-run]
                    [--quarantine <DIR>]   # only needed if manifest paths are relative
@@ -469,8 +483,12 @@ Notes:
   - Every action (move/delete) is recorded in <quarantine>/_manifest-<RUN_ID>.tsv.
     Use --restore <manifest> to roll back a previous run.
   - Modes:
-    * Self-check: --report/--fix-*-dupes limit the run to that side and SKIP cross/similar.
-    * Cross-check runs only when neither self-check flag is present.
+    * Self-check (legacy): --report/--fix-*-dupes limit the run to that
+      side. Source self-check still runs similar-video by default.
+    * Self-check (recommended): --self-check <DIR> finds intra-folder
+      duplicates without requiring source/backup roles. Hash-only by
+      default; pass --include-similar-video to also flag similar videos.
+    * Cross-check runs only when no self-check flag is present.
 EOF
   exit "$rc"
 }
@@ -591,6 +609,9 @@ while [[ $# -gt 0 ]]; do
     --report-source-dupes) REPORT_SOURCE_DUPES=true; DO_SOURCE_SELF=true; shift;;
     --fix-source-dupes) FIX_SOURCE_DUPES=true; DO_SOURCE_SELF=true; shift;;
 
+    --self-check) SELF_CHECK_MODE=true; SELF_CHECK_DIR="${2:-}"; [[ $# -ge 2 ]] && shift 2 || shift;;
+    --include-similar-video) INCLUDE_SIMILAR_VIDEO=true; shift;;
+
     --bad-video-detect) BAD_VIDEO_DETECT=true; shift;;
     --no-bad-video) BAD_VIDEO_DETECT=false; shift;;
     --bad-video-action) BAD_VIDEO_ACTION="${2:-}"; shift 2;;
@@ -644,6 +665,36 @@ if [[ -n "$THUMB_CONFIRM_FILE" ]]; then
 fi
 
 # -------------------------- Mode resolution/guards -------------------------
+# Translate --self-check <DIR> into the existing source-self-check internal
+# state, with self-check-specific defaults: hash-only (no similar-video
+# unless opt-in), self-named quarantine subdir, quarantine inside <DIR>.
+if $SELF_CHECK_MODE; then
+  [[ -n "$SELF_CHECK_DIR" ]] || die "--self-check requires a directory"
+  [[ -d "$SELF_CHECK_DIR" ]] || die "--self-check dir not found: $SELF_CHECK_DIR"
+  [[ -n "$SOURCE_DIR" ]] && die "--self-check is mutually exclusive with --source"
+  [[ ${#BACKUP_DIRS[@]} -gt 0 ]] && die "--self-check is mutually exclusive with --backup"
+  ( $DO_SOURCE_SELF || $DO_BACKUP_SELF ) && die "--self-check is mutually exclusive with --report/--fix-*-dupes"
+  $DO_THUMB && die "--self-check is mutually exclusive with --thumbnail-detect"
+
+  SOURCE_DIR="$SELF_CHECK_DIR"
+  DO_SOURCE_SELF=true
+  if $DRY_RUN; then
+    REPORT_SOURCE_DUPES=true
+  else
+    FIX_SOURCE_DUPES=true
+  fi
+  SOURCE_DUPE_SUBDIR="_self_dupes"
+  SOURCE_DUPE_LOG="_self_dupes_map.csv"
+  if [[ "$QUAR_DIR" == "./_QUARANTINE" ]]; then
+    QUAR_DIR="${SELF_CHECK_DIR%/}/_QUARANTINE"
+  fi
+  if $INCLUDE_SIMILAR_VIDEO; then
+    EXACT=false; VIDEO_FAST=true
+  else
+    EXACT=true; VIDEO_FAST=false
+  fi
+fi
+
 # Cross-check auto-enables whenever source+backup are both provided AND no
 # self-check mode is requested. --thumbnail-detect coexists peacefully.
 if ! $DO_BACKUP_SELF && ! $DO_SOURCE_SELF; then
@@ -1025,7 +1076,11 @@ while IFS= read -r -d '' f; do
               SIMILAR_CNT=$((SIMILAR_CNT+1)); $DRY_RUN || MOVED=$((MOVED+1))
             fi
           else
-            # Source self-check: prefer oldest keep
+            # Source self-check: prefer oldest keep.
+            # Note: --self-check without --include-similar-video sets EXACT=true
+            # upstream, so the outer video-fast block is never entered and this
+            # branch is only reached via the legacy --report/--fix-source-dupes
+            # path or when --include-similar-video is explicitly set.
             mt_src=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
             mt_b=$(stat -f %m "$b" 2>/dev/null || stat -c %Y "$b" 2>/dev/null || echo 0)
             if (( mt_src <= mt_b )); then KEEP="$f"; MOVE="$b"; else KEEP="$b"; MOVE="$f"; fi
@@ -1086,7 +1141,7 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
     grep -v '^#' "$SRC_HASHLIST_FILE" 2>/dev/null \
       | awk -F '\t' -v dir="$SRC_DIR_PREFIX" 'NF>=2 && index($2,dir)==1 {print $0}' \
       | while IFS=$'\t' read -r h p; do
-          [[ -n "$p" && -e "$p" ]] && printf "%s\t%s\n" "$h" "$p"
+          [[ -n "$p" && -e "$p" ]] && printf "%s\t%s\n" "$h" "$p" || true
         done > "$SRC_FILTERED"
 
     SDUP_HASHES_FILE="$(mktemp)"
@@ -1167,6 +1222,10 @@ if ${IGNORE_APPLEDOUBLE:-true}; then echo "AppleDouble sidecars (._*) handled: $
 [[ $SKIPPED_HARDLINK -gt 0 ]] && echo "Skipped (hardlink): $SKIPPED_HARDLINK"
 [[ $SKIPPED_SYMLINK  -gt 0 ]] && echo "Skipped (symlink):  $SKIPPED_SYMLINK"
 $MANIFEST_INITED && echo "Manifest:           $MANIFEST_FILE"
+if $SELF_CHECK_MODE && $MANIFEST_INITED && ! $DRY_RUN && [[ $MOVED -gt 0 ]]; then
+  echo "[i] Inspect duplicates: $QUAR_DIR/$SOURCE_DUPE_SUBDIR/"
+  echo "[i] Roll back this run: $(basename "$0") --restore \"$MANIFEST_FILE\""
+fi
 echo "===================="
 $DO_THUMB && thumb_print_summary
 
