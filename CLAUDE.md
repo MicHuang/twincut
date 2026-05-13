@@ -26,9 +26,14 @@ bin/twincut.sh --help
 # Cross-check (typical): remove files in SOURCE that already exist in BACKUP
 bin/twincut.sh --source <SRC> --backup <BK> [--backup <BK2> ...] --dry-run
 
-# Self-check modes (these SKIP cross-check and similar-video logic)
+# Self-check modes (legacy; these SKIP cross-check; source path still runs similar-video)
 bin/twincut.sh --source <SRC> --backup <BK> --report-backup-dupes
 bin/twincut.sh --source <SRC> --backup <BK> --fix-source-dupes
+
+# Self-check (recommended; role-agnostic; hash-only by default)
+bin/twincut.sh --self-check <DIR> [--dry-run]
+bin/twincut.sh --self-check <DIR> --include-similar-video   # opt-in similar-video
+bin/twincut.sh --restore <DIR>/_QUARANTINE/_manifest-<RUN_ID>.tsv  # roll back
 ```
 
 There is no build system, no test suite, and no linter configured. When changing `twincut.sh`, validate by running with `--dry-run` against a scratch directory.
@@ -39,11 +44,12 @@ Things that are non-obvious from skimming a single function:
 
 - **Single-file design.** All state lives in globals at the top of `twincut.sh` (defaults block, lines ~7–100). CLI parsing (`while [[ $# -gt 0 ]]`) mutates these. Helpers are short and assume the globals — don't refactor a helper in isolation without checking which globals it reads.
 
-- **Three run modes, mutually exclusive in effect:**
-  - Cross-check (default): runs only when neither `--report/--fix-*-dupes` self-check flag is set.
+- **Four run modes, mutually exclusive in effect:**
+  - Cross-check (default): runs only when no self-check flag is set.
   - Backup self-check (`--report-backup-dupes` / `--fix-backup-dupes`) — sets `DO_BACKUP_SELF`.
-  - Source self-check (`--report-source-dupes` / `--fix-source-dupes`) — sets `DO_SOURCE_SELF`.
-  Self-check modes intentionally skip cross-check AND similar-video detection.
+  - Source self-check (`--report-source-dupes` / `--fix-source-dupes`) — sets `DO_SOURCE_SELF`. Source path runs similar-video detection by default.
+  - **Self-check `--self-check <DIR>`** (recommended, role-agnostic) — sugar over source self-check. Sets `SELF_CHECK_MODE=true`, translates at mode-resolution time into `SOURCE_DIR + DO_SOURCE_SELF + FIX_SOURCE_DUPES`. Quarantine defaults to `<DIR>/_QUARANTINE/_self_dupes/`. Hash-only by default (`EXACT=true`); `--include-similar-video` re-enables video-fast. Prints a copy-paste `--restore` command at the end. Mutually exclusive with `--source` / `--backup` / `--report/--fix-*-dupes` / `--thumbnail-detect`.
+  Self-check modes skip cross-check. Similar-video runs by default in the legacy source path but is OFF by default for `--self-check` (opt-in via `--include-similar-video`).
 
 - **Hash caches.** Backup side uses `<backup>/.backup_hashindex.txt`; source side uses `<source>/.source_hashindex.txt` (created during `--dry-run`, removed after a successful non-dry run unless `--keep-source-cache`). Caches carry a `# meta:` header (algo/min_size/exts/created); `should_rebuild_cache` invalidates on meta drift. `prune_cache_missing` keeps the header and only live files.
 
