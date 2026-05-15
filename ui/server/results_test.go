@@ -107,6 +107,88 @@ func TestBuildResults_PreservesWarningsAndError(t *testing.T) {
 	}
 }
 
+func TestBuildResults_SimilarVideoSurfacesMetadata(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"self_check","source":"/v"}`,
+		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"video_fast",
+		 "keep_path":"/v/a.mp4","keep_size":4200000,"keep_mtime":100,
+		 "keep_duration":45.5,"keep_width":1920,"keep_height":1080,"keep_fps":29.97,"keep_bitrate":5000000,
+		 "remove_path":"/v/b.mp4","remove_size":3900000,"remove_mtime":200,
+		 "remove_duration":45.5,"remove_width":1920,"remove_height":1080,"remove_fps":29.97,"remove_bitrate":4700000}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.NumGroups != 1 {
+		t.Fatalf("NumGroups = %d, want 1", view.NumGroups)
+	}
+	g := view.Groups[0]
+	if !g.IsSimilar {
+		t.Error("IsSimilar = false; want true for video_fast")
+	}
+	if !g.Keep.HasMedia || g.Keep.DimensionsStr != "1920x1080" || g.Keep.FPSStr != "29.97 fps" || g.Keep.BitrateStr != "5.0 Mbps" || g.Keep.DurationStr != "0:46" {
+		t.Errorf("Keep media metadata wrong: %+v", g.Keep)
+	}
+	if len(g.Remove) != 1 || g.Remove[0].DimensionsStr != "1920x1080" || g.Remove[0].BitrateStr != "4.7 Mbps" {
+		t.Errorf("Remove media metadata wrong: %+v", g.Remove)
+	}
+}
+
+func TestBuildResults_Md5GroupNotMarkedSimilar(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"self_check","source":"/p"}`,
+		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"md5",
+		 "keep_path":"/p/a.jpg","keep_size":1024,"keep_mtime":100,
+		 "remove":[{"path":"/p/b.jpg","size":1024,"mtime":200}]}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	view, _ := BuildResults(r)
+	if view.Groups[0].IsSimilar {
+		t.Error("IsSimilar = true for md5 group; want false")
+	}
+	if view.Groups[0].Keep.HasMedia {
+		t.Error("HasMedia = true on md5 keep; expected zero metadata")
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want string
+	}{
+		{0, ""},
+		{0.5, "500ms"},
+		{1, "0:01"},
+		{61, "1:01"},
+		{3600, "1:00:00"},
+		{3725, "1:02:05"},
+	}
+	for _, c := range cases {
+		if got := formatDuration(c.in); got != c.want {
+			t.Errorf("formatDuration(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestFormatBitrate(t *testing.T) {
+	cases := []struct {
+		in   int64
+		want string
+	}{
+		{0, ""},
+		{500, "500 bps"},
+		{128000, "128 kbps"},
+		{5_000_000, "5.0 Mbps"},
+	}
+	for _, c := range cases {
+		if got := formatBitrate(c.in); got != c.want {
+			t.Errorf("formatBitrate(%d) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestBuildResults_RunEndPopulatesApplyFields(t *testing.T) {
 	r := runFromEvents(t, []string{
 		`{"type":"run_start","ts":1,"run_id":"x","mode":"self_check","source":"/p"}`,

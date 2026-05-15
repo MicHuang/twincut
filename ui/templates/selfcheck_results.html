@@ -54,25 +54,81 @@
 
       <div class="results-list">
         {{range .Groups}}
-        <div class="result-group">
+        <div class="result-group {{if .IsSimilar}}result-group-similar{{end}}">
           <div class="result-group-header">
             <span class="badge badge-match">{{.MatchReason}}</span>
-            <span class="muted small">group {{.GroupID}} · hash <code class="hash">{{.Hash}}</code></span>
+            <span class="muted small">group {{.GroupID}}{{if .Hash}} · hash <code class="hash">{{.Hash}}</code>{{end}}</span>
           </div>
 
-          <div class="result-row result-row-keep">
-            <span class="role-tag role-keep">KEEP</span>
-            <code class="path">{{.Keep.Path}}</code>
-            <span class="size muted">{{.Keep.SizeStr}}</span>
-          </div>
+          {{if .IsSimilar}}
+            {{/* Similar matches: side-by-side cards with thumbnails so the
+                 user can eyeball which copy to keep. */}}
+            <div class="cluster-cards">
+              <div class="cluster-card cluster-card-keep">
+                <div class="cluster-card-role"><span class="role-tag role-keep">KEEP</span></div>
+                <button type="button" class="thumb-btn"
+                        data-thumb-src="/thumb?path={{.Keep.Path}}&size=1024"
+                        data-thumb-alt="{{.Keep.Name}}">
+                  <img class="thumb" loading="lazy"
+                       src="/thumb?path={{.Keep.Path}}&size=320"
+                       alt="{{.Keep.Name}}">
+                </button>
+                <div class="cluster-card-name">{{.Keep.Name}}</div>
+                <div class="cluster-card-meta">
+                  <span>{{.Keep.SizeStr}}</span>
+                  {{if .Keep.DimensionsStr}}<span>· {{.Keep.DimensionsStr}}</span>{{end}}
+                  {{if .Keep.DurationStr}}<span>· {{.Keep.DurationStr}}</span>{{end}}
+                  {{if .Keep.FPSStr}}<span>· {{.Keep.FPSStr}}</span>{{end}}
+                  {{if .Keep.BitrateStr}}<span>· {{.Keep.BitrateStr}}</span>{{end}}
+                </div>
+                <details class="cluster-card-path"><summary class="muted small">path</summary>
+                  <code>{{.Keep.Path}}</code>
+                </details>
+              </div>
 
-          {{range .Remove}}
-          <label class="result-row result-row-remove">
-            <input type="checkbox" name="quarantine" value="{{.Path}}" checked>
-            <span class="role-tag role-remove">QUARANTINE</span>
-            <code class="path">{{.Path}}</code>
-            <span class="size muted">{{.SizeStr}}</span>
-          </label>
+              {{range .Remove}}
+              <label class="cluster-card cluster-card-remove">
+                <div class="cluster-card-role">
+                  <input type="checkbox" name="quarantine" value="{{.Path}}" checked>
+                  <span class="role-tag role-remove">QUARANTINE</span>
+                </div>
+                <button type="button" class="thumb-btn"
+                        data-thumb-src="/thumb?path={{.Path}}&size=1024"
+                        data-thumb-alt="{{.Name}}">
+                  <img class="thumb" loading="lazy"
+                       src="/thumb?path={{.Path}}&size=320"
+                       alt="{{.Name}}">
+                </button>
+                <div class="cluster-card-name">{{.Name}}</div>
+                <div class="cluster-card-meta">
+                  <span>{{.SizeStr}}</span>
+                  {{if .DimensionsStr}}<span>· {{.DimensionsStr}}</span>{{end}}
+                  {{if .DurationStr}}<span>· {{.DurationStr}}</span>{{end}}
+                  {{if .FPSStr}}<span>· {{.FPSStr}}</span>{{end}}
+                  {{if .BitrateStr}}<span>· {{.BitrateStr}}</span>{{end}}
+                </div>
+                <details class="cluster-card-path"><summary class="muted small">path</summary>
+                  <code>{{.Path}}</code>
+                </details>
+              </label>
+              {{end}}
+            </div>
+          {{else}}
+            {{/* Hash-exact matches: bytes are identical, no visual compare
+                 needed. Compact list. */}}
+            <div class="result-row result-row-keep">
+              <span class="role-tag role-keep">KEEP</span>
+              <code class="path">{{.Keep.Path}}</code>
+              <span class="size muted">{{.Keep.SizeStr}}</span>
+            </div>
+            {{range .Remove}}
+            <label class="result-row result-row-remove">
+              <input type="checkbox" name="quarantine" value="{{.Path}}" checked>
+              <span class="role-tag role-remove">QUARANTINE</span>
+              <code class="path">{{.Path}}</code>
+              <span class="size muted">{{.SizeStr}}</span>
+            </label>
+            {{end}}
           {{end}}
         </div>
         {{end}}
@@ -83,6 +139,34 @@
         <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">Cancel</a>
       </div>
     </form>
+
+    <div id="lightbox" class="lightbox" hidden onclick="this.hidden=true; this.querySelector('img').removeAttribute('src');">
+      <img alt="">
+    </div>
+    <script>
+      // Vanilla click→lightbox. Picks up data-thumb-src from any .thumb-btn
+      // descendant of the results page. Re-attaches on every htmx swap.
+      (function () {
+        const lb = document.getElementById('lightbox');
+        const lbImg = lb && lb.querySelector('img');
+        if (!lb || !lbImg) return;
+        document.querySelectorAll('.thumb-btn').forEach(function (btn) {
+          btn.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            lbImg.src = btn.dataset.thumbSrc;
+            lbImg.alt = btn.dataset.thumbAlt || '';
+            lb.hidden = false;
+          });
+        });
+        document.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Escape' && !lb.hidden) {
+            lb.hidden = true;
+            lbImg.removeAttribute('src');
+          }
+        }, { once: false });
+      })();
+    </script>
 
   {{end}}
 </section>

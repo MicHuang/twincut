@@ -200,6 +200,9 @@ func appendCommonOptions(args []string, r *http.Request) []string {
 	if v := strings.TrimSpace(r.FormValue("ext")); v != "" {
 		args = append(args, "--ext", v)
 	}
+	if v := strings.TrimSpace(r.FormValue("size_pct")); v != "" {
+		args = append(args, "--size-pct", v)
+	}
 	return args
 }
 
