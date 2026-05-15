@@ -1,0 +1,88 @@
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Preview results</h2>
+    <p class="subtitle"><code>{{.SourcePath}}</code></p>
+  </header>
+
+  {{if .HasError}}
+    <div class="alert alert-error">
+      <strong>Error during preview:</strong> {{.ErrorMessage}}
+    </div>
+    <div class="form-actions">
+      <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">Back to form</a>
+    </div>
+  {{else if eq .NumGroups 0}}
+    <div class="alert alert-info">
+      <strong>No duplicates found.</strong> Nothing to do.
+    </div>
+    <div class="form-actions">
+      <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">Back to form</a>
+    </div>
+  {{else}}
+
+    <div class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-value">{{.NumGroups}}</div>
+        <div class="summary-label">duplicate group{{if ne .NumGroups 1}}s{{end}}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-value">{{.NumFiles}}</div>
+        <div class="summary-label">file{{if ne .NumFiles 1}}s{{end}} to quarantine</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-value">{{.BytesHuman}}</div>
+        <div class="summary-label">reclaimable</div>
+      </div>
+    </div>
+
+    {{if .NumWarnings}}
+    <details class="alert alert-warn">
+      <summary><strong>{{.NumWarnings}} warning{{if ne .NumWarnings 1}}s{{end}}</strong> during scan</summary>
+      <ul class="warn-list">
+        {{range .Warnings}}<li><code>{{.Code}}</code> · <span class="muted">{{.Path}}</span></li>{{end}}
+      </ul>
+    </details>
+    {{end}}
+
+    <form id="apply-form"
+          hx-post="/api/self-check/apply"
+          hx-target="#tab-content"
+          hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+      <input type="hidden" name="folder" value="{{.SourcePath}}">
+      <input type="hidden" name="preview_run_id" value="{{.RunID}}">
+
+      <div class="results-list">
+        {{range .Groups}}
+        <div class="result-group">
+          <div class="result-group-header">
+            <span class="badge badge-match">{{.MatchReason}}</span>
+            <span class="muted small">group {{.GroupID}} · hash <code class="hash">{{.Hash}}</code></span>
+          </div>
+
+          <div class="result-row result-row-keep">
+            <span class="role-tag role-keep">KEEP</span>
+            <code class="path">{{.Keep.Path}}</code>
+            <span class="size muted">{{.Keep.SizeStr}}</span>
+          </div>
+
+          {{range .Remove}}
+          <label class="result-row result-row-remove">
+            <input type="checkbox" name="quarantine" value="{{.Path}}" checked>
+            <span class="role-tag role-remove">QUARANTINE</span>
+            <code class="path">{{.Path}}</code>
+            <span class="size muted">{{.SizeStr}}</span>
+          </label>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+
+      <div class="form-actions form-actions-sticky">
+        <button type="submit" class="btn btn-primary">Apply ({{.NumFiles}} file{{if ne .NumFiles 1}}s{{end}})</button>
+        <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">Cancel</a>
+      </div>
+    </form>
+
+  {{end}}
+</section>

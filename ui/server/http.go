@@ -29,9 +29,10 @@ type Options struct {
 
 // Server is the long-lived HTTP layer.
 type Server struct {
-	opts Options
-	tmpl *template.Template
-	runs *RunManager
+	opts    Options
+	tmpl    *template.Template
+	runs    *RunManager
+	recents *RecentsStore
 }
 
 // New constructs a Server from the given options. Panics on template parse
@@ -46,7 +47,12 @@ func New(opts Options) *Server {
 	if err != nil {
 		panic("twincut-ui: run manager: " + err.Error())
 	}
-	return &Server{opts: opts, tmpl: tmpl, runs: rm}
+	return &Server{
+		opts:    opts,
+		tmpl:    tmpl,
+		runs:    rm,
+		recents: NewRecentsStore(opts.StateDir),
+	}
 }
 
 // Handler returns the root http.Handler.
@@ -58,17 +64,28 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.Handle("/static/", http.FileServer(http.FS(s.opts.Assets)))
 
-	// API: stage 3 surface. Stage 4 will add /api/runs/{id}/apply,
-	// /thumb, /fs, etc.
+	// Tab content (htmx loads these into #tab-content).
+	mux.HandleFunc("GET /tab/self-check", s.handleSelfCheckTab)
+	mux.HandleFunc("GET /tab/cross-check", s.handleTabPlaceholder("Cross-check"))
+	mux.HandleFunc("GET /tab/history", s.handleTabPlaceholder("History"))
+
+	// Self-check workflow endpoints.
+	mux.HandleFunc("POST /api/self-check/preview", s.handleSelfCheckPreview)
+	mux.HandleFunc("GET /api/self-check/results/{id}", s.handleSelfCheckResults)
+	mux.HandleFunc("POST /api/self-check/apply", s.handleSelfCheckApply)
+	mux.HandleFunc("GET /api/self-check/done/{id}", s.handleSelfCheckDone)
+
+	// Directory browser.
+	mux.HandleFunc("GET /fs/list", s.handleFsList)
+
+	// Generic run-management API + SSE.
 	mux.HandleFunc("POST /api/runs", s.handleStartRun)
 	mux.HandleFunc("GET /api/runs", s.handleListRuns)
 	mux.HandleFunc("GET /api/runs/{id}", s.handleGetRun)
 	mux.HandleFunc("POST /api/runs/{id}/cancel", s.handleCancelRun)
 	mux.HandleFunc("GET /sse/{id}", s.handleSSE)
 
-	// Debug surface — exists to verify the run manager + SSE plumbing
-	// end-to-end without a real workflow form. Slated for removal once
-	// stage 4 ships, but useful during development.
+	// Debug surface — kept for now; useful for raw event inspection.
 	mux.HandleFunc("GET /debug", s.handleDebug)
 	mux.HandleFunc("GET /debug/run/{id}", s.handleDebugRun)
 
@@ -84,8 +101,17 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// app.html boots the SPA shell and embeds the initial Self-check
+	// form. Subsequent navigation happens via htmx fragment swaps.
+	data := selfCheckFormData{}
+	if recents, err := s.recents.List(); err == nil {
+		data.Recents = recents
+		if len(recents) > 0 {
+			data.DefaultFolder = recents[0]
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "index.html", nil); err != nil {
+	if err := s.tmpl.ExecuteTemplate(w, "app.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
