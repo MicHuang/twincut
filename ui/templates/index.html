@@ -9,20 +9,22 @@
 <body>
   <main class="container">
     <header>
-      <h1>twincut <span class="badge">stage 2 skeleton</span></h1>
+      <h1>twincut <span class="badge">stage 3 wip</span></h1>
       <p class="subtitle">Local Web UI for the twincut media-deduplication tool.</p>
     </header>
 
     <section class="card">
       <h2>It works.</h2>
-      <p>The Go server is up, serving this page from the embedded filesystem. The launch / install / shutdown plumbing is wired. No actual workflows yet — those come in later stages.</p>
+      <p>The Go server is up, the run manager + SSE plumbing is wired, and <code>twincut.sh --json-events</code> can be spawned as a subprocess with its event stream fanned out over Server-Sent Events.</p>
+
+      <p>Try it on the <a href="/debug">debug page</a> — start a self-check on a folder and watch the events stream in.</p>
 
       <p class="muted">Health check: <a href="/healthz"><code>/healthz</code></a></p>
     </section>
 
     <section class="next">
-      <h3>Next: stage 3 — run manager + SSE</h3>
-      <p>The server will spawn <code>twincut.sh --json-events</code> as a subprocess and stream its NDJSON event stream over Server-Sent Events into this page.</p>
+      <h3>Next: stage 4 — Self-check workflow UI</h3>
+      <p>The form → preview → results → apply → done flow with grouped duplicate clusters and thumbnails.</p>
     </section>
   </main>
 </body>

@@ -30,10 +30,11 @@ var assets embed.FS
 
 func main() {
 	var (
-		port     = flag.Int("port", 7681, "HTTP port (falls back to a free port if taken)")
-		noOpen   = flag.Bool("no-open", false, "Do not open the browser on launch")
-		stateDir = flag.String("state-dir", "", "State directory (default ~/.twincut-ui)")
-		lang     = flag.String("lang", "", "Force language: en | zh-Hans (default: auto from Accept-Language)")
+		port        = flag.Int("port", 7681, "HTTP port (falls back to a free port if taken)")
+		noOpen      = flag.Bool("no-open", false, "Do not open the browser on launch")
+		stateDir    = flag.String("state-dir", "", "State directory (default ~/.twincut-ui)")
+		lang        = flag.String("lang", "", "Force language: en | zh-Hans (default: auto from Accept-Language)")
+		twincutBin  = flag.String("twincut-bin", "", "Path to twincut.sh (default: PATH lookup, then sibling of this binary)")
 	)
 	flag.Parse()
 
@@ -42,15 +43,22 @@ func main() {
 		log.Fatalf("state dir: %v", err)
 	}
 
+	twincutPath, err := server.LocateTwincut(*twincutBin)
+	if err != nil {
+		log.Fatalf("locate twincut.sh: %v\n  hint: pass --twincut-bin or set TWINCUT_BIN", err)
+	}
+	log.Printf("using twincut.sh: %s", twincutPath)
+
 	addr, listener, err := pickPort(*port)
 	if err != nil {
 		log.Fatalf("bind: %v", err)
 	}
 
 	srv := server.New(server.Options{
-		Assets:   assets,
-		StateDir: sd,
-		Lang:     *lang,
+		Assets:      assets,
+		StateDir:    sd,
+		Lang:        *lang,
+		TwincutPath: twincutPath,
 	})
 
 	httpSrv := &http.Server{

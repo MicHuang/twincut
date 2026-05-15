@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>twincut · run {{.RunID}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    .toolbar { display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0; }
+    .toolbar button { padding: 0.4rem 0.9rem; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+    .toolbar button.danger { background: #fdecea; color: #8a1c1c; border-color: #f5c6cb; }
+    .toolbar .meta { color: var(--muted); font-size: 0.85rem; margin-left: auto; }
+    pre.events { background: var(--code-bg); padding: 1rem; border-radius: 6px; max-height: 70vh; overflow: auto; font-size: 0.78rem; line-height: 1.5; margin: 0; }
+    .ev-line { display: block; padding: 1px 0; }
+    .ev-type { display: inline-block; min-width: 90px; font-weight: 600; }
+    .ev-run_start { color: #2c5cb8; }
+    .ev-run_end   { color: #2c5cb8; font-weight: 700; }
+    .ev-progress  { color: var(--muted); }
+    .ev-dup_group { color: #b87333; }
+    .ev-action    { color: #228b22; }
+    .ev-warn      { color: #c08400; }
+    .ev-error     { color: #b00020; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1><a href="/debug" style="text-decoration:none">← debug</a> · run <code>{{.RunID}}</code></h1>
+    </header>
+
+    <div class="toolbar">
+      <button id="cancel" class="danger" type="button">Cancel run</button>
+      <span class="meta" id="status">connecting…</span>
+    </div>
+
+    <pre class="events" id="events"></pre>
+  </main>
+
+  <script>
+    const runID = {{.RunID}};
+    const eventsEl = document.getElementById('events');
+    const statusEl = document.getElementById('status');
+    const cancelBtn = document.getElementById('cancel');
+
+    let count = 0;
+    const append = (ev) => {
+      count++;
+      let parsed;
+      try { parsed = JSON.parse(ev.data); } catch { parsed = { type: ev.event, data: ev.data }; }
+      const line = document.createElement('span');
+      line.className = `ev-line ev-${parsed.type || ev.event}`;
+      const summary = (() => {
+        switch (parsed.type) {
+          case 'run_start':   return `${parsed.mode} src=${parsed.source}`;
+          case 'progress':    return `${parsed.phase} ${parsed.done}/${parsed.total ?? '?'}`;
+          case 'dup_group':   return `g${parsed.group_id} ${parsed.match_reason} keep=${parsed.keep_path?.split('/').pop()} +${(parsed.remove?.length ?? (parsed.remove_path ? 1 : 0))} other`;
+          case 'action':      return `${parsed.kind} ${parsed.src?.split('/').pop()} ${parsed.reason || ''}`;
+          case 'warn':        return `${parsed.code} ${parsed.path?.split('/').pop() || ''}`;
+          case 'error':       return `${parsed.code} ${parsed.detail}`;
+          case 'run_end':     return `dupes=${parsed.dupes} moved=${parsed.moved} similar=${parsed.similar}`;
+          default:            return ev.data;
+        }
+      })();
+      line.innerHTML = `<span class="ev-type">${parsed.type || ev.event}</span> ${escapeHTML(summary)}`;
+      eventsEl.appendChild(line);
+      eventsEl.scrollTop = eventsEl.scrollHeight;
+      statusEl.textContent = `${count} events`;
+    };
+
+    const escapeHTML = (s) => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+    const es = new EventSource(`/sse/${runID}`);
+    es.onopen = () => { statusEl.textContent = `${count} events · live`; };
+    es.onerror = () => { statusEl.textContent = `${count} events · disconnected (will retry)`; };
+    ['run_start','run_end','progress','dup_group','action','warn','error'].forEach(t => {
+      es.addEventListener(t, append);
+    });
+
+    cancelBtn.addEventListener('click', async () => {
+      const res = await fetch(`/api/runs/${runID}/cancel`, { method: 'POST' });
+      const j = await res.json();
+      statusEl.textContent = j.cancelled ? 'cancel sent' : 'already finished';
+    });
+  </script>
+</body>
+</html>
