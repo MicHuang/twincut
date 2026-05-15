@@ -1,0 +1,90 @@
+/* twincut-ui — stage 2 baseline styles. Replaced/extended in later stages. */
+
+:root {
+  color-scheme: light dark;
+  --fg: #1a1a1a;
+  --muted: #6b6b76;
+  --bg: #ffffff;
+  --card: #f7f9fc;
+  --accent: #2c5cb8;
+  --accent-bg: #eef3ff;
+  --border: #e3e6ed;
+  --code-bg: #f0f1f5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e8eaed;
+    --muted: #9aa0a6;
+    --bg: #1a1d22;
+    --card: #232730;
+    --accent: #6ea0ff;
+    --accent-bg: #1e2a44;
+    --border: #2e333d;
+    --code-bg: #2a2e37;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  margin: 0;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.55;
+}
+
+.container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+header h1 { margin: 0 0 0.25rem; font-size: 1.6rem; font-weight: 600; }
+header .subtitle { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.card {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.card h2 { margin: 0 0 0.5rem; font-size: 1.15rem; font-weight: 600; }
+
+.next {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-bg);
+  border-radius: 0 6px 6px 0;
+}
+
+.next h3 { margin: 0 0 0.4rem; font-size: 0.95rem; font-weight: 600; }
+.next p { margin: 0; font-size: 0.9rem; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.88em;
+}
+
+a { color: var(--accent); }
+.muted { color: var(--muted); font-size: 0.88rem; }

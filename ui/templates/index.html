@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>twincut</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>twincut <span class="badge">stage 2 skeleton</span></h1>
+      <p class="subtitle">Local Web UI for the twincut media-deduplication tool.</p>
+    </header>
+
+    <section class="card">
+      <h2>It works.</h2>
+      <p>The Go server is up, serving this page from the embedded filesystem. The launch / install / shutdown plumbing is wired. No actual workflows yet — those come in later stages.</p>
+
+      <p class="muted">Health check: <a href="/healthz"><code>/healthz</code></a></p>
+    </section>
+
+    <section class="next">
+      <h3>Next: stage 3 — run manager + SSE</h3>
+      <p>The server will spawn <code>twincut.sh --json-events</code> as a subprocess and stream its NDJSON event stream over Server-Sent Events into this page.</p>
+    </section>
+  </main>
+</body>
+</html>
