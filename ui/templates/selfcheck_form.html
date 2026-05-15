@@ -1,0 +1,70 @@
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Self-check</h2>
+    <p class="subtitle">Find duplicates inside one folder. Hash-only by default. Always previews before moving anything.</p>
+  </header>
+
+  <form id="selfcheck-form"
+        hx-post="/api/self-check/preview"
+        hx-target="#tab-content"
+        hx-swap="innerHTML"
+        hx-disabled-elt="find button">
+
+    <label class="field">
+      <span class="field-label">Folder to scan</span>
+      <div class="folder-picker">
+        <input type="text" name="folder" id="folder-input"
+               placeholder="/path/to/your/photos"
+               value="{{.DefaultFolder}}"
+               autocomplete="off"
+               required>
+        <button type="button" class="btn btn-secondary"
+                hx-get="/fs/list?path={{.DefaultFolder}}"
+                hx-target="#folder-tree"
+                hx-swap="innerHTML">
+          Browse
+        </button>
+      </div>
+      {{if .Recents}}
+      <div class="recents">
+        <span class="muted">Recent:</span>
+        {{range .Recents}}
+          <button type="button" class="chip" data-path="{{.}}"
+                  onclick="document.getElementById('folder-input').value='{{.}}'">{{.}}</button>
+        {{end}}
+      </div>
+      {{end}}
+      <div id="folder-tree"></div>
+    </label>
+
+    <details class="advanced">
+      <summary>Advanced options</summary>
+      <div class="advanced-grid">
+        <label class="field">
+          <span class="field-label">Hash algorithm</span>
+          <select name="algo">
+            <option value="md5" selected>md5 (faster)</option>
+            <option value="sha1">sha1</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Min size</span>
+          <input type="text" name="min_size" value="0k" placeholder="e.g. 300k or 1M">
+        </label>
+        <label class="field field-wide">
+          <span class="field-label">Extensions (comma-separated, blank = default)</span>
+          <input type="text" name="ext" placeholder="jpg,png,mp4,…">
+        </label>
+        <label class="field">
+          <span class="field-label">Also flag similar videos</span>
+          <input type="checkbox" name="include_similar_video" value="1">
+        </label>
+      </div>
+    </details>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Preview</button>
+      <p class="muted-inline">Preview is a dry-run. Nothing is moved until you click Apply on the next screen.</p>
+    </div>
+  </form>
+</section>

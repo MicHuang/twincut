@@ -153,9 +153,74 @@ THUMB_CONFIRM_FILE=""
 # Mode flag
 DO_THUMB=false
 
+# Web UI integration: NDJSON event stream + per-file exclusion
+JSON_EVENTS=false
+EXCLUDE_PATHS=()
+
 # ------------------------------ Small helpers --------------------------------
-die(){  echo "ERROR: $*" >&2; exit 2; }   # usage / arg errors
-die3(){ echo "ERROR: $*" >&2; exit 3; }   # runtime errors
+# JSON string escaper. Handles backslash, quote, control chars, newline, tab,
+# carriage return. Output is bare (no surrounding quotes) so callers can
+# compose object literals.
+json_escape(){
+  local s="${1-}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\b'/\\b}"
+  s="${s//$'\f'/\\f}"
+  printf '%s' "$s"
+}
+
+# Emit a single NDJSON event line on stdout if --json-events is enabled.
+# Usage: emit_event TYPE [k=v ...]
+#   v starts with @ → raw JSON value (numbers, bools, nested literals)
+#   otherwise        → JSON-escaped string
+# Adds run_id and ts automatically.
+emit_event(){
+  $JSON_EVENTS || return 0
+  local type="$1"; shift
+  local out='{"type":"'"$type"'","ts":'"$(date -u +%s)"
+  if [[ -n "${RUN_ID:-}" ]]; then out+=',"run_id":"'"$(json_escape "$RUN_ID")"'"'; fi
+  local kv k v
+  for kv in "$@"; do
+    k="${kv%%=*}"; v="${kv#*=}"
+    if [[ "$v" == @* ]]; then
+      out+=',"'"$k"'":'"${v#@}"
+    else
+      out+=',"'"$k"'":"'"$(json_escape "$v")"'"'
+    fi
+  done
+  out+='}'
+  # fd 3 is the saved real stdout when --json-events is active (set in the
+  # CLI-parse epilogue). Falls back to current stdout when fd 3 is closed
+  # so unit tests can run emit_event without the redirect dance.
+  if { true >&3; } 2>/dev/null; then
+    printf '%s\n' "$out" >&3
+  else
+    printf '%s\n' "$out"
+  fi
+}
+
+# True if path was passed via --exclude-path. Compared by exact string match
+# after trailing-slash normalization.
+is_excluded(){
+  local p="${1%/}" e
+  for e in ${EXCLUDE_PATHS[@]+"${EXCLUDE_PATHS[@]}"}; do
+    [[ "${e%/}" == "$p" ]] && return 0
+  done
+  return 1
+}
+
+die(){
+  emit_event error code=usage_error detail="$*"
+  echo "ERROR: $*" >&2; exit 2;
+}
+die3(){
+  emit_event error code=runtime_error detail="$*"
+  echo "ERROR: $*" >&2; exit 3;
+}
 mtime(){ stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
 fsize(){ stat -f %z "$1" 2>/dev/null || stat -c %s "$1" 2>/dev/null || echo 0; }
 
@@ -171,7 +236,7 @@ same_inode(){
 # ------------------------------ Manifest -------------------------------------
 init_manifest(){
   $MANIFEST_INITED && return 0
-  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  RUN_ID="${TWINCUT_RUN_ID:-${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
   mkdir -p "$QUAR_DIR" || die3 "cannot create quarantine dir: $QUAR_DIR"
   local suffix=""
   $DRY_RUN && suffix=".dryrun"
@@ -203,12 +268,21 @@ manifest_append(){
 # Returns 0 on action taken, 1 on skip (e.g. hardlink), 2 on error.
 qmove(){
   local src="$1" dir="$2" matched="$3" hh="$4" dec="$5"
+  if is_excluded "$src"; then
+    emit_event action kind=skip src="$src" reason=excluded decision="$dec"
+    return 1
+  fi
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
+    emit_event action kind=skip src="$src" matched="$matched" reason=hardlink decision="$dec"
     return 1
   fi
-  mkdir -p "$dir" || { echo "ERROR: mkdir $dir failed" >&2; return 2; }
+  mkdir -p "$dir" || {
+    echo "ERROR: mkdir $dir failed" >&2
+    emit_event warn code=io_error path="$dir" detail="mkdir failed"
+    return 2
+  }
   local base dest i=1
   base="$(basename -- "$src")"
   dest="$dir/$base"
@@ -219,8 +293,14 @@ qmove(){
   done
   if $DRY_RUN; then
     echo "[DRY] mv \"$src\" \"$dest\""
+    emit_event action kind=move src="$src" dst="$dest" dry_run=@true matched="$matched" decision="$dec"
   else
-    mv -- "$src" "$dest" || { echo "ERROR: mv failed: $src -> $dest" >&2; return 2; }
+    mv -- "$src" "$dest" || {
+      echo "ERROR: mv failed: $src -> $dest" >&2
+      emit_event warn code=io_error path="$src" detail="mv failed -> $dest"
+      return 2
+    }
+    emit_event action kind=move src="$src" dst="$dest" dry_run=@false matched="$matched" decision="$dec"
   fi
   manifest_append "$src" "$dest" "$matched" "$hh" "$dec"
   return 0
@@ -229,15 +309,26 @@ qmove(){
 # qdelete SRC MATCHED HASH DECISION
 qdelete(){
   local src="$1" matched="$2" hh="$3" dec="$4"
+  if is_excluded "$src"; then
+    emit_event action kind=skip src="$src" reason=excluded decision="$dec"
+    return 1
+  fi
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
+    emit_event action kind=skip src="$src" matched="$matched" reason=hardlink decision="$dec"
     return 1
   fi
   if $DRY_RUN; then
     echo "[DRY] rm \"$src\""
+    emit_event action kind=delete src="$src" dry_run=@true matched="$matched" decision="$dec"
   else
-    rm -f -- "$src" || { echo "ERROR: rm failed: $src" >&2; return 2; }
+    rm -f -- "$src" || {
+      echo "ERROR: rm failed: $src" >&2
+      emit_event warn code=io_error path="$src" detail="rm failed"
+      return 2
+    }
+    emit_event action kind=delete src="$src" dry_run=@false matched="$matched" decision="$dec"
   fi
   manifest_append "$src" "" "$matched" "$hh" "${dec}:deleted"
   return 0
@@ -396,6 +487,7 @@ ensure_video_meta_index(){
 # One place to interpret BAD_VIDEO action
 handle_bad_video(){
   local f="$1"
+  emit_event warn code=bad_video path="$f" detail="ffprobe failed or zero metadata"
   case "$BAD_VIDEO_ACTION" in
     list)   echo "[BAD-VIDEO] $f" ;;
     delete) qdelete "$f" "" "" "bad_video" ;;
@@ -407,6 +499,7 @@ handle_bad_video(){
 # AppleDouble dispatcher (centralized so we can manifest it)
 handle_appledouble(){
   local f="$1"
+  emit_event warn code=appledouble path="$f" detail="AppleDouble sidecar"
   case "$APPLEDOUBLE_ACTION" in
     list)   echo "[APPLEDOUBLE] $f" ;;
     delete) qdelete "$f" "" "" "appledouble" ;;
@@ -467,6 +560,17 @@ Self-check (find duplicates within a single folder, role-agnostic):
 Restore mode:
   $(basename "$0") --restore <manifest.tsv> [--restore-dry-run]
                    [--quarantine <DIR>]   # only needed if manifest paths are relative
+
+Web UI integration (intended for the twincut-ui Go server, but usable manually):
+  --json-events           Emit one NDJSON event per line on stdout for the
+                          run lifecycle (run_start, progress, dup_group,
+                          action, warn, error, run_end). Existing human-
+                          readable output is routed to stderr so stdout
+                          stays a clean event stream. Set TWINCUT_RUN_ID
+                          in the env to control the run_id.
+  --exclude-path <PATH>   Skip this exact path when moving/deleting (the
+                          UI uses this to honor per-file unchecks). Repeat
+                          the flag for multiple paths.
 
 Exit codes:
   0  normal completion
@@ -631,6 +735,9 @@ while [[ $# -gt 0 ]]; do
 
     --exit-code-on-dupes) EXIT_CODE_ON_DUPES=true; shift;;
 
+    --json-events) JSON_EVENTS=true; shift;;
+    --exclude-path) EXCLUDE_PATHS+=("${2:-}"); shift 2;;
+
     --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
     --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
 
@@ -647,6 +754,16 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1" >&2; usage 2;;
   esac
 done
+
+# --json-events output discipline:
+#   stdout becomes the pure NDJSON event stream; existing human-readable
+#   chatter is re-routed to stderr (where the Web UI captures it as the
+#   raw log panel). Implementation: save real stdout as fd 3, redirect
+#   fd 1 to fd 2. emit_event writes to fd 3.
+if $JSON_EVENTS; then
+  exec 3>&1 1>&2
+  RUN_ID="${TWINCUT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+fi
 
 # Apply symlink policy
 if $FOLLOW_SYMLINKS; then FIND_FOLLOW="-L"; else FIND_FOLLOW=""; fi
@@ -717,6 +834,36 @@ fi
 
 # Re-apply strict thresholds after CLI is parsed (parser runs after initial defaults)
 if $VIDEO_FAST_STRICT; then SIZE_PCT=0.2; DUR_SEC=0.15; fi
+
+# Resolved-mode emission for the Web UI. One concise event with the active
+# mode + the most relevant flags. Goes out before any disk-heavy work.
+if $JSON_EVENTS; then
+  _mode="cross_check"
+  $SELF_CHECK_MODE && _mode="self_check"
+  if ! $SELF_CHECK_MODE; then
+    if $DO_SOURCE_SELF && ! $DO_CROSS; then _mode="source_self"; fi
+    if $DO_BACKUP_SELF && ! $DO_CROSS; then _mode="backup_self"; fi
+    $DO_THUMB && [[ "$_mode" == "cross_check" ]] && _mode="thumbnail_detect"
+  fi
+  _bk_json="["
+  _first=true
+  for _b in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
+    $_first || _bk_json+=","
+    _bk_json+='"'"$(json_escape "$_b")"'"'
+    _first=false
+  done
+  _bk_json+="]"
+  emit_event run_start mode="$_mode" \
+    source="${SOURCE_DIR:-}" \
+    backups=@"$_bk_json" \
+    quarantine="$QUAR_DIR" \
+    algo="$ALGO" \
+    min_size="$MIN_SIZE" \
+    dry_run=@"$DRY_RUN" \
+    video_fast=@"$VIDEO_FAST" \
+    video_fast_strict=@"$VIDEO_FAST_STRICT" \
+    exact=@"$EXACT"
+fi
 
 # Early rebuild of video-meta if requested (non-destructive; honored even in dry-run)
 if $REBUILD_VMETA; then
@@ -997,6 +1144,19 @@ while IFS= read -r -d '' f; do
     if [[ -n "$MATCH_LINE" ]]; then
       MATCHED_PATH="${MATCH_LINE#*$'\t'}"
       DUPES=$((DUPES+1))
+      _sz_keep="$(fsize "$MATCHED_PATH")"; _mt_keep="$(mtime "$MATCHED_PATH")"
+      _sz_rm="$(fsize "$f")"; _mt_rm="$(mtime "$f")"
+      emit_event dup_group \
+        group_id=@"$DUPES" \
+        match_reason=md5 \
+        algo="$ALGO" \
+        hash="$H" \
+        keep_path="$MATCHED_PATH" \
+        keep_size=@"${_sz_keep:-0}" \
+        keep_mtime=@"${_mt_keep:-0}" \
+        remove_path="$f" \
+        remove_size=@"${_sz_rm:-0}" \
+        remove_mtime=@"${_mt_rm:-0}"
       case "$DEST_ACTION" in
         list) echo "[DUPE] $f  ~~  $MATCHED_PATH" ;;
         delete)
@@ -1123,7 +1283,10 @@ while IFS= read -r -d '' f; do
     fi
   fi
 
-  (( TOTAL % PROG_STEP == 0 )) && printf "\r[*] Scanned %-7d / %s | dupes: %-7d" "$TOTAL" "$TOTAL_SRC" "$DUPES"
+  if (( TOTAL % PROG_STEP == 0 )); then
+    printf "\r[*] Scanned %-7d / %s | dupes: %-7d" "$TOTAL" "$TOTAL_SRC" "$DUPES"
+    emit_event progress phase=scan done=@"$TOTAL" total=@"${TOTAL_SRC:-0}" current_path="$f"
+  fi
 done < <(find $FIND_FOLLOW "$SOURCE_DIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
 echo
 fi
@@ -1150,6 +1313,7 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
     echo "[*] Source-internal duplicate hashes: $SDUP_COUNT"
 
     if [[ "$SDUP_COUNT" -gt 0 ]]; then
+      _GROUP_ID=0
       while IFS= read -r sh; do
         SMAP_FILE="$(mktemp)"
         awk -F '\t' -v hh="$sh" '$1==hh{print $2}' "$SRC_FILTERED" > "$SMAP_FILE"
@@ -1163,6 +1327,31 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
             KEEP_SPATH="$sp"; KEEP_SMT="$smt"
           fi
         done < "$SMAP_FILE"
+
+        _GROUP_ID=$((_GROUP_ID+1))
+        if $JSON_EVENTS; then
+          # Build JSON array of remove[] entries (one per non-keep file)
+          _rm_json="["
+          _rm_first=true
+          while IFS= read -r _rp; do
+            [[ -z "$_rp" || "$_rp" == "$KEEP_SPATH" ]] && continue
+            _rsz="$(fsize "$_rp")"; _rmt="$(mtime "$_rp")"
+            $_rm_first || _rm_json+=","
+            _rm_json+='{"path":"'"$(json_escape "$_rp")"'","size":'"${_rsz:-0}"',"mtime":'"${_rmt:-0}"'}'
+            _rm_first=false
+          done < "$SMAP_FILE"
+          _rm_json+="]"
+          _ksz="$(fsize "$KEEP_SPATH")"; _kmt="$(mtime "$KEEP_SPATH")"
+          emit_event dup_group \
+            group_id=@"$_GROUP_ID" \
+            match_reason=md5 \
+            algo="$ALGO" \
+            hash="$sh" \
+            keep_path="$KEEP_SPATH" \
+            keep_size=@"${_ksz:-0}" \
+            keep_mtime=@"${_kmt:-0}" \
+            remove=@"$_rm_json"
+        fi
 
         # Process all except KEEP_SPATH
         while IFS= read -r sdp; do
@@ -1228,6 +1417,19 @@ if $SELF_CHECK_MODE && $MANIFEST_INITED && ! $DRY_RUN && [[ $MOVED -gt 0 ]]; the
 fi
 echo "===================="
 $DO_THUMB && thumb_print_summary
+
+emit_event run_end \
+  total=@"${TOTAL:-0}" \
+  dupes=@"${DUPES:-0}" \
+  moved=@"${MOVED:-0}" \
+  deleted=@"${DELETED:-0}" \
+  similar=@"${SIMILAR_CNT:-0}" \
+  source_internal_dupes=@"${SRC_DUPE_CNT:-0}" \
+  backup_internal_dupes=@"${BK_DUPE_CNT:-0}" \
+  skipped_hardlink=@"${SKIPPED_HARDLINK:-0}" \
+  skipped_symlink=@"${SKIPPED_SYMLINK:-0}" \
+  manifest_path="${MANIFEST_FILE:-}" \
+  cancelled=@false
 
 # Exit code policy:
 #   0 = normal

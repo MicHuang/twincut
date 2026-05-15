@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>twincut · debug</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    .debug-form { display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap; }
+    .debug-form input, .debug-form select { padding: 0.5rem; font: inherit; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+    .debug-form input[type=text] { flex: 1; min-width: 240px; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+    .debug-form button { padding: 0.5rem 1rem; background: var(--accent); color: white; border: 0; border-radius: 6px; cursor: pointer; font: inherit; }
+    .runs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 1rem; }
+    .runs-table th, .runs-table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+    .runs-table th { font-weight: 600; color: var(--muted); font-size: 0.75rem; text-transform: uppercase; }
+    .status { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+    .status.running { background: #fff3cd; color: #856404; }
+    .status.succeeded { background: #d4edda; color: #155724; }
+    .status.failed { background: #f8d7da; color: #721c24; }
+    .status.cancelled { background: #e2e3e5; color: #383d41; }
+    .err { color: #b00020; margin-top: 0.5rem; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>twincut <span class="badge">debug</span></h1>
+      <p class="subtitle">Run-manager + SSE smoke surface. Removed when stage 4 (real workflow forms) lands.</p>
+      <p class="muted">twincut.sh: <code>{{.TwincutPath}}</code></p>
+    </header>
+
+    <section class="card">
+      <h2>Start a run</h2>
+      <p class="muted">Pass the same args you would on the CLI (without <code>--json-events</code>; that's added automatically).</p>
+      <form class="debug-form" id="start-form">
+        <select name="preset" id="preset">
+          <option value="self-check-dryrun">self-check --dry-run</option>
+          <option value="self-check-apply">self-check --assume-yes (apply)</option>
+          <option value="custom">custom args</option>
+        </select>
+        <input type="text" name="folder" id="folder" placeholder="/path/to/folder (or full args for 'custom')" required>
+        <button type="submit">Start</button>
+      </form>
+      <div class="err" id="err"></div>
+    </section>
+
+    <section class="card">
+      <h2>Runs</h2>
+      {{if .Runs}}
+      <table class="runs-table">
+        <thead>
+          <tr><th>Started</th><th>Mode</th><th>Status</th><th>Events</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {{range .Runs}}
+          <tr>
+            <td><code>{{.StartedAt.Format "15:04:05"}}</code></td>
+            <td>{{.Mode}}</td>
+            <td><span class="status {{.Status}}">{{.Status}}</span></td>
+            <td>{{.NumEvents}}</td>
+            <td><a href="/debug/run/{{.ID}}">stream →</a></td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      {{else}}
+      <p class="muted">No runs yet. Start one above.</p>
+      {{end}}
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('start-form');
+    const errEl = document.getElementById('err');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errEl.textContent = '';
+      const preset = document.getElementById('preset').value;
+      const value = document.getElementById('folder').value.trim();
+      let args;
+      switch (preset) {
+        case 'self-check-dryrun':
+          args = ['--self-check', value, '--dry-run'];
+          break;
+        case 'self-check-apply':
+          args = ['--self-check', value, '--assume-yes'];
+          break;
+        default:
+          // tokenize on whitespace; quoted args not supported (debug only)
+          args = value.split(/\s+/).filter(Boolean);
+      }
+      try {
+        const res = await fetch('/api/runs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: preset, args })
+        });
+        if (!res.ok) {
+          errEl.textContent = `HTTP ${res.status}: ${await res.text()}`;
+          return;
+        }
+        const run = await res.json();
+        window.location.href = `/debug/run/${run.id}`;
+      } catch (e) {
+        errEl.textContent = String(e);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<div class="dir-listing">
+  {{if .Roots}}
+    <p class="muted small">Pick a starting location:</p>
+    {{range .Roots}}
+      <button type="button" class="dir-entry"
+              hx-get="/fs/list?path={{.Path}}"
+              hx-target="#folder-tree"
+              hx-swap="innerHTML">
+        📂 {{.Name}} <span class="muted small">({{.Path}})</span>
+      </button>
+    {{end}}
+  {{else}}
+    <div class="dir-listing-header">
+      <code class="dir-path">{{.Path}}</code>
+      <div class="dir-actions">
+        {{if .Parent}}
+          <button type="button" class="btn btn-tertiary"
+                  hx-get="/fs/list?path={{.Parent}}"
+                  hx-target="#folder-tree"
+                  hx-swap="innerHTML">↑ up</button>
+        {{end}}
+        <button type="button" class="btn btn-secondary"
+                onclick="document.getElementById('folder-input').value='{{.Path}}'; document.getElementById('folder-tree').innerHTML='';">
+          Use this folder
+        </button>
+      </div>
+    </div>
+    <div class="dir-entries">
+      {{range .Entries}}
+        {{if not .Hidden}}
+          <button type="button" class="dir-entry"
+                  hx-get="/fs/list?path={{.Path}}"
+                  hx-target="#folder-tree"
+                  hx-swap="innerHTML">
+            📁 {{.Name}}
+          </button>
+        {{end}}
+      {{else}}
+        <p class="muted small">No subdirectories.</p>
+      {{end}}
+    </div>
+  {{end}}
+</div>

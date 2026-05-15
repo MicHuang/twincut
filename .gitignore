@@ -1,1 +1,5 @@
 .claude/
+.superpowers/
+
+# Built Go binary (rebuild via `make build`)
+bin/twincut-ui

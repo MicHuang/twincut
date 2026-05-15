@@ -1,0 +1,39 @@
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Done</h2>
+    <p class="subtitle"><code>{{.SourcePath}}</code></p>
+  </header>
+
+  {{if .HasError}}
+    <div class="alert alert-error">
+      <strong>Apply failed:</strong> {{.ErrorMessage}}
+    </div>
+  {{else if .Cancelled}}
+    <div class="alert alert-warn">
+      <strong>Cancelled.</strong> {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}} were moved before you stopped.
+      You can use Restore from History to roll those back.
+    </div>
+  {{else}}
+    <div class="alert alert-success">
+      <strong>Quarantined {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}.</strong>
+      {{if .ManifestPath}}
+        <br><span class="muted small">Manifest: <code>{{.ManifestPath}}</code></span>
+        <br><span class="muted small">Roll back via History (when stage 6 lands) or:
+          <code>twincut --restore "{{.ManifestPath}}"</code></span>
+      {{end}}
+    </div>
+  {{end}}
+
+  {{if .NumWarnings}}
+  <details class="alert alert-warn">
+    <summary><strong>{{.NumWarnings}} warning{{if ne .NumWarnings 1}}s{{end}}</strong></summary>
+    <ul class="warn-list">
+      {{range .Warnings}}<li><code>{{.Code}}</code> · <span class="muted">{{.Path}}</span></li>{{end}}
+    </ul>
+  </details>
+  {{end}}
+
+  <div class="form-actions">
+    <a href="#" class="btn btn-primary" hx-get="/tab/self-check" hx-target="#tab-content">Run another scan</a>
+  </div>
+</section>
