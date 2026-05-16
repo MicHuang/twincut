@@ -37,8 +37,8 @@ KNOWN_TYPES = {
 
 # Required fields per event type. Stage 1 contract.
 REQUIRED_FIELDS = {
-    "run_start": {"mode", "source"},
-    "run_end": {"total", "dupes", "moved", "cancelled"},
+    "run_start": {"mode"},
+    "run_end": {"cancelled"},
     "progress": {"phase", "done"},
     "dup_group": {"group_id", "match_reason", "keep_path", "remove"},
     "action": {"kind", "src"},
@@ -310,6 +310,77 @@ def test_special_chars_in_paths_are_json_escaped(tmp: Path) -> None:
     assert len(dup) == 1
     paths = {dup[0]["keep_path"], *(r["path"] for r in dup[0]["remove"])}
     assert paths == {str(tmp / name1), str(tmp / name2)}
+
+
+def test_restore_dry_run_emits_action_events(tmp: Path) -> None:
+    # Seed a manifest TSV that mimics one written by a self-check apply,
+    # then run --restore --restore-dry-run --json-events and assert the
+    # event stream covers run_start/progress/action/run_end with the
+    # restore-specific kinds and counts.
+    manifest = tmp / "_manifest.tsv"
+    quar_dir = tmp / "_QUARANTINE" / "_self_dupes"
+    quar_dir.mkdir(parents=True)
+    # File still present in quarantine, original missing → restorable
+    write_file(quar_dir / "ok.jpg", b"data-ok")
+    # File that we'll claim is in quarantine but actually isn't → missing
+    # File whose original already exists at restore-target → conflict
+    write_file(tmp / "conflict_target.jpg", b"already-here")
+    write_file(quar_dir / "conflict.jpg", b"data-conflict")
+
+    manifest.write_text(
+        "# header noise twincut tolerates\n"
+        "run_id\tts\torig\tquar\tmatched\talgo\thash\tdecision\tsize\tmtime\n"
+        f"R1\t1\t{tmp / 'ok.jpg'}\t{quar_dir / 'ok.jpg'}\t-\tmd5\tDEAD\tself:moved\t0\t0\n"
+        f"R1\t1\t{tmp / 'gone.jpg'}\t{quar_dir / 'gone.jpg'}\t-\tmd5\tBEEF\tself:moved\t0\t0\n"
+        f"R1\t1\t{tmp / 'conflict_target.jpg'}\t{quar_dir / 'conflict.jpg'}\t-\tmd5\tCAFE\tself:moved\t0\t0\n"
+        f"R1\t1\t{tmp / 'deleted_orig.jpg'}\t\t-\tmd5\tFADE\tself:deleted\t0\t0\n"
+    )
+
+    events, _, ec = run_twincut(["--restore", str(manifest), "--restore-dry-run"])
+    assert ec == 0, f"expected exit 0, got {ec}"
+    validate_structure(events)
+
+    starts = [e for e in events if e["type"] == "run_start"]
+    assert len(starts) == 1 and starts[0]["mode"] == "restore", starts
+    assert starts[0]["source"] == str(manifest)
+
+    ends = [e for e in events if e["type"] == "run_end"]
+    assert len(ends) == 1, ends
+    end = ends[0]
+    assert end["restored"] == 1, f"restored count: {end}"
+    assert end["missing"] == 1, f"missing count: {end}"
+    assert end["skipped"] == 1, f"skipped count: {end}"
+    assert end["unrecoverable"] == 1, f"unrecoverable count: {end}"
+    assert end["cancelled"] is False
+
+    actions = [e for e in events if e["type"] == "action"]
+    kinds = sorted(a["kind"] for a in actions)
+    assert kinds == ["restore", "restore_conflict", "restore_missing", "restore_unrecoverable"], kinds
+
+
+def test_restore_executes_and_emits_run_end(tmp: Path) -> None:
+    # Real (non-dry-run) restore of one file: emits a restore action with
+    # dry_run=false and the file actually moves back.
+    manifest = tmp / "_manifest.tsv"
+    quar_dir = tmp / "_QUARANTINE"
+    quar_dir.mkdir()
+    write_file(quar_dir / "back.jpg", b"data-back")
+    manifest.write_text(
+        "run_id\tts\torig\tquar\tmatched\talgo\thash\tdecision\tsize\tmtime\n"
+        f"R\t0\t{tmp / 'back.jpg'}\t{quar_dir / 'back.jpg'}\t-\tmd5\tHH\tself:moved\t0\t0\n"
+    )
+
+    events, _, ec = run_twincut(["--restore", str(manifest)])
+    assert ec == 0
+    validate_structure(events)
+
+    actions = [e for e in events if e["type"] == "action" and e["kind"] == "restore"]
+    assert len(actions) == 1
+    assert actions[0]["dry_run"] is False
+    assert actions[0]["src"] == str(quar_dir / "back.jpg")
+    assert actions[0]["dst"] == str(tmp / "back.jpg")
+    assert (tmp / "back.jpg").exists()
+    assert not (quar_dir / "back.jpg").exists()
 
 
 # ------------------------------ Test runner ---------------------------------

@@ -702,56 +702,80 @@ do_restore(){
   local already_done=""
   [[ -f "$done_marker" ]] && already_done="$(cat "$done_marker")"
 
+  emit_event run_start mode=restore source="$mf"
+
+  # Count restorable rows for the progress total. Cheap upfront walk.
+  local total=0
+  while IFS=$'\t' read -r run_id _rest; do
+    [[ -z "${run_id:-}" ]] && continue
+    [[ "$run_id" == "run_id" ]] && continue
+    [[ "${run_id:0:1}" == "#" ]] && continue
+    total=$((total+1))
+  done < "$mf"
+
   echo "[*] Restoring from manifest: $mf"
   $RESTORE_DRY_RUN && echo "[*] (restore dry-run; no files will move)"
 
-  # Skip comment lines and the header row.
-  while IFS=$'\t' read -r run_id ts orig quar matched algo hh dec sz mt; do
+  local seen=0
+  # Use raw-line read + cut to correctly handle empty fields (e.g. empty quar
+  # for :deleted rows) since bash IFS=$'\t' collapses consecutive tab chars.
+  while IFS= read -r _raw_line; do
+    local run_id; run_id="$(printf '%s' "$_raw_line" | cut -f1)"
     [[ -z "${run_id:-}" ]] && continue
-    [[ "$run_id" == "run_id" ]] && continue            # header
-    [[ "${run_id:0:1}" == "#" ]] && continue           # comment
+    [[ "$run_id" == "run_id" ]] && continue
+    [[ "${run_id:0:1}" == "#" ]] && continue
 
-    # Skip rows already restored in a prior partial run
+    local orig; orig="$(printf '%s' "$_raw_line" | cut -f3)"
+    local quar; quar="$(printf '%s' "$_raw_line" | cut -f4)"
+    local dec;  dec="$(printf '%s' "$_raw_line" | cut -f8)"
+
     if [[ -n "$already_done" ]] && grep -Fqx -- "$orig" <<<"$already_done"; then
       continue
     fi
 
+    seen=$((seen+1))
+    emit_event progress phase=restore done=@"$seen" total=@"$total" current_path="$orig"
+
     if [[ "$dec" == *":deleted" ]]; then
       echo "[unrecoverable] deleted: $orig"
+      emit_event action kind=restore_unrecoverable src="$orig" dst="" dry_run=@"$RESTORE_DRY_RUN"
       unrecoverable=$((unrecoverable+1))
       continue
     fi
 
-    if [[ -z "$quar" ]]; then
-      echo "[skip] no quarantine path recorded: $orig"
-      missing=$((missing+1))
-      continue
-    fi
-
-    if [[ ! -e "$quar" ]]; then
-      echo "[missing] quarantine file gone: $quar"
+    if [[ -z "$quar" || ! -e "$quar" ]]; then
+      if [[ -z "$quar" ]]; then
+        echo "[skip] no quarantine path recorded: $orig"
+      else
+        echo "[missing] quarantine file gone: $quar"
+      fi
+      emit_event action kind=restore_missing src="$quar" dst="$orig" dry_run=@"$RESTORE_DRY_RUN"
       missing=$((missing+1))
       continue
     fi
 
     if [[ -e "$orig" ]]; then
       echo "[conflict] original exists, skipping: $orig"
+      emit_event action kind=restore_conflict src="$quar" dst="$orig" dry_run=@"$RESTORE_DRY_RUN"
       skipped_exists=$((skipped_exists+1))
       continue
     fi
 
     if $RESTORE_DRY_RUN; then
       echo "[DRY] mv \"$quar\" \"$orig\""
+      emit_event action kind=restore src="$quar" dst="$orig" dry_run=@true
       restored=$((restored+1))
       continue
     fi
 
     mkdir -p "$(dirname -- "$orig")" || { errors=$((errors+1)); continue; }
     if mv -- "$quar" "$orig"; then
+      emit_event action kind=restore src="$quar" dst="$orig" dry_run=@false
       restored=$((restored+1))
       printf '%s\n' "$orig" >> "$done_marker"
     else
       echo "ERROR: mv failed: $quar -> $orig" >&2
+      emit_event error code=mv_failed detail="$quar -> $orig"
       errors=$((errors+1))
     fi
   done < "$mf"
@@ -763,6 +787,16 @@ do_restore(){
   echo "Unrecoverable:   $unrecoverable"
   echo "Errors:          $errors"
   echo "==========================="
+
+  emit_event run_end \
+    restored=@"$restored" \
+    skipped=@"$skipped_exists" \
+    missing=@"$missing" \
+    unrecoverable=@"$unrecoverable" \
+    errors=@"$errors" \
+    manifest_path="$mf" \
+    cancelled=@false
+
   if [[ "$errors" -gt 0 ]]; then exit 3; fi
   exit 0
 }
