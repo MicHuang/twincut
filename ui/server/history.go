@@ -34,7 +34,7 @@ func (s *Server) handleHistoryTab(w http.ResponseWriter, _ *http.Request) {
 type HistoryEntry struct {
 	RunID        string
 	Timestamp    int64
-	Mode         string // run_start.mode (always "self_check_apply" in v1)
+	Mode         string // canonical workflow: "self_check" or "cross_check"
 	Folder       string // run_start.source
 	ManifestPath string // run_end.manifest_path
 	MovedCount   int
@@ -121,8 +121,14 @@ func loadHistoryEntry(path string) (HistoryEntry, bool, error) {
 		return HistoryEntry{}, false, nil
 	}
 	mode, _ := start["mode"].(string)
-	// Only surface apply runs; preview runs have nothing to restore.
-	if mode != "self_check_apply" {
+	// Only surface self-check and cross-check apply runs.
+	// Bash emits mode="self_check" or "cross_check" for both preview and
+	// apply; the dry_run flag discriminates. Restore runs (mode="restore")
+	// are filtered too — they have nothing further to restore.
+	if mode != "self_check" && mode != "cross_check" {
+		return HistoryEntry{}, false, nil
+	}
+	if dry, _ := start["dry_run"].(bool); dry {
 		return HistoryEntry{}, false, nil
 	}
 	moved := jsonInt(end["moved"])

@@ -7,7 +7,7 @@
 
   {{if not .Entries}}
     <div class="alert alert-info">
-      <strong>No history yet.</strong> Run a self-check and apply some moves; this page lists what you can roll back.
+      <strong>No history yet.</strong> Run a self-check or cross-check apply; this page lists what you can roll back.
     </div>
   {{else}}
     <table class="history-table">
@@ -16,6 +16,7 @@
           <th>When</th>
           <th>Folder</th>
           <th>Files</th>
+          <th>Mode</th>
           <th>Status</th>
           <th></th>
         </tr>
@@ -26,6 +27,13 @@
           <td><time data-ts="{{.Timestamp}}">{{.Timestamp}}</time></td>
           <td><code>{{.Folder}}</code></td>
           <td>{{.MovedCount}}</td>
+          <td>
+            {{if eq .Mode "cross_check"}}
+              <span class="badge badge-mode-cross">cross-check</span>
+            {{else}}
+              <span class="badge badge-mode-self">self-check</span>
+            {{end}}
+          </td>
           <td>
             {{if .Restored}}<span class="badge badge-info">restored</span>
             {{else if eq .Status "success"}}<span class="badge badge-success">success</span>
