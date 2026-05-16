@@ -717,17 +717,20 @@ do_restore(){
   $RESTORE_DRY_RUN && echo "[*] (restore dry-run; no files will move)"
 
   local seen=0
-  # Use raw-line read + cut to correctly handle empty fields (e.g. empty quar
-  # for :deleted rows) since bash IFS=$'\t' collapses consecutive tab chars.
+  # IFS=$'\t' read -r -a collapses consecutive tabs (tab is IFS whitespace).
+  # Work around by substituting tabs with ASCII FS (\034), a non-whitespace
+  # IFS character that bash does NOT collapse. This preserves empty fields
+  # (e.g. empty quar for :deleted rows) without spawning cut subprocesses.
   while IFS= read -r _raw_line; do
-    local run_id; run_id="$(printf '%s' "$_raw_line" | cut -f1)"
-    [[ -z "${run_id:-}" ]] && continue
+    IFS=$'\034' read -r -a F <<< "${_raw_line//$'\t'/$'\034'}"
+    local run_id="${F[0]:-}"
+    [[ -z "$run_id" ]] && continue
     [[ "$run_id" == "run_id" ]] && continue
     [[ "${run_id:0:1}" == "#" ]] && continue
 
-    local orig; orig="$(printf '%s' "$_raw_line" | cut -f3)"
-    local quar; quar="$(printf '%s' "$_raw_line" | cut -f4)"
-    local dec;  dec="$(printf '%s' "$_raw_line" | cut -f8)"
+    local orig="${F[2]:-}"
+    local quar="${F[3]:-}"
+    local dec="${F[7]:-}"
 
     if [[ -n "$already_done" ]] && grep -Fqx -- "$orig" <<<"$already_done"; then
       continue
