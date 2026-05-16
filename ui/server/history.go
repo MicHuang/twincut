@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -108,7 +109,15 @@ func loadHistoryEntry(path string) (HistoryEntry, bool, error) {
 		return HistoryEntry{}, false, err
 	}
 
-	if start == nil || end == nil {
+	if start == nil {
+		return HistoryEntry{}, false, nil
+	}
+	if end == nil {
+		// Run was killed/crashed mid-execution. We can't surface it reliably
+		// (no manifest_path, no moved count) but log so it's at least
+		// discoverable in the server log.
+		runID, _ := start["run_id"].(string)
+		log.Printf("history: dropping run %s — no run_end event (process killed?)", runID)
 		return HistoryEntry{}, false, nil
 	}
 	mode, _ := start["mode"].(string)
@@ -181,6 +190,13 @@ func resolveManifest(stateDir, runID string) (string, error) {
 	}
 	if _, err := os.Stat(manifest); err != nil {
 		return "", fmt.Errorf("manifest gone: %w", err)
+	}
+	ok, err := IsAllowedPath(manifest)
+	if err != nil {
+		return "", fmt.Errorf("validate manifest: %w", err)
+	}
+	if !ok {
+		return "", fmt.Errorf("manifest path is outside allowlist: %s", manifest)
 	}
 	return manifest, nil
 }

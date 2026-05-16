@@ -1,7 +1,9 @@
 package server
 
 import (
+	"fmt"
 	"html/template"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -134,9 +136,22 @@ func TestCollectHistory_EmptyDir(t *testing.T) {
 }
 
 func TestResolveManifest_SuccessAndMissing(t *testing.T) {
-	state := t.TempDir()
+	// The manifest path must pass IsAllowedPath (which requires $HOME or /Volumes).
+	// t.TempDir() on macOS resolves under /var/folders which is outside the
+	// allowlist, so we create a scratch dir directly under $HOME and clean up.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scratchDir := filepath.Join(home, fmt.Sprintf(".twincut-test-tmp-%d", rand.Int()))
+	if err := os.MkdirAll(scratchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(scratchDir) })
+
+	state := filepath.Join(scratchDir, "state")
 	runs := filepath.Join(state, "runs")
-	manifest := filepath.Join(state, "scratch", "_m.tsv")
+	manifest := filepath.Join(scratchDir, "scratch", "_m.tsv")
 	if err := os.MkdirAll(filepath.Dir(manifest), 0o755); err != nil {
 		t.Fatal(err)
 	}
