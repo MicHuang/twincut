@@ -2,6 +2,7 @@ package server
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -229,6 +230,72 @@ func TestHumanBytes(t *testing.T) {
 func TestBaseName(t *testing.T) {
 	if got := filepath.Base("/a/b/c.jpg"); got != "c.jpg" {
 		t.Errorf("filepath.Base = %q", got)
+	}
+}
+
+func TestResultsTemplate_CrossCheckRendersRoleBadges(t *testing.T) {
+	srv := newCrossCheckTestServer(t)
+	view := ResultsView{
+		RunID:    "test-x",
+		ApplyURL: "/api/cross-check/apply",
+		Groups: []ResultGroup{
+			{
+				GroupID:     1,
+				MatchReason: "md5",
+				Mode:        "cross_check",
+				Keep:        ResultFile{Path: "/bk/a.jpg", SizeStr: "1.0 MB"},
+				Remove:      []ResultFile{{Path: "/src/a.jpg", SizeStr: "1.0 MB"}},
+			},
+		},
+		NumGroups: 1,
+		NumFiles:  1,
+	}
+	var buf strings.Builder
+	if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_results.html", view); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	body := buf.String()
+	for _, want := range []string{
+		`hx-post="/api/cross-check/apply"`,
+		`BACKUP · keep`,
+		`SOURCE`,
+		`/bk/a.jpg`,
+		`/src/a.jpg`,
+		`type="checkbox" name="quarantine"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q", want)
+		}
+	}
+}
+
+func TestResultsTemplate_SelfCheckUsesSelfCheckApplyURL(t *testing.T) {
+	srv := newCrossCheckTestServer(t)
+	view := ResultsView{
+		RunID:    "test-s",
+		ApplyURL: "/api/self-check/apply",
+		Groups: []ResultGroup{
+			{
+				GroupID:     1,
+				MatchReason: "md5",
+				Mode:        "self_check",
+				Keep:        ResultFile{Path: "/p/a.jpg", SizeStr: "1.0 MB"},
+				Remove:      []ResultFile{{Path: "/p/b.jpg", SizeStr: "1.0 MB"}},
+			},
+		},
+		NumGroups: 1,
+		NumFiles:  1,
+	}
+	var buf strings.Builder
+	if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_results.html", view); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `hx-post="/api/self-check/apply"`) {
+		t.Errorf("self-check apply URL not in body")
+	}
+	if strings.Contains(body, `BACKUP · keep`) || strings.Contains(body, `>SOURCE<`) {
+		t.Errorf("self-check rendering leaked cross-check role badges:\n%s", body)
 	}
 }
 
