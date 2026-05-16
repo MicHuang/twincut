@@ -216,6 +216,85 @@ def test_no_dupes_yields_no_dup_group(tmp: Path) -> None:
     assert not [e for e in events if e["type"] == "dup_group"], "expected no dup_groups"
 
 
+def test_apply_list_executes_listed_moves(tmp: Path) -> None:
+    # Three identical files; apply-list says "quarantine b, keep a" and
+    # ignores c entirely. We expect exactly one move action and c untouched.
+    write_file(tmp / "a.jpg", b"apply-list-content")
+    write_file(tmp / "b.jpg", b"apply-list-content")
+    write_file(tmp / "c.jpg", b"apply-list-content")
+
+    apply_list = tmp / "apply.tsv"
+    apply_list.write_text(
+        f"{tmp / 'b.jpg'}\t{tmp / 'a.jpg'}\t1\tmd5\tdeadbeef\n"
+    )
+
+    events, _, ec = run_twincut(
+        ["--self-check", str(tmp), "--apply-list", str(apply_list), "--assume-yes"]
+    )
+    assert ec == 0, f"expected exit 0, got {ec}"
+    validate_structure(events)
+
+    moves = [e for e in events if e["type"] == "action" and e["kind"] == "move"]
+    assert len(moves) == 1, f"expected 1 move, got {len(moves)}"
+    assert moves[0]["src"] == str(tmp / "b.jpg")
+    assert moves[0]["matched"] == str(tmp / "a.jpg")
+    assert moves[0]["decision"] == "apply_list_md5"
+
+    # No dup_group should be emitted (we skipped scan).
+    assert not [e for e in events if e["type"] == "dup_group"], \
+        "apply-list mode should skip scan/match"
+
+    # File system: a.jpg + c.jpg remain in source; b.jpg is in quarantine.
+    remaining = sorted(p.name for p in tmp.iterdir() if p.is_file())
+    assert remaining == ["a.jpg", "apply.tsv", "c.jpg"], (
+        f"unexpected remaining files: {remaining}"
+    )
+    quar_files = list((tmp / "_QUARANTINE" / "_self_dupes").iterdir())
+    assert len(quar_files) == 1 and quar_files[0].name == "b.jpg"
+
+
+def test_apply_list_dry_run_keeps_files(tmp: Path) -> None:
+    write_file(tmp / "a.mp4", b"video-bytes-a")
+    write_file(tmp / "b.mp4", b"video-bytes-b")
+    apply_list = tmp / "apply.tsv"
+    apply_list.write_text(f"{tmp / 'b.mp4'}\t{tmp / 'a.mp4'}\t1\tvideo_fast\t\n")
+
+    events, _, ec = run_twincut(
+        ["--self-check", str(tmp), "--apply-list", str(apply_list),
+         "--dry-run", "--assume-yes"]
+    )
+    assert ec == 0
+    validate_structure(events)
+
+    moves = [e for e in events if e["type"] == "action" and e["kind"] == "move"]
+    assert len(moves) == 1
+    assert moves[0]["dry_run"] is True
+    # Decision string carries the reason → similar-video subdir intent.
+    assert moves[0]["decision"] == "apply_list_video_fast"
+    assert "_similar_video_source" in moves[0]["dst"]
+
+    # Files should still be in place.
+    assert (tmp / "a.mp4").exists() and (tmp / "b.mp4").exists()
+
+
+def test_apply_list_warns_on_missing_source(tmp: Path) -> None:
+    # File listed in apply-list doesn't exist; expect a warn and no action.
+    write_file(tmp / "a.jpg", b"x")
+    apply_list = tmp / "apply.tsv"
+    apply_list.write_text(
+        f"{tmp / 'ghost.jpg'}\t{tmp / 'a.jpg'}\t1\tmd5\t\n"
+    )
+
+    events, _, ec = run_twincut(
+        ["--self-check", str(tmp), "--apply-list", str(apply_list), "--assume-yes"]
+    )
+    assert ec == 0
+    validate_structure(events)
+    warns = [e for e in events if e["type"] == "warn" and e.get("code") == "missing_file"]
+    assert len(warns) == 1
+    assert not [e for e in events if e["type"] == "action" and e["kind"] == "move"]
+
+
 def test_special_chars_in_paths_are_json_escaped(tmp: Path) -> None:
     name1 = 'tricky "quotes" \\ and tabs.jpg'
     name2 = "another 'one'.jpg"

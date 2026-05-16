@@ -28,6 +28,7 @@ type ResultsView struct {
 	MovedCount   int
 	DeletedCount int
 	ManifestPath string
+	QuarantineDir string // parent of ManifestPath, for the "Open in Finder" button
 }
 
 // ResultGroup is one duplicate cluster.
@@ -37,16 +38,36 @@ type ResultGroup struct {
 	Hash        string
 	Keep        ResultFile
 	Remove      []ResultFile
+
+	// IsSimilar is true when the group came from a similarity match
+	// (anything except md5). The template uses this to decide whether
+	// to render thumbnails + per-file metadata.
+	IsSimilar bool
 }
 
 // ResultFile is a single file inside a group (either the keeper or a
 // remove-candidate).
 type ResultFile struct {
-	Path     string
-	Name     string // basename, for display
-	Size     int64
-	SizeStr  string // formatted "4.2 MB"
-	MTime    int64
+	Path    string
+	Name    string // basename, for display
+	Size    int64
+	SizeStr string // formatted "4.2 MB"
+	MTime   int64
+
+	// Video-only fields. Present when the source dup_group event included
+	// per-side metadata (i.e., similarity matches with match_reason video_*).
+	// Zero/empty for hash-exact clusters — the template uses HasMedia to
+	// branch on whether to render the metadata strip.
+	HasMedia      bool
+	Duration      float64 // seconds
+	DurationStr   string  // "3:21"
+	Width         int
+	Height        int
+	DimensionsStr string // "1920x1080"
+	FPS           float64
+	FPSStr        string // "29.97 fps"
+	Bitrate       int64  // bits per second
+	BitrateStr    string // "5.0 Mbps"
 }
 
 // ResultWarn is a non-fatal warning surfaced at the top of the results panel.
@@ -128,37 +149,65 @@ func BuildResults(run *Run) (ResultsView, error) {
 		}
 	}
 
+	// Twincut maintains a separate group_id counter per match family
+	// (md5 source-self, similar-video, etc.), so two clusters can both
+	// arrive with group_id=1. The UI uses GroupID as the form key for
+	// per-cluster controls — collisions would cross-wire the radios.
+	// Re-number to a single sequence for the page.
+	for i := range view.Groups {
+		view.Groups[i].GroupID = i + 1
+	}
+
 	view.NumGroups = len(view.Groups)
 	view.NumWarnings = len(view.Warnings)
 	view.BytesHuman = humanBytes(view.BytesReclaim)
+	if view.ManifestPath != "" {
+		view.QuarantineDir = filepath.Dir(view.ManifestPath)
+	}
 	return view, nil
 }
 
 // decodeGroup handles both the cross-check shape (single remove_path field)
 // and the self-check shape (remove[] array). Cross-check emits one group per
 // match while iterating source files; self-check emits one group per hash
-// cluster.
+// cluster. Similar-video matches additionally carry per-side video metadata
+// (duration / dims / fps / bitrate) which we surface via ResultFile.
 func decodeGroup(raw json.RawMessage) (ResultGroup, error) {
 	var p struct {
 		GroupID     int    `json:"group_id"`
 		MatchReason string `json:"match_reason"`
 		Hash        string `json:"hash"`
 
-		KeepPath  string `json:"keep_path"`
-		KeepSize  int64  `json:"keep_size"`
-		KeepMTime int64  `json:"keep_mtime"`
+		KeepPath     string  `json:"keep_path"`
+		KeepSize     int64   `json:"keep_size"`
+		KeepMTime    int64   `json:"keep_mtime"`
+		KeepDuration float64 `json:"keep_duration"`
+		KeepWidth    int     `json:"keep_width"`
+		KeepHeight   int     `json:"keep_height"`
+		KeepFPS      float64 `json:"keep_fps"`
+		KeepBitrate  int64   `json:"keep_bitrate"`
 
 		// Self-check shape:
 		Remove []struct {
-			Path  string `json:"path"`
-			Size  int64  `json:"size"`
-			MTime int64  `json:"mtime"`
+			Path     string  `json:"path"`
+			Size     int64   `json:"size"`
+			MTime    int64   `json:"mtime"`
+			Duration float64 `json:"duration"`
+			Width    int     `json:"width"`
+			Height   int     `json:"height"`
+			FPS      float64 `json:"fps"`
+			Bitrate  int64   `json:"bitrate"`
 		} `json:"remove"`
 
-		// Cross-check shape:
-		RemovePath  string `json:"remove_path"`
-		RemoveSize  int64  `json:"remove_size"`
-		RemoveMTime int64  `json:"remove_mtime"`
+		// Cross-check + similar-video shape (single removed file):
+		RemovePath     string  `json:"remove_path"`
+		RemoveSize     int64   `json:"remove_size"`
+		RemoveMTime    int64   `json:"remove_mtime"`
+		RemoveDuration float64 `json:"remove_duration"`
+		RemoveWidth    int     `json:"remove_width"`
+		RemoveHeight   int     `json:"remove_height"`
+		RemoveFPS      float64 `json:"remove_fps"`
+		RemoveBitrate  int64   `json:"remove_bitrate"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return ResultGroup{}, err
@@ -168,36 +217,83 @@ func decodeGroup(raw json.RawMessage) (ResultGroup, error) {
 		GroupID:     p.GroupID,
 		MatchReason: p.MatchReason,
 		Hash:        p.Hash,
-		Keep: ResultFile{
-			Path:    p.KeepPath,
-			Name:    filepath.Base(p.KeepPath),
-			Size:    p.KeepSize,
-			SizeStr: humanBytes(p.KeepSize),
-			MTime:   p.KeepMTime,
-		},
+		IsSimilar:   p.MatchReason != "" && p.MatchReason != "md5",
+		Keep: newResultFile(p.KeepPath, p.KeepSize, p.KeepMTime,
+			p.KeepDuration, p.KeepWidth, p.KeepHeight, p.KeepFPS, p.KeepBitrate),
 	}
 
 	if len(p.Remove) > 0 {
 		for _, r := range p.Remove {
-			g.Remove = append(g.Remove, ResultFile{
-				Path:    r.Path,
-				Name:    filepath.Base(r.Path),
-				Size:    r.Size,
-				SizeStr: humanBytes(r.Size),
-				MTime:   r.MTime,
-			})
+			g.Remove = append(g.Remove, newResultFile(r.Path, r.Size, r.MTime,
+				r.Duration, r.Width, r.Height, r.FPS, r.Bitrate))
 		}
 	} else if p.RemovePath != "" {
-		g.Remove = append(g.Remove, ResultFile{
-			Path:    p.RemovePath,
-			Name:    filepath.Base(p.RemovePath),
-			Size:    p.RemoveSize,
-			SizeStr: humanBytes(p.RemoveSize),
-			MTime:   p.RemoveMTime,
-		})
+		g.Remove = append(g.Remove, newResultFile(p.RemovePath, p.RemoveSize, p.RemoveMTime,
+			p.RemoveDuration, p.RemoveWidth, p.RemoveHeight, p.RemoveFPS, p.RemoveBitrate))
 	}
 
 	return g, nil
+}
+
+func newResultFile(path string, size, mtime int64, dur float64, w, h int, fps float64, bps int64) ResultFile {
+	rf := ResultFile{
+		Path:    path,
+		Name:    filepath.Base(path),
+		Size:    size,
+		SizeStr: humanBytes(size),
+		MTime:   mtime,
+	}
+	if dur > 0 || w > 0 || h > 0 || fps > 0 || bps > 0 {
+		rf.HasMedia = true
+		rf.Duration = dur
+		rf.DurationStr = formatDuration(dur)
+		rf.Width = w
+		rf.Height = h
+		if w > 0 && h > 0 {
+			rf.DimensionsStr = fmt.Sprintf("%dx%d", w, h)
+		}
+		rf.FPS = fps
+		if fps > 0 {
+			rf.FPSStr = fmt.Sprintf("%.2f fps", fps)
+		}
+		rf.Bitrate = bps
+		rf.BitrateStr = formatBitrate(bps)
+	}
+	return rf
+}
+
+// formatDuration renders seconds as "M:SS" (or "H:MM:SS" past one hour).
+// Sub-second clips fall back to "Ns" / "Nms" so we never print "0:00".
+func formatDuration(sec float64) string {
+	if sec <= 0 {
+		return ""
+	}
+	if sec < 1 {
+		return fmt.Sprintf("%dms", int(sec*1000))
+	}
+	total := int(sec + 0.5)
+	h := total / 3600
+	m := (total % 3600) / 60
+	s := total % 60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+// formatBitrate renders bps as "5.0 Mbps" / "320 kbps".
+func formatBitrate(bps int64) string {
+	if bps <= 0 {
+		return ""
+	}
+	switch {
+	case bps >= 1_000_000:
+		return fmt.Sprintf("%.1f Mbps", float64(bps)/1_000_000)
+	case bps >= 1_000:
+		return fmt.Sprintf("%d kbps", bps/1_000)
+	default:
+		return fmt.Sprintf("%d bps", bps)
+	}
 }
 
 // humanBytes renders a byte count as a short, human-readable string. We

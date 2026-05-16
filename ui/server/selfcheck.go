@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -97,10 +101,10 @@ func (s *Server) handleSelfCheckResults(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// handleSelfCheckApply spawns the actual (non-dry-run) self-check, passing
-// --exclude-path for any files the user unchecked in the results screen.
-// Returns the same running-panel template, with IsApply=true so the JS
-// hand-off targets the done page.
+// handleSelfCheckApply spawns the actual (non-dry-run) self-check using
+// twincut.sh's --apply-list mode, so the user's per-cluster keep/quarantine
+// selections are honored verbatim (including swapping which file is the
+// keeper). Returns the same running-panel template with IsApply=true.
 func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
@@ -116,42 +120,32 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// All files the user wants quarantined arrive as quarantine=PATH form
-	// values. Anything in the original group set that is NOT in this list
-	// must be excluded. The results template defaults to checking every
-	// file, so the typical case sends the full set; unchecks become
-	// exclusions.
-	wanted := map[string]bool{}
-	for _, p := range r.Form["quarantine"] {
-		wanted[p] = true
-	}
-
-	// Find the original preview run to know what the full set was.
 	previewID := r.FormValue("preview_run_id")
-	excluded := []string{}
-	if previewID != "" {
-		if previewRun := s.runs.Get(previewID); previewRun != nil {
-			view, err := BuildResults(previewRun)
-			if err == nil {
-				for _, g := range view.Groups {
-					for _, rm := range g.Remove {
-						if !wanted[rm.Path] {
-							excluded = append(excluded, rm.Path)
-						}
-					}
-				}
-			}
-		}
+	if previewID == "" {
+		http.Error(w, "preview_run_id is required", http.StatusBadRequest)
+		return
+	}
+	previewRun := s.runs.Get(previewID)
+	if previewRun == nil {
+		http.Error(w, "preview run not found", http.StatusNotFound)
+		return
+	}
+	view, err := BuildResults(previewRun)
+	if err != nil {
+		http.Error(w, "build preview: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	args := []string{"--self-check", folder, "--assume-yes"}
+	rows := composeApplyList(view.Groups, r.Form)
+
+	listPath, err := writeApplyList(s.opts.StateDir, rows)
+	if err != nil {
+		http.Error(w, "write apply-list: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	args := []string{"--self-check", folder, "--assume-yes", "--apply-list", listPath}
 	args = appendCommonOptions(args, r)
-	if r.FormValue("include_similar_video") == "1" {
-		args = append(args, "--include-similar-video")
-	}
-	for _, p := range excluded {
-		args = append(args, "--exclude-path", p)
-	}
 
 	run, err := s.runs.Start(StartOptions{Mode: "self_check_apply", Args: args})
 	if err != nil {
@@ -167,6 +161,78 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// composeApplyList walks the preview's groups and the form's selections to
+// produce the rows that twincut --apply-list will execute. Each row:
+//
+//	move_path \t keep_path \t group_id \t match_reason \t hash
+//
+// Form contract:
+//   - "quarantine" values list every path the user wants moved.
+//   - "keep_<group_id>" identifies the user-chosen keeper per cluster
+//     (defaults to the preview's keeper when absent).
+//
+// Selections are validated against each cluster's known paths so a malicious
+// or stale form can't cause moves outside the preview's scope.
+func composeApplyList(groups []ResultGroup, form url.Values) [][]string {
+	wanted := map[string]bool{}
+	for _, p := range form["quarantine"] {
+		wanted[p] = true
+	}
+	var rows [][]string
+	for _, g := range groups {
+		clusterOrder := []string{g.Keep.Path}
+		clusterSet := map[string]bool{g.Keep.Path: true}
+		for _, rm := range g.Remove {
+			clusterOrder = append(clusterOrder, rm.Path)
+			clusterSet[rm.Path] = true
+		}
+
+		chosenKeep := form.Get("keep_" + strconv.Itoa(g.GroupID))
+		if !clusterSet[chosenKeep] {
+			chosenKeep = g.Keep.Path
+		}
+
+		for _, path := range clusterOrder {
+			if path == chosenKeep {
+				continue
+			}
+			if !wanted[path] {
+				continue
+			}
+			rows = append(rows, []string{
+				path,
+				chosenKeep,
+				strconv.Itoa(g.GroupID),
+				g.MatchReason,
+				g.Hash,
+			})
+		}
+	}
+	return rows
+}
+
+// writeApplyList serializes rows to a stable TSV file under
+// <stateDir>/applylists/. Returns the absolute path. Each row's columns are
+// already absolute paths and short identifiers — no escaping required for
+// TSV (twincut splits on TAB and tolerates anything else inside a column).
+func writeApplyList(stateDir string, rows [][]string) (string, error) {
+	dir := filepath.Join(stateDir, "applylists")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, "apply-*.tsv")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	for _, row := range rows {
+		if _, err := fmt.Fprintln(f, strings.Join(row, "\t")); err != nil {
+			return "", err
+		}
+	}
+	return f.Name(), nil
 }
 
 // handleSelfCheckDone renders the post-apply summary page.
@@ -199,6 +265,9 @@ func appendCommonOptions(args []string, r *http.Request) []string {
 	}
 	if v := strings.TrimSpace(r.FormValue("ext")); v != "" {
 		args = append(args, "--ext", v)
+	}
+	if v := strings.TrimSpace(r.FormValue("size_pct")); v != "" {
+		args = append(args, "--size-pct", v)
 	}
 	return args
 }

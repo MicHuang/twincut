@@ -53,6 +53,7 @@ BK_DUPE_CNT=0
 BK_DUPE_NOTE=""
 SRC_DUPE_CNT=0
 SIMILAR_CNT=0
+SIM_GROUP_ID=0
 SOURCE_CACHE=""
 SRC_HASH_RUN_FILE=""
 
@@ -157,6 +158,11 @@ DO_THUMB=false
 JSON_EVENTS=false
 EXCLUDE_PATHS=()
 
+# Apply-list mode: when set, twincut skips scan/match and just executes
+# the moves listed in the TSV (the Web UI uses this so the user-chosen
+# keep/quarantine assignments are honored verbatim — see process_apply_list).
+APPLY_LIST=""
+
 # ------------------------------ Small helpers --------------------------------
 # JSON string escaper. Handles backslash, quote, control chars, newline, tab,
 # carriage return. Output is bare (no surrounding quotes) so callers can
@@ -201,6 +207,52 @@ emit_event(){
   else
     printf '%s\n' "$out"
   fi
+}
+
+# Look up a row from a .video_meta_index.csv. Echoes "dur w h fps bps" for the
+# given path, or empty if not found. Numeric fields default to 0 in callers.
+_video_meta_lookup(){
+  local _csv="$1" _p="$2"
+  [[ -z "$_csv" || ! -f "$_csv" ]] && return 0
+  awk -F'\t' -v p="$_p" 'NR>2 && $1==p {print $3,$5,$6,$9,$10; exit}' "$_csv" 2>/dev/null
+}
+
+# Emit a dup_group event for a similar-video pair. Looks up per-side metadata
+# from the supplied meta CSVs (one per side, since cross-check pairs span the
+# backup VMETA_FILE and source SVMETA_FILE).
+#   $1 reason (video_fast | video_strict)
+#   $2 keep_path     $3 keep_meta_csv
+#   $4 remove_path   $5 remove_meta_csv
+emit_similar_video_group(){
+  $JSON_EVENTS || return 0
+  local _reason="$1" _keep="$2" _kcsv="$3" _rm="$4" _rcsv="$5"
+  SIM_GROUP_ID=$((SIM_GROUP_ID+1))
+  local _kdur _kw _kh _kfps _kbps _ddur _dw _dh _dfps _dbps
+  read -r _kdur _kw _kh _kfps _kbps < <(_video_meta_lookup "$_kcsv" "$_keep")
+  read -r _ddur _dw _dh _dfps _dbps < <(_video_meta_lookup "$_rcsv" "$_rm")
+  local _ksz _kmt _rsz _rmt
+  _ksz="$(fsize "$_keep")"; _kmt="$(mtime "$_keep")"
+  _rsz="$(fsize "$_rm")";   _rmt="$(mtime "$_rm")"
+  emit_event dup_group \
+    group_id=@"$SIM_GROUP_ID" \
+    match_reason="$_reason" \
+    algo=video_fast \
+    keep_path="$_keep" \
+    keep_size=@"${_ksz:-0}" \
+    keep_mtime=@"${_kmt:-0}" \
+    keep_duration=@"${_kdur:-0}" \
+    keep_width=@"${_kw:-0}" \
+    keep_height=@"${_kh:-0}" \
+    keep_fps=@"${_kfps:-0}" \
+    keep_bitrate=@"${_kbps:-0}" \
+    remove_path="$_rm" \
+    remove_size=@"${_rsz:-0}" \
+    remove_mtime=@"${_rmt:-0}" \
+    remove_duration=@"${_ddur:-0}" \
+    remove_width=@"${_dw:-0}" \
+    remove_height=@"${_dh:-0}" \
+    remove_fps=@"${_dfps:-0}" \
+    remove_bitrate=@"${_dbps:-0}"
 }
 
 # True if path was passed via --exclude-path. Compared by exact string match
@@ -261,6 +313,40 @@ manifest_append(){
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$orig" "$quar" "$matched" "$ALGO" "$hh" "$dec" "$sz" "$mt" \
     >> "$MANIFEST_FILE"
+}
+
+# Process an apply-list TSV: each row is "move<TAB>keep<TAB>group<TAB>reason<TAB>hash".
+# Skips scan entirely and just executes the moves through qmove so we get
+# manifest writes, hardlink safety, and dry-run handling for free.
+# The destination subdir is derived from the match reason so md5 clusters
+# end up in _self_dupes/ and similar-video clusters in _similar_video_source/,
+# matching the scan-mode layout.
+process_apply_list(){
+  [[ -f "$APPLY_LIST" ]] || die3 "--apply-list file not found: $APPLY_LIST"
+  init_manifest
+  local _row=0 _md5_dir="$QUAR_DIR/${SOURCE_DUPE_SUBDIR:-_self_dupes}"
+  local _sim_dir="$QUAR_DIR/${SOURCE_SIMILAR_SUBDIR:-_similar_video_source}"
+  local _move _keep _gid _reason _hash _sub _dec
+  while IFS=$'\t' read -r _move _keep _gid _reason _hash; do
+    [[ -z "$_move" ]] && continue
+    case "$_move" in '#'*) continue ;; esac
+    _row=$((_row+1))
+    if [[ ! -e "$_move" ]]; then
+      emit_event warn code=missing_file path="$_move" detail="apply-list source not found"
+      continue
+    fi
+    case "$_reason" in
+      video_fast|video_strict) _sub="$_sim_dir"; _dec="apply_list_${_reason}" ;;
+      *)                       _sub="$_md5_dir"; _dec="apply_list_${_reason:-md5}" ;;
+    esac
+    mkdir -p "$_sub"
+    if qmove "$_move" "$_sub" "$_keep" "$_hash" "$_dec"; then
+      $DRY_RUN || MOVED=$((MOVED+1))
+      DUPES=$((DUPES+1))
+      case "$_reason" in video_fast|video_strict) SIMILAR_CNT=$((SIMILAR_CNT+1)) ;; esac
+    fi
+  done < "$APPLY_LIST"
+  TOTAL=$_row
 }
 
 # qmove SRC DEST_DIR MATCHED HASH DECISION
@@ -571,6 +657,12 @@ Web UI integration (intended for the twincut-ui Go server, but usable manually):
   --exclude-path <PATH>   Skip this exact path when moving/deleting (the
                           UI uses this to honor per-file unchecks). Repeat
                           the flag for multiple paths.
+  --apply-list <FILE>     Skip scan/match and execute the moves listed in
+                          this TSV instead. Each row:
+                            move_path<TAB>keep_path<TAB>group_id<TAB>match_reason<TAB>hash
+                          Reuses qmove for manifest writes + hardlink safety
+                          + dry-run support. Used by the Web UI's Apply step
+                          so the user can override which file is the keeper.
 
 Exit codes:
   0  normal completion
@@ -737,6 +829,7 @@ while [[ $# -gt 0 ]]; do
 
     --json-events) JSON_EVENTS=true; shift;;
     --exclude-path) EXCLUDE_PATHS+=("${2:-}"); shift 2;;
+    --apply-list)  APPLY_LIST="${2:-}"; shift 2;;
 
     --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
     --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
@@ -872,6 +965,14 @@ if $REBUILD_VMETA; then
 fi
 
 mkdir -p "$QUAR_DIR"
+
+# Apply-list short-circuit: skip the full scan and just execute the moves
+# requested by the Web UI. Falls through to the normal run_end emission at
+# the bottom so counters/manifest land in the standard event stream.
+if [[ -n "$APPLY_LIST" ]]; then
+  process_apply_list
+else
+
 # 为每个备份目录建立/复用 hash 索引（带进度&抗中断）
 if $DO_CROSS || $DO_BACKUP_SELF; then
 for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
@@ -1008,6 +1109,8 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
           mt_bf=$(stat -f %m "$bf" 2>/dev/null || stat -c %Y "$bf" 2>/dev/null || echo 0)
           mt_cd=$(stat -f %m "$cand" 2>/dev/null || stat -c %Y "$cand" 2>/dev/null || echo 0)
           if (( mt_bf <= mt_cd )); then KEEP="$bf"; MOVE="$cand"; else KEEP="$cand"; MOVE="$bf"; fi
+          _sim_reason="video_fast"; $VIDEO_FAST_STRICT && _sim_reason="video_strict"
+          emit_similar_video_group "$_sim_reason" "$KEEP" "$VMETA_FILE" "$MOVE" "$VMETA_FILE"
           if $REPORT_BACKUP_DUPES; then
             echo "[BACKUP-SIMILAR(video-fast)] keep='$KEEP' move='$MOVE'"
           fi
@@ -1228,7 +1331,10 @@ while IFS= read -r -d '' f; do
             out2="$("$V_EQ_BIN" "$f" "$b" 2>/dev/null || true)"
             echo "$out2" | grep -q "EQUAL:yes" || { continue; }
           fi
+          _sim_reason="video_fast"; $VIDEO_FAST_STRICT && _sim_reason="video_strict"
           if $DO_CROSS; then
+            # Cross: backup-side $b is the keeper; source-side $f is removed.
+            emit_similar_video_group "$_sim_reason" "$b" "${VMETA_FILE:-}" "$f" "${SVMETA_FILE:-}"
             DEC="cross_video_fast"; $VIDEO_FAST_STRICT && DEC="cross_video_strict"
             if qmove "$f" "$SIM_DIR" "$b" "" "$DEC"; then
               $DRY_RUN || echo "\"$f\",\"$b\"" >> "$SIMILAR_CSV"
@@ -1244,6 +1350,14 @@ while IFS= read -r -d '' f; do
             mt_src=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
             mt_b=$(stat -f %m "$b" 2>/dev/null || stat -c %Y "$b" 2>/dev/null || echo 0)
             if (( mt_src <= mt_b )); then KEEP="$f"; MOVE="$b"; else KEEP="$b"; MOVE="$f"; fi
+            # Each source-self pair is reachable from both sides of the outer
+            # find loop; canonicalize the pair and skip duplicates so the
+            # event stream and the qmove decision happen exactly once.
+            if [[ "$f" < "$b" ]]; then _pa="$f"; _pb="$b"; else _pa="$b"; _pb="$f"; fi
+            _pkey="${_pa}"$'\x1f'"${_pb}"
+            case ":${_SOURCE_SIM_SEEN:-}:" in *":${_pkey}:"*) break ;; esac
+            _SOURCE_SIM_SEEN="${_SOURCE_SIM_SEEN:-}:${_pkey}"
+            emit_similar_video_group "$_sim_reason" "$KEEP" "$SVMETA_FILE" "$MOVE" "$SVMETA_FILE"
             if $REPORT_SOURCE_DUPES; then
               echo "[SOURCE-SIMILAR(video-fast)] keep='$KEEP' move='$MOVE'"
             fi
@@ -1397,6 +1511,8 @@ fi
 if $DO_THUMB; then
   thumb_detect_run || true
 fi
+
+fi  # end of "else" branch for the apply-list short-circuit
 
 echo "===== SUMMARY ====="
 echo "Checked: $TOTAL files  | Duplicates: $DUPES"
