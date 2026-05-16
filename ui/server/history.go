@@ -191,14 +191,18 @@ func resolveManifest(stateDir, runID string) (string, error) {
 	if _, err := os.Stat(manifest); err != nil {
 		return "", fmt.Errorf("manifest gone: %w", err)
 	}
-	ok, err := IsAllowedPath(manifest)
+	realManifest, err := filepath.EvalSymlinks(manifest)
+	if err != nil {
+		return "", fmt.Errorf("resolve manifest symlinks: %w", err)
+	}
+	ok, err := IsAllowedPath(realManifest)
 	if err != nil {
 		return "", fmt.Errorf("validate manifest: %w", err)
 	}
 	if !ok {
-		return "", fmt.Errorf("manifest path is outside allowlist: %s", manifest)
+		return "", fmt.Errorf("manifest path resolves outside allowlist: %s -> %s", manifest, realManifest)
 	}
-	return manifest, nil
+	return realManifest, nil
 }
 
 // jsonInt / jsonInt64 unbox JSON numbers (which come through as float64).

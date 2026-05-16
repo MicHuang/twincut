@@ -699,12 +699,8 @@ do_restore(){
 
   local restored=0 skipped_exists=0 missing=0 unrecoverable=0 errors=0
   local done_marker="${mf}.restored"
-  declare -A _done_set
-  if [[ -f "$done_marker" ]]; then
-    while IFS= read -r _line; do
-      [[ -n "$_line" ]] && _done_set["$_line"]=1
-    done < "$done_marker"
-  fi
+  local already_done=""
+  [[ -f "$done_marker" ]] && already_done="$(cat "$done_marker")"
 
   emit_event run_start mode=restore source="$mf"
 
@@ -736,7 +732,7 @@ do_restore(){
     local quar="${F[3]:-}"
     local dec="${F[7]:-}"
 
-    if [[ -n "${_done_set[$orig]+x}" ]]; then
+    if [[ -n "$already_done" ]] && grep -Fqx -- "$orig" <<<"$already_done"; then
       continue
     fi
 
