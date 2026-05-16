@@ -15,11 +15,17 @@
     </div>
   {{else}}
     <div class="alert alert-success">
-      <strong>Quarantined {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}.</strong>
+      {{if eq .Mode "restore"}}
+        <strong>Restored {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}.</strong>
+      {{else}}
+        <strong>Quarantined {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}.</strong>
+      {{end}}
       {{if .ManifestPath}}
         <br><span class="muted small">Manifest: <code>{{.ManifestPath}}</code></span>
-        <br><span class="muted small">Roll back via History (when stage 6 lands) or:
+        {{if ne .Mode "restore"}}
+        <br><span class="muted small">Roll back via History or:
           <code>twincut --restore "{{.ManifestPath}}"</code></span>
+        {{end}}
       {{end}}
     </div>
   {{end}}
