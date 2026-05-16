@@ -35,5 +35,14 @@
 
   <div class="form-actions">
     <a href="#" class="btn btn-primary" hx-get="/tab/self-check" hx-target="#tab-content">Run another scan</a>
+    {{if and .QuarantineDir (gt .MovedCount 0)}}
+    <button type="button" class="btn btn-secondary"
+            hx-post="/api/open"
+            hx-vals='{"path": "{{.QuarantineDir}}"}'
+            hx-swap="outerHTML"
+            hx-disabled-elt="this">
+      Open quarantine folder
+    </button>
+    {{end}}
   </div>
 </section>

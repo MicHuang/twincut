@@ -81,6 +81,9 @@ func (s *Server) Handler() http.Handler {
 	// Thumbnail endpoint (used by similar-video / similar-image clusters).
 	mux.HandleFunc("GET /thumb", s.handleThumb)
 
+	// Reveal-in-Finder helper for post-apply convenience.
+	mux.HandleFunc("POST /api/open", s.handleOpenPath)
+
 	// Generic run-management API + SSE.
 	mux.HandleFunc("POST /api/runs", s.handleStartRun)
 	mux.HandleFunc("GET /api/runs", s.handleListRuns)

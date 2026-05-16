@@ -28,6 +28,7 @@ type ResultsView struct {
 	MovedCount   int
 	DeletedCount int
 	ManifestPath string
+	QuarantineDir string // parent of ManifestPath, for the "Open in Finder" button
 }
 
 // ResultGroup is one duplicate cluster.
@@ -160,6 +161,9 @@ func BuildResults(run *Run) (ResultsView, error) {
 	view.NumGroups = len(view.Groups)
 	view.NumWarnings = len(view.Warnings)
 	view.BytesHuman = humanBytes(view.BytesReclaim)
+	if view.ManifestPath != "" {
+		view.QuarantineDir = filepath.Dir(view.ManifestPath)
+	}
 	return view, nil
 }
 
