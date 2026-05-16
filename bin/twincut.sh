@@ -336,8 +336,12 @@ process_apply_list(){
       continue
     fi
     case "$_reason" in
-      video_fast|video_strict) _sub="$_sim_dir"; _dec="apply_list_${_reason}" ;;
-      *)                       _sub="$_md5_dir"; _dec="apply_list_${_reason:-md5}" ;;
+      cross_hash|cross_video_fast|cross_video_strict)
+        _sub="$QUAR_DIR"; _dec="apply_list_${_reason}" ;;
+      video_fast|video_strict)
+        _sub="$_sim_dir"; _dec="apply_list_${_reason}" ;;
+      *)
+        _sub="$_md5_dir"; _dec="apply_list_${_reason:-md5}" ;;
     esac
     mkdir -p "$_sub"
     if qmove "$_move" "$_sub" "$_keep" "$_hash" "$_dec"; then

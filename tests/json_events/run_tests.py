@@ -383,6 +383,47 @@ def test_restore_executes_and_emits_run_end(tmp: Path) -> None:
     assert not (quar_dir / "back.jpg").exists()
 
 
+def test_cross_check_apply_list_short_circuit_routes_to_quar_root(tmp: Path) -> None:
+    """Cross-check apply via --apply-list should move source files directly
+    into $QUAR_DIR (matching scan-mode behavior at twincut.sh:1307), not
+    into the self-check _self_dupes/ subdir."""
+    src = tmp / "source"
+    bk = tmp / "backup"
+    quar = tmp / "myquar"
+    write_file(src / "a.jpg", b"same-content")
+    write_file(bk / "a.jpg", b"same-content")
+
+    # Apply-list TSV: one row instructing the move.
+    # Columns: move, keep, group_id, reason, hash
+    applylist = tmp / "apply.tsv"
+    applylist.write_text(
+        f"{src/'a.jpg'}\t{bk/'a.jpg'}\t1\tcross_hash\tabc123\n"
+    )
+
+    events, _, ec = run_twincut([
+        "--source", str(src),
+        "--backup", str(bk),
+        "--quarantine", str(quar),
+        "--apply-list", str(applylist),
+        "--assume-yes",
+    ])
+    assert ec == 0, f"exit code {ec}"
+    validate_structure(events)
+
+    starts = [e for e in events if e["type"] == "run_start"]
+    assert len(starts) == 1
+    assert starts[0]["mode"] == "cross_check"
+
+    actions = [e for e in events if e["type"] == "action" and e.get("kind") not in ("skip", None)]
+    moved_dsts = [a["dst"] for a in actions if a.get("dst")]
+    assert moved_dsts, f"no move actions emitted; got {actions}"
+    # The moved file must land directly in $QUAR_DIR/a.jpg, NOT in
+    # $QUAR_DIR/_self_dupes/a.jpg (which is the self-check convention).
+    assert (quar / "a.jpg").exists(), f"file not moved into {quar}; tree: {list(quar.rglob('*'))}"
+    assert not (quar / "_self_dupes").exists(), \
+        f"cross-check apply must not create _self_dupes/ subdir; tree: {list(quar.rglob('*'))}"
+
+
 # ------------------------------ Test runner ---------------------------------
 
 
