@@ -231,3 +231,46 @@ func TestBaseName(t *testing.T) {
 		t.Errorf("filepath.Base = %q", got)
 	}
 }
+
+func TestBuildResults_StampsGroupModeCrossCheck(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"cross_check","source":"/src"}`,
+		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"md5","hash":"x","keep_path":"/bk/a.jpg","keep_size":100,"keep_mtime":1,"remove_path":"/src/a.jpg","remove_size":100,"remove_mtime":1}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":1,"dupes":1,"moved":0,"cancelled":false}`,
+	})
+	// Simulate the Run.Mode being set to cross_check_preview (as StartOptions would set it)
+	r.Mode = "cross_check_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Groups) != 1 {
+		t.Fatalf("want 1 group, got %d", len(view.Groups))
+	}
+	if view.Groups[0].Mode != "cross_check" {
+		t.Errorf("group Mode = %q, want %q", view.Groups[0].Mode, "cross_check")
+	}
+	if view.ApplyURL != "/api/cross-check/apply" {
+		t.Errorf("view ApplyURL = %q, want %q", view.ApplyURL, "/api/cross-check/apply")
+	}
+}
+
+func TestBuildResults_StampsGroupModeSelfCheck(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"self_check","source":"/p"}`,
+		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"md5","hash":"x","keep_path":"/p/a.jpg","keep_size":100,"keep_mtime":1,"remove":[{"path":"/p/b.jpg","size":100,"mtime":1}]}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":2,"dupes":1,"moved":0,"cancelled":false}`,
+	})
+	// Simulate the Run.Mode being set to self_check_preview (as StartOptions would set it)
+	r.Mode = "self_check_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Groups[0].Mode != "self_check" {
+		t.Errorf("group Mode = %q, want %q", view.Groups[0].Mode, "self_check")
+	}
+	if view.ApplyURL != "/api/self-check/apply" {
+		t.Errorf("view ApplyURL = %q, want %q", view.ApplyURL, "/api/self-check/apply")
+	}
+}
