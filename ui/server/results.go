@@ -25,6 +25,7 @@ type ResultsView struct {
 	BytesHuman    string // formatted "3.4 GB"
 	NumWarnings   int
 	ApplyURL      string // "/api/self-check/apply" or "/api/cross-check/apply"
+	Backups       []string // cross-check only: backup paths from run args (for apply form replay)
 
 	// Populated from the run_end event when present.
 	MovedCount   int
@@ -89,6 +90,17 @@ func BuildResults(run *Run) (ResultsView, error) {
 		RunID:     run.ID,
 		Mode:      snap.Mode,
 		Status:    snap.Status,
+	}
+
+	// For cross-check runs, extract the backup paths from the run's CLI args
+	// so the results template can replay them in the apply form.
+	if strings.HasPrefix(snap.Mode, "cross_check") {
+		args := snap.Args
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] == "--backup" {
+				view.Backups = append(view.Backups, args[i+1])
+			}
+		}
 	}
 
 	// Canonical workflow mode for templates. Strip _preview/_apply suffix

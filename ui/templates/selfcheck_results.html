@@ -54,7 +54,13 @@
           hx-target="#tab-content"
           hx-swap="innerHTML"
           hx-disabled-elt="find button">
+      {{if eq .Mode "cross_check"}}
+      <input type="hidden" name="source" value="{{.SourcePath}}">
+      {{range .Backups}}<input type="hidden" name="backup" value="{{.}}">
+      {{end}}
+      {{else}}
       <input type="hidden" name="folder" value="{{.SourcePath}}">
+      {{end}}
       <input type="hidden" name="preview_run_id" value="{{.RunID}}">
 
       <div class="results-list">

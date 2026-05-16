@@ -68,6 +68,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /tab/self-check", s.handleSelfCheckTab)
 	mux.HandleFunc("GET /tab/cross-check", s.handleCrossCheckTab)
 	mux.HandleFunc("GET /tab/history", s.handleHistoryTab)
+	mux.HandleFunc("GET /history/{id}/preview", s.handleHistoryPreview)
+	mux.HandleFunc("POST /history/{id}/restore", s.handleHistoryRestore)
+	mux.HandleFunc("GET /history/{id}/done/{restore_id}", s.handleHistoryRestoreDone)
 
 	// Self-check workflow endpoints.
 	mux.HandleFunc("POST /api/self-check/preview", s.handleSelfCheckPreview)

@@ -211,6 +211,93 @@ func resolveManifest(stateDir, runID string) (string, error) {
 	return realManifest, nil
 }
 
+// historyRestoreData feeds the history_restore.html confirmation page.
+type historyRestoreData struct {
+	RunID        string
+	Folder       string
+	ManifestPath string
+	MovedCount   int
+}
+
+// handleHistoryPreview renders a restore-confirmation page for a past apply run.
+// GET /history/{id}/preview
+func (s *Server) handleHistoryPreview(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	manifest, err := resolveManifest(s.opts.StateDir, id)
+	if err != nil {
+		http.Error(w, "resolve manifest: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Load the entry so we can display folder + moved count.
+	ndjsonPath := filepath.Join(s.opts.StateDir, "runs", id+".ndjson")
+	entry, ok, err := loadHistoryEntry(ndjsonPath)
+	if err != nil || !ok {
+		http.Error(w, "load history entry: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "history_restore.html", historyRestoreData{
+		RunID:        id,
+		Folder:       entry.Folder,
+		ManifestPath: manifest,
+		MovedCount:   entry.MovedCount,
+	}); err != nil {
+		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleHistoryRestore launches a restore run for the given manifest.
+// POST /history/{id}/restore
+func (s *Server) handleHistoryRestore(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	manifest, err := resolveManifest(s.opts.StateDir, id)
+	if err != nil {
+		http.Error(w, "resolve manifest: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	args := []string{"--restore", manifest}
+	run, err := s.runs.Start(StartOptions{Mode: "restore", Args: args})
+	if err != nil {
+		http.Error(w, "start restore run: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+		RunID:       run.ID,
+		Folder:      manifest,
+		Mode:        "restore",
+		NextURL:     "/history/" + id + "/done/" + run.ID,
+		ShowActions: true,
+	}); err != nil {
+		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleHistoryRestoreDone shows the result of a restore run.
+// GET /history/{id}/done/{restore_run_id}
+func (s *Server) handleHistoryRestoreDone(w http.ResponseWriter, r *http.Request) {
+	restoreRunID := r.PathValue("restore_id")
+	run := s.runs.Get(restoreRunID)
+	if run == nil {
+		http.Error(w, "run not found: "+restoreRunID, http.StatusNotFound)
+		return
+	}
+	view, err := BuildResults(run)
+	if err != nil {
+		http.Error(w, "build results: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	view.Mode = "restore"
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
+		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
 // jsonInt / jsonInt64 unbox JSON numbers (which come through as float64).
 func jsonInt(v any) int {
 	if f, ok := v.(float64); ok {
