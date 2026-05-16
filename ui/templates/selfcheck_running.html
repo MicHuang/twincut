@@ -1,10 +1,18 @@
 <section class="tab-section">
   <header class="tab-section-header">
-    <h2>{{if .IsApply}}Applying…{{else}}Previewing…{{end}}</h2>
+    <h2>
+      {{- if eq .Mode "apply" -}}Applying…
+      {{- else if eq .Mode "restore" -}}Restoring…
+      {{- else -}}Previewing…
+      {{- end -}}
+    </h2>
     <p class="subtitle"><code>{{.Folder}}</code></p>
   </header>
 
-  <div class="run-panel" id="run-panel" data-run-id="{{.RunID}}" data-is-apply="{{.IsApply}}">
+  <div class="run-panel" id="run-panel"
+       data-run-id="{{.RunID}}"
+       data-next-url="{{.NextURL}}"
+       data-show-actions="{{.ShowActions}}">
 
     <div class="progress">
       <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
@@ -44,7 +52,8 @@
   (function () {
     const panel = document.getElementById('run-panel');
     const runID = panel.dataset.runId;
-    const isApply = panel.dataset.isApply === 'true';
+    const nextURL = panel.dataset.nextUrl;
+    const showActions = panel.dataset.showActions === 'true';
     const progressFill = document.getElementById('progress-fill');
     const progressText = document.getElementById('progress-text');
     const progressCurrent = document.getElementById('progress-current');
@@ -70,7 +79,7 @@
     });
     es.addEventListener('dup_group', () => { dups++; dupsEl.textContent = dups; });
     es.addEventListener('action', (e) => {
-      if (isApply) {
+      if (showActions) {
         const p = JSON.parse(e.data);
         logEl.textContent += `${p.kind} ${p.src}\n`;
       }
@@ -86,8 +95,7 @@
       es.close();
       progressFill.style.width = '100%';
       // Hand off: GET the appropriate next-screen fragment.
-      const next = isApply ? `/api/self-check/done/${runID}` : `/api/self-check/results/${runID}`;
-      htmx.ajax('GET', next, { target: '#tab-content', swap: 'innerHTML' });
+      htmx.ajax('GET', nextURL, { target: '#tab-content', swap: 'innerHTML' });
     });
     es.onerror = () => {
       // EventSource auto-reconnects on transient errors; only log on hard close.

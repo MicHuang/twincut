@@ -1,0 +1,58 @@
+{{define "history_list.html"}}
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>History</h2>
+    <p class="subtitle">Past self-check applies — click any row to restore.</p>
+  </header>
+
+  {{if not .Entries}}
+    <div class="alert alert-info">
+      <strong>No history yet.</strong> Run a self-check and apply some moves; this page lists what you can roll back.
+    </div>
+  {{else}}
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Folder</th>
+          <th>Files</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Entries}}
+        <tr class="history-row {{if .Restored}}history-row-restored{{end}}">
+          <td><time data-ts="{{.Timestamp}}">{{.Timestamp}}</time></td>
+          <td><code>{{.Folder}}</code></td>
+          <td>{{.MovedCount}}</td>
+          <td>
+            {{if .Restored}}<span class="badge badge-info">restored</span>
+            {{else if eq .Status "success"}}<span class="badge badge-success">success</span>
+            {{else if eq .Status "cancelled-partial"}}<span class="badge badge-warn">partial</span>
+            {{else}}<span class="badge badge-error">{{.Status}}</span>{{end}}
+          </td>
+          <td>
+            <a href="#" class="btn btn-secondary btn-small"
+               hx-get="/history/{{.RunID}}/preview"
+               hx-target="#tab-content"
+               hx-swap="innerHTML">
+              {{if .Restored}}Inspect{{else}}Restore…{{end}}
+            </a>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{end}}
+</section>
+
+<script>
+  document.querySelectorAll('time[data-ts]').forEach(function (el) {
+    const ts = parseInt(el.dataset.ts, 10);
+    if (!ts) return;
+    const d = new Date(ts * 1000);
+    el.textContent = d.toLocaleString();
+  });
+</script>
+{{end}}

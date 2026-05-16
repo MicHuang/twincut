@@ -17,11 +17,17 @@ type selfCheckFormData struct {
 	Recents       []string
 }
 
-// selfCheckRunningData feeds the running-panel template.
+// selfCheckRunningData feeds the running-panel template. Mode controls the
+// title ("Previewing…" / "Applying…" / "Restoring…"). NextURL is where the
+// JS navigates after the run_end SSE event arrives. ShowActions controls
+// whether per-file action log lines appear in the panel (apply/restore yes,
+// preview no — preview events would flood the log).
 type selfCheckRunningData struct {
-	RunID   string
-	Folder  string
-	IsApply bool
+	RunID       string
+	Folder      string
+	Mode        string // "preview" | "apply" | "restore"
+	NextURL     string
+	ShowActions bool
 }
 
 func (s *Server) handleSelfCheckTab(w http.ResponseWriter, _ *http.Request) {
@@ -83,9 +89,11 @@ func (s *Server) handleSelfCheckPreview(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
-		RunID:   run.ID,
-		Folder:  folder,
-		IsApply: false,
+		RunID:       run.ID,
+		Folder:      folder,
+		Mode:        "preview",
+		NextURL:     "/api/self-check/results/" + run.ID,
+		ShowActions: false,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -114,7 +122,7 @@ func (s *Server) handleSelfCheckResults(w http.ResponseWriter, r *http.Request) 
 // handleSelfCheckApply spawns the actual (non-dry-run) self-check using
 // twincut.sh's --apply-list mode, so the user's per-cluster keep/quarantine
 // selections are honored verbatim (including swapping which file is the
-// keeper). Returns the same running-panel template with IsApply=true.
+// keeper). Returns the running-panel template with Mode="apply".
 func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
@@ -165,9 +173,11 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
-		RunID:   run.ID,
-		Folder:  folder,
-		IsApply: true,
+		RunID:       run.ID,
+		Folder:      folder,
+		Mode:        "apply",
+		NextURL:     "/api/self-check/done/" + run.ID,
+		ShowActions: true,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
