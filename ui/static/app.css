@@ -286,15 +286,53 @@ details.advanced[open] summary { color: var(--fg); margin-bottom: 0.75rem; }
   border-radius: 4px;
   font-size: 0.85rem;
 }
-.result-row-keep { background: var(--keep-bg); }
-.result-row-remove { cursor: pointer; }
-.result-row-remove:hover { background: var(--code-bg); }
-.result-row.result-row-remove input[type=checkbox] { width: auto; }
-.role-tag { font-size: 0.65rem; padding: 1px 6px; border-radius: 3px; font-weight: 700; min-width: 80px; text-align: center; }
-.role-keep { background: var(--keep); color: white; }
-.role-remove { background: var(--remove); color: white; }
+.result-row:has(input[type=radio]:checked) { background: var(--keep-bg); }
 .path { flex: 1; font-family: ui-monospace, monospace; font-size: 0.78rem; overflow-wrap: anywhere; }
 .size { font-size: 0.78rem; min-width: 70px; text-align: right; }
+
+/* ------------ Results row controls (dual radio + checkbox) ------------ */
+
+.results-help { margin: 0 0 0.75rem; }
+
+/* The pair of pill labels at the top of each card / row. */
+.cluster-card-controls,
+.result-row .role-radio,
+.result-row .role-checkbox { /* the result-row layout uses inline pills */ }
+
+.role-radio,
+.role-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 2px 9px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.role-radio input,
+.role-checkbox input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.role-radio:has(input:checked) {
+  background: var(--keep-bg);
+  border-color: var(--keep);
+  color: var(--keep);
+}
+.role-checkbox:has(input:checked:not([disabled])) {
+  background: var(--remove-bg);
+  border-color: var(--remove);
+  color: var(--remove);
+}
+.role-checkbox:has(input[disabled]) { opacity: 0.45; cursor: default; }
 
 /* ------------ Similar-cluster cards ------------ */
 
@@ -312,12 +350,21 @@ details.advanced[open] summary { color: var(--fg); margin-bottom: 0.75rem; }
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
+  transition: background 0.12s, border-color 0.12s;
 }
-.cluster-card-keep { border-color: var(--keep); background: var(--keep-bg); }
-.cluster-card-remove { cursor: pointer; }
-.cluster-card-remove:hover { background: var(--code-bg); }
-.cluster-card-role { display: flex; align-items: center; gap: 0.4rem; }
-.cluster-card-role input[type=checkbox] { width: auto; margin: 0; }
+/* The card whose radio is checked is the keeper; everything else is a
+   candidate for quarantine. CSS :has() handles the visual swap so the
+   user's pick is reflected immediately without JS. */
+.cluster-card:has(input[type=radio]:checked) {
+  border-color: var(--keep);
+  background: var(--keep-bg);
+}
+.cluster-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
 .cluster-card-name {
   font-family: ui-monospace, monospace;
   font-size: 0.82rem;

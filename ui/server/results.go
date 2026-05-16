@@ -148,6 +148,15 @@ func BuildResults(run *Run) (ResultsView, error) {
 		}
 	}
 
+	// Twincut maintains a separate group_id counter per match family
+	// (md5 source-self, similar-video, etc.), so two clusters can both
+	// arrive with group_id=1. The UI uses GroupID as the form key for
+	// per-cluster controls — collisions would cross-wire the radios.
+	// Re-number to a single sequence for the page.
+	for i := range view.Groups {
+		view.Groups[i].GroupID = i + 1
+	}
+
 	view.NumGroups = len(view.Groups)
 	view.NumWarnings = len(view.Warnings)
 	view.BytesHuman = humanBytes(view.BytesReclaim)

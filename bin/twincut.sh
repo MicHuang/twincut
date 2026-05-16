@@ -158,6 +158,11 @@ DO_THUMB=false
 JSON_EVENTS=false
 EXCLUDE_PATHS=()
 
+# Apply-list mode: when set, twincut skips scan/match and just executes
+# the moves listed in the TSV (the Web UI uses this so the user-chosen
+# keep/quarantine assignments are honored verbatim — see process_apply_list).
+APPLY_LIST=""
+
 # ------------------------------ Small helpers --------------------------------
 # JSON string escaper. Handles backslash, quote, control chars, newline, tab,
 # carriage return. Output is bare (no surrounding quotes) so callers can
@@ -308,6 +313,40 @@ manifest_append(){
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$orig" "$quar" "$matched" "$ALGO" "$hh" "$dec" "$sz" "$mt" \
     >> "$MANIFEST_FILE"
+}
+
+# Process an apply-list TSV: each row is "move<TAB>keep<TAB>group<TAB>reason<TAB>hash".
+# Skips scan entirely and just executes the moves through qmove so we get
+# manifest writes, hardlink safety, and dry-run handling for free.
+# The destination subdir is derived from the match reason so md5 clusters
+# end up in _self_dupes/ and similar-video clusters in _similar_video_source/,
+# matching the scan-mode layout.
+process_apply_list(){
+  [[ -f "$APPLY_LIST" ]] || die3 "--apply-list file not found: $APPLY_LIST"
+  init_manifest
+  local _row=0 _md5_dir="$QUAR_DIR/${SOURCE_DUPE_SUBDIR:-_self_dupes}"
+  local _sim_dir="$QUAR_DIR/${SOURCE_SIMILAR_SUBDIR:-_similar_video_source}"
+  local _move _keep _gid _reason _hash _sub _dec
+  while IFS=$'\t' read -r _move _keep _gid _reason _hash; do
+    [[ -z "$_move" ]] && continue
+    case "$_move" in '#'*) continue ;; esac
+    _row=$((_row+1))
+    if [[ ! -e "$_move" ]]; then
+      emit_event warn code=missing_file path="$_move" detail="apply-list source not found"
+      continue
+    fi
+    case "$_reason" in
+      video_fast|video_strict) _sub="$_sim_dir"; _dec="apply_list_${_reason}" ;;
+      *)                       _sub="$_md5_dir"; _dec="apply_list_${_reason:-md5}" ;;
+    esac
+    mkdir -p "$_sub"
+    if qmove "$_move" "$_sub" "$_keep" "$_hash" "$_dec"; then
+      $DRY_RUN || MOVED=$((MOVED+1))
+      DUPES=$((DUPES+1))
+      case "$_reason" in video_fast|video_strict) SIMILAR_CNT=$((SIMILAR_CNT+1)) ;; esac
+    fi
+  done < "$APPLY_LIST"
+  TOTAL=$_row
 }
 
 # qmove SRC DEST_DIR MATCHED HASH DECISION
@@ -618,6 +657,12 @@ Web UI integration (intended for the twincut-ui Go server, but usable manually):
   --exclude-path <PATH>   Skip this exact path when moving/deleting (the
                           UI uses this to honor per-file unchecks). Repeat
                           the flag for multiple paths.
+  --apply-list <FILE>     Skip scan/match and execute the moves listed in
+                          this TSV instead. Each row:
+                            move_path<TAB>keep_path<TAB>group_id<TAB>match_reason<TAB>hash
+                          Reuses qmove for manifest writes + hardlink safety
+                          + dry-run support. Used by the Web UI's Apply step
+                          so the user can override which file is the keeper.
 
 Exit codes:
   0  normal completion
@@ -784,6 +829,7 @@ while [[ $# -gt 0 ]]; do
 
     --json-events) JSON_EVENTS=true; shift;;
     --exclude-path) EXCLUDE_PATHS+=("${2:-}"); shift 2;;
+    --apply-list)  APPLY_LIST="${2:-}"; shift 2;;
 
     --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
     --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
@@ -919,6 +965,14 @@ if $REBUILD_VMETA; then
 fi
 
 mkdir -p "$QUAR_DIR"
+
+# Apply-list short-circuit: skip the full scan and just execute the moves
+# requested by the Web UI. Falls through to the normal run_end emission at
+# the bottom so counters/manifest land in the standard event stream.
+if [[ -n "$APPLY_LIST" ]]; then
+  process_apply_list
+else
+
 # 为每个备份目录建立/复用 hash 索引（带进度&抗中断）
 if $DO_CROSS || $DO_BACKUP_SELF; then
 for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
@@ -1457,6 +1511,8 @@ fi
 if $DO_THUMB; then
   thumb_detect_run || true
 fi
+
+fi  # end of "else" branch for the apply-list short-circuit
 
 echo "===== SUMMARY ====="
 echo "Checked: $TOTAL files  | Duplicates: $DUPES"
