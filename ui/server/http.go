@@ -66,7 +66,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Tab content (htmx loads these into #tab-content).
 	mux.HandleFunc("GET /tab/self-check", s.handleSelfCheckTab)
-	mux.HandleFunc("GET /tab/cross-check", s.handleTabPlaceholder("Cross-check"))
+	mux.HandleFunc("GET /tab/cross-check", s.handleCrossCheckTab)
 	mux.HandleFunc("GET /tab/history", s.handleHistoryTab)
 
 	// Self-check workflow endpoints.
@@ -74,6 +74,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/self-check/results/{id}", s.handleSelfCheckResults)
 	mux.HandleFunc("POST /api/self-check/apply", s.handleSelfCheckApply)
 	mux.HandleFunc("GET /api/self-check/done/{id}", s.handleSelfCheckDone)
+
+	// Cross-check workflow endpoints.
+	mux.HandleFunc("POST /api/cross-check/preview", s.handleCrossCheckPreview)
+	mux.HandleFunc("GET /api/cross-check/results/{id}", s.handleCrossCheckResults)
+	mux.HandleFunc("POST /api/cross-check/apply", s.handleCrossCheckApply)
+	mux.HandleFunc("GET /api/cross-check/done/{id}", s.handleCrossCheckDone)
+	mux.HandleFunc("GET /api/cross-check/add-backup-row", s.handleCrossCheckAddBackupRow)
 
 	// Directory browser.
 	mux.HandleFunc("GET /fs/list", s.handleFsList)
