@@ -56,12 +56,16 @@
           <input type="text" name="ext" placeholder="jpg,png,mp4,…">
         </label>
         <label class="field">
-          <span class="field-label">Also flag similar videos</span>
-          <input type="checkbox" name="include_similar_video" value="1">
+          <span class="field-label">Similar-video detection</span>
+          <select name="include_similar_video">
+            <option value="auto" selected>Auto (when folder has videos)</option>
+            <option value="on">Always</option>
+            <option value="off">Off</option>
+          </select>
         </label>
         <label class="field">
           <span class="field-label">Similarity size window (%)</span>
-          <input type="text" name="size_pct" value="" placeholder="0.5 (default)">
+          <input type="text" name="size_pct" value="" placeholder="auto: 5 when sim-video on, else 0.5">
         </label>
       </div>
     </details>

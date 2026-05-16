@@ -56,10 +56,20 @@ func (s *Server) handleSelfCheckPreview(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	includeOn, sizePct := resolveSimilarVideo(r.Form, func() bool {
+		ok, err := FolderHasVideos(folder)
+		if err != nil {
+			log.Printf("FolderHasVideos(%q): %v — treating as no videos", folder, err)
+		}
+		return ok
+	})
 	args := []string{"--self-check", folder, "--dry-run"}
 	args = appendCommonOptions(args, r)
-	if r.FormValue("include_similar_video") == "1" {
+	if includeOn {
 		args = append(args, "--include-similar-video")
+		if sizePct != "" {
+			args = append(args, "--size-pct", sizePct)
+		}
 	}
 
 	run, err := s.runs.Start(StartOptions{Mode: "self_check_preview", Args: args})
@@ -255,7 +265,10 @@ func (s *Server) handleSelfCheckDone(w http.ResponseWriter, r *http.Request) {
 }
 
 // appendCommonOptions reads the optional --algo / --min-size / --ext form
-// values and appends them to args.
+// values and appends them to args. size_pct and include_similar_video are
+// handled by resolveSimilarVideo at the preview entry point so the auto
+// defaults stay in one place; apply uses --apply-list which short-circuits
+// scan options entirely.
 func appendCommonOptions(args []string, r *http.Request) []string {
 	if v := strings.TrimSpace(r.FormValue("algo")); v != "" && v != "md5" {
 		args = append(args, "--algo", v)
@@ -266,10 +279,40 @@ func appendCommonOptions(args []string, r *http.Request) []string {
 	if v := strings.TrimSpace(r.FormValue("ext")); v != "" {
 		args = append(args, "--ext", v)
 	}
-	if v := strings.TrimSpace(r.FormValue("size_pct")); v != "" {
-		args = append(args, "--size-pct", v)
-	}
 	return args
+}
+
+// resolveSimilarVideo decides the effective scan flags from the form's
+// tri-state include_similar_video field plus a folder-content probe. Modes:
+//
+//   - "on" / "1" / "true"  → always pass --include-similar-video
+//   - "off" / "0" / "false" → never
+//   - "auto" / ""           → on only if hasVideos() reports true
+//
+// When sim-video is effectively on AND the user did not set size_pct, the
+// returned sizePct is "5" — a more generous default than twincut.sh's 0.5%
+// so similar-but-not-identical clips actually surface in the cluster cards.
+// hasVideos is a callback so tests can stub the filesystem probe.
+func resolveSimilarVideo(form url.Values, hasVideos func() bool) (includeOn bool, sizePct string) {
+	mode := strings.ToLower(strings.TrimSpace(form.Get("include_similar_video")))
+	switch mode {
+	case "on", "1", "true":
+		includeOn = true
+	case "off", "0", "false":
+		includeOn = false
+	default:
+		includeOn = hasVideos()
+	}
+	if !includeOn {
+		// size_pct only governs similar-video matching; suppress it when the
+		// effective decision is "off" so we don't pass a dead flag.
+		return
+	}
+	sizePct = strings.TrimSpace(form.Get("size_pct"))
+	if sizePct == "" {
+		sizePct = "5"
+	}
+	return
 }
 
 // handleFsList serves the directory browser.
