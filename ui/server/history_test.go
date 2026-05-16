@@ -1,12 +1,33 @@
 package server
 
 import (
+	"html/template"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
+
+// newHistoryTestServer builds a minimal Server with templates parsed from the
+// on-disk templates directory (relative to the package under test).
+func newHistoryTestServer(t *testing.T, stateDir string) *Server {
+	t.Helper()
+	tmpl, err := template.ParseGlob("../templates/*.html")
+	if err != nil {
+		t.Fatalf("parse templates: %v", err)
+	}
+	return &Server{
+		opts: Options{
+			StateDir:    stateDir,
+			TwincutPath: "/dev/null",
+		},
+		tmpl: tmpl,
+	}
+}
 
 func writeNDJSON(t *testing.T, path string, lines ...string) {
 	t.Helper()
@@ -141,5 +162,46 @@ func TestResolveManifest_SuccessAndMissing(t *testing.T) {
 	}
 	if _, err := resolveManifest(state, "NO_SUCH_RUN"); err == nil {
 		t.Errorf("expected error for unknown run; got nil")
+	}
+}
+
+func TestHandleHistoryTab_RendersEntries(t *testing.T) {
+	state := t.TempDir()
+	runs := filepath.Join(state, "runs")
+	manifest := filepath.Join(state, "_m.tsv")
+	os.WriteFile(manifest, []byte(""), 0o644)
+	writeNDJSON(t, filepath.Join(runs, "A.ndjson"),
+		`{"type":"run_start","ts":100,"run_id":"A","mode":"self_check_apply","source":"/p/a"}`,
+		`{"type":"run_end","ts":110,"run_id":"A","moved":3,"manifest_path":"`+manifest+`","cancelled":false}`,
+	)
+	s := newHistoryTestServer(t, state)
+	req := httptest.NewRequest("GET", "/tab/history", nil)
+	w := httptest.NewRecorder()
+	s.handleHistoryTab(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "/p/a") {
+		t.Errorf("response missing folder /p/a; body=\n%s", body)
+	}
+	if !strings.Contains(body, "/history/A/preview") {
+		t.Errorf("response missing restore link; body=\n%s", body)
+	}
+}
+
+func TestHandleHistoryTab_EmptyState(t *testing.T) {
+	state := t.TempDir()
+	s := newHistoryTestServer(t, state)
+	req := httptest.NewRequest("GET", "/tab/history", nil)
+	w := httptest.NewRecorder()
+	s.handleHistoryTab(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "No history yet") {
+		t.Errorf("missing empty-state message")
 	}
 }

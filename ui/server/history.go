@@ -4,11 +4,29 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
+
+// historyView is the template payload for history_list.html.
+type historyView struct {
+	Entries []HistoryEntry
+}
+
+func (s *Server) handleHistoryTab(w http.ResponseWriter, _ *http.Request) {
+	entries, err := collectHistory(s.opts.StateDir)
+	if err != nil {
+		http.Error(w, "collect history: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "history_list.html", historyView{Entries: entries}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
 
 // HistoryEntry summarizes one past UI-originated self-check Apply for the
 // History list. Built from the run's NDJSON header + footer events.
