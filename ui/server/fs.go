@@ -66,17 +66,47 @@ func IsAllowedPath(p string) (bool, error) {
 		return false, err
 	}
 	abs = filepath.Clean(abs)
+	// Resolve symlinks of the deepest existing ancestor and re-append
+	// any non-existent tail. This blocks `ln -s /etc ~/evil` even when
+	// the submitted leaf (~/evil/x.jpg) doesn't exist yet, while still
+	// matching paths whose root resolves through symlinks (e.g.
+	// macOS /var → /private/var, common in test temp dirs).
+	resolved := resolveExisting(abs)
 	roots, err := allowedRoots()
 	if err != nil {
 		return false, err
 	}
 	for _, root := range roots {
 		root = filepath.Clean(root)
-		if abs == root || strings.HasPrefix(abs, root+string(os.PathSeparator)) {
+		if rr, rerr := filepath.EvalSymlinks(root); rerr == nil {
+			root = rr
+		}
+		if resolved == root || strings.HasPrefix(resolved, root+string(os.PathSeparator)) {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// resolveExisting returns the symlink-resolved form of p. If p itself
+// doesn't exist, walks up to the deepest existing ancestor, resolves
+// that, and re-joins any missing tail components. Returns p unchanged
+// if no ancestor resolves.
+func resolveExisting(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	dir := filepath.Dir(p)
+	tail := []string{filepath.Base(p)}
+	for dir != "/" && dir != "." && dir != filepath.Dir(dir) {
+		if r, err := filepath.EvalSymlinks(dir); err == nil {
+			parts := append([]string{r}, tail...)
+			return filepath.Join(parts...)
+		}
+		tail = append([]string{filepath.Base(dir)}, tail...)
+		dir = filepath.Dir(dir)
+	}
+	return p
 }
 
 // ErrPathDisallowed is returned by ListDir when the requested path is

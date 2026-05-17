@@ -1,0 +1,27 @@
+{{define "history_restore.html"}}
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Restore</h2>
+    <p class="subtitle"><code>{{.Folder}}</code></p>
+  </header>
+
+  <div class="alert alert-info">
+    <strong>{{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}</strong> will be moved back from quarantine to their original locations.
+    <br><span class="muted small">Manifest: <code>{{.ManifestPath}}</code></span>
+  </div>
+
+  <div class="form-actions">
+    <button class="btn btn-primary"
+            hx-post="/history/{{.RunID}}/restore"
+            hx-target="#tab-content"
+            hx-swap="innerHTML"
+            hx-disabled-elt="this">
+      Restore {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}
+    </button>
+    <a href="#" class="btn btn-secondary"
+       hx-get="/tab/history"
+       hx-target="#tab-content"
+       hx-swap="innerHTML">Cancel</a>
+  </div>
+</section>
+{{end}}

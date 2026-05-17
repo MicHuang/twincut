@@ -50,11 +50,17 @@
     </p>
 
     <form id="apply-form"
-          hx-post="/api/self-check/apply"
+          hx-post="{{.ApplyURL}}"
           hx-target="#tab-content"
           hx-swap="innerHTML"
           hx-disabled-elt="find button">
+      {{if eq .Mode "cross_check"}}
+      <input type="hidden" name="source" value="{{.SourcePath}}">
+      {{range .Backups}}<input type="hidden" name="backup" value="{{.}}">
+      {{end}}
+      {{else}}
       <input type="hidden" name="folder" value="{{.SourcePath}}">
+      {{end}}
       <input type="hidden" name="preview_run_id" value="{{.RunID}}">
 
       <div class="results-list">
@@ -62,107 +68,132 @@
         <div class="result-group {{if .IsSimilar}}result-group-similar{{end}}" data-group-id="{{.GroupID}}">
           <div class="result-group-header">
             <span class="badge badge-match">{{.MatchReason}}</span>
+            {{if eq .Mode "cross_check"}}
+              <span class="badge badge-role-cluster">cross-check</span>
+            {{end}}
             <span class="muted small">group {{.GroupID}}{{if .Hash}} · hash <code class="hash">{{.Hash}}</code>{{end}}</span>
           </div>
 
-          {{if .IsSimilar}}
-            {{/* Similar matches: side-by-side cards with thumbnails so the
-                 user can eyeball which copy to keep. The radio inside each
-                 card is what determines KEEP vs QUARANTINE — CSS :has()
-                 swaps the styling, JS keeps the checkbox state in sync. */}}
-            <div class="cluster-cards">
-              <div class="cluster-card">
-                <div class="cluster-card-controls">
-                  <label class="role-radio">
-                    <input type="radio" name="keep_{{.GroupID}}" value="{{.Keep.Path}}" checked>
-                    <span>Keep</span>
-                  </label>
-                  <label class="role-checkbox">
-                    <input type="checkbox" name="quarantine" value="{{.Keep.Path}}" disabled>
-                    <span>Quarantine</span>
-                  </label>
-                </div>
-                <button type="button" class="thumb-btn"
-                        data-thumb-src="/thumb?path={{.Keep.Path}}&size=1024"
-                        data-thumb-alt="{{.Keep.Name}}">
-                  <img class="thumb" loading="lazy"
-                       src="/thumb?path={{.Keep.Path}}&size=320"
-                       alt="{{.Keep.Name}}">
-                </button>
-                <div class="cluster-card-name">{{.Keep.Name}}</div>
-                <div class="cluster-card-meta">
-                  <span>{{.Keep.SizeStr}}</span>
-                  {{if .Keep.DimensionsStr}}<span>· {{.Keep.DimensionsStr}}</span>{{end}}
-                  {{if .Keep.DurationStr}}<span>· {{.Keep.DurationStr}}</span>{{end}}
-                  {{if .Keep.FPSStr}}<span>· {{.Keep.FPSStr}}</span>{{end}}
-                  {{if .Keep.BitrateStr}}<span>· {{.Keep.BitrateStr}}</span>{{end}}
-                </div>
-                <details class="cluster-card-path"><summary class="muted small">path</summary>
-                  <code>{{.Keep.Path}}</code>
-                </details>
-              </div>
-
-              {{range .Remove}}
-              <div class="cluster-card">
-                <div class="cluster-card-controls">
-                  <label class="role-radio">
-                    <input type="radio" name="keep_{{$g.GroupID}}" value="{{.Path}}">
-                    <span>Keep</span>
-                  </label>
-                  <label class="role-checkbox">
-                    <input type="checkbox" name="quarantine" value="{{.Path}}" checked>
-                    <span>Quarantine</span>
-                  </label>
-                </div>
-                <button type="button" class="thumb-btn"
-                        data-thumb-src="/thumb?path={{.Path}}&size=1024"
-                        data-thumb-alt="{{.Name}}">
-                  <img class="thumb" loading="lazy"
-                       src="/thumb?path={{.Path}}&size=320"
-                       alt="{{.Name}}">
-                </button>
-                <div class="cluster-card-name">{{.Name}}</div>
-                <div class="cluster-card-meta">
-                  <span>{{.SizeStr}}</span>
-                  {{if .DimensionsStr}}<span>· {{.DimensionsStr}}</span>{{end}}
-                  {{if .DurationStr}}<span>· {{.DurationStr}}</span>{{end}}
-                  {{if .FPSStr}}<span>· {{.FPSStr}}</span>{{end}}
-                  {{if .BitrateStr}}<span>· {{.BitrateStr}}</span>{{end}}
-                </div>
-                <details class="cluster-card-path"><summary class="muted small">path</summary>
-                  <code>{{.Path}}</code>
-                </details>
-              </div>
-              {{end}}
-            </div>
-          {{else}}
-            {{/* Hash-exact matches: bytes are identical, no visual compare
-                 needed. Compact rows but with the same dual-control model. */}}
-            <div class="result-row">
-              <label class="role-radio">
-                <input type="radio" name="keep_{{.GroupID}}" value="{{.Keep.Path}}" checked>
-                <span>Keep</span>
-              </label>
-              <label class="role-checkbox">
-                <input type="checkbox" name="quarantine" value="{{.Keep.Path}}" disabled>
-                <span>Quarantine</span>
-              </label>
-              <code class="path">{{.Keep.Path}}</code>
-              <span class="size muted">{{.Keep.SizeStr}}</span>
+          {{if eq .Mode "cross_check"}}
+            {{/* Cross-check: asymmetric rendering. Backup keep is read-only;
+                 each source remove gets a quarantine checkbox. */}}
+            <div class="result-row result-row-backup">
+              <span class="badge badge-role-backup">BACKUP · keep</span>
+              <code class="result-path">{{.Keep.Path}}</code>
+              <span class="result-size">{{.Keep.SizeStr}}</span>
             </div>
             {{range .Remove}}
-            <div class="result-row">
-              <label class="role-radio">
-                <input type="radio" name="keep_{{$g.GroupID}}" value="{{.Path}}">
-                <span>Keep</span>
-              </label>
-              <label class="role-checkbox">
+            <div class="result-row result-row-source">
+              <label class="result-row-label">
                 <input type="checkbox" name="quarantine" value="{{.Path}}" checked>
-                <span>Quarantine</span>
+                <span class="badge badge-role-source">SOURCE</span>
+                <code class="result-path">{{.Path}}</code>
+                <span class="result-size">{{.SizeStr}}</span>
               </label>
-              <code class="path">{{.Path}}</code>
-              <span class="size muted">{{.SizeStr}}</span>
             </div>
+            {{end}}
+          {{else}}
+            {{/* Self-check: symmetric rendering — either similar (thumbnails)
+                 or hash-exact (compact rows). User can pick which to keep. */}}
+            {{if .IsSimilar}}
+              {{/* Similar matches: side-by-side cards with thumbnails so the
+                   user can eyeball which copy to keep. The radio inside each
+                   card is what determines KEEP vs QUARANTINE — CSS :has()
+                   swaps the styling, JS keeps the checkbox state in sync. */}}
+              <div class="cluster-cards">
+                <div class="cluster-card">
+                  <div class="cluster-card-controls">
+                    <label class="role-radio">
+                      <input type="radio" name="keep_{{.GroupID}}" value="{{.Keep.Path}}" checked>
+                      <span>Keep</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" name="quarantine" value="{{.Keep.Path}}" disabled>
+                      <span>Quarantine</span>
+                    </label>
+                  </div>
+                  <button type="button" class="thumb-btn"
+                          data-thumb-src="/thumb?path={{.Keep.Path}}&size=1024"
+                          data-thumb-alt="{{.Keep.Name}}">
+                    <img class="thumb" loading="lazy"
+                         src="/thumb?path={{.Keep.Path}}&size=320"
+                         alt="{{.Keep.Name}}">
+                  </button>
+                  <div class="cluster-card-name">{{.Keep.Name}}</div>
+                  <div class="cluster-card-meta">
+                    <span>{{.Keep.SizeStr}}</span>
+                    {{if .Keep.DimensionsStr}}<span>· {{.Keep.DimensionsStr}}</span>{{end}}
+                    {{if .Keep.DurationStr}}<span>· {{.Keep.DurationStr}}</span>{{end}}
+                    {{if .Keep.FPSStr}}<span>· {{.Keep.FPSStr}}</span>{{end}}
+                    {{if .Keep.BitrateStr}}<span>· {{.Keep.BitrateStr}}</span>{{end}}
+                  </div>
+                  <details class="cluster-card-path"><summary class="muted small">path</summary>
+                    <code>{{.Keep.Path}}</code>
+                  </details>
+                </div>
+
+                {{range .Remove}}
+                <div class="cluster-card">
+                  <div class="cluster-card-controls">
+                    <label class="role-radio">
+                      <input type="radio" name="keep_{{$g.GroupID}}" value="{{.Path}}">
+                      <span>Keep</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" name="quarantine" value="{{.Path}}" checked>
+                      <span>Quarantine</span>
+                    </label>
+                  </div>
+                  <button type="button" class="thumb-btn"
+                          data-thumb-src="/thumb?path={{.Path}}&size=1024"
+                          data-thumb-alt="{{.Name}}">
+                    <img class="thumb" loading="lazy"
+                         src="/thumb?path={{.Path}}&size=320"
+                         alt="{{.Name}}">
+                  </button>
+                  <div class="cluster-card-name">{{.Name}}</div>
+                  <div class="cluster-card-meta">
+                    <span>{{.SizeStr}}</span>
+                    {{if .DimensionsStr}}<span>· {{.DimensionsStr}}</span>{{end}}
+                    {{if .DurationStr}}<span>· {{.DurationStr}}</span>{{end}}
+                    {{if .FPSStr}}<span>· {{.FPSStr}}</span>{{end}}
+                    {{if .BitrateStr}}<span>· {{.BitrateStr}}</span>{{end}}
+                  </div>
+                  <details class="cluster-card-path"><summary class="muted small">path</summary>
+                    <code>{{.Path}}</code>
+                  </details>
+                </div>
+                {{end}}
+              </div>
+            {{else}}
+              {{/* Hash-exact matches: bytes are identical, no visual compare
+                   needed. Compact rows but with the same dual-control model. */}}
+              <div class="result-row">
+                <label class="role-radio">
+                  <input type="radio" name="keep_{{.GroupID}}" value="{{.Keep.Path}}" checked>
+                  <span>Keep</span>
+                </label>
+                <label class="role-checkbox">
+                  <input type="checkbox" name="quarantine" value="{{.Keep.Path}}" disabled>
+                  <span>Quarantine</span>
+                </label>
+                <code class="path">{{.Keep.Path}}</code>
+                <span class="size muted">{{.Keep.SizeStr}}</span>
+              </div>
+              {{range .Remove}}
+              <div class="result-row">
+                <label class="role-radio">
+                  <input type="radio" name="keep_{{$g.GroupID}}" value="{{.Path}}">
+                  <span>Keep</span>
+                </label>
+                <label class="role-checkbox">
+                  <input type="checkbox" name="quarantine" value="{{.Path}}" checked>
+                  <span>Quarantine</span>
+                </label>
+                <code class="path">{{.Path}}</code>
+                <span class="size muted">{{.SizeStr}}</span>
+              </div>
+              {{end}}
             {{end}}
           {{end}}
         </div>

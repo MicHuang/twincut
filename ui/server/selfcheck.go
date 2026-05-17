@@ -5,9 +5,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -128,16 +125,6 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	folder := strings.TrimSpace(r.FormValue("folder"))
-	if folder == "" {
-		http.Error(w, "folder is required", http.StatusBadRequest)
-		return
-	}
-	if ok, err := IsAllowedPath(folder); err != nil || !ok {
-		http.Error(w, "folder is outside the allowlist", http.StatusForbidden)
-		return
-	}
-
 	previewID := r.FormValue("preview_run_id")
 	if previewID == "" {
 		http.Error(w, "preview_run_id is required", http.StatusBadRequest)
@@ -148,13 +135,26 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "preview run not found", http.StatusNotFound)
 		return
 	}
+	// Derive folder from the preview run's args, not the submitted form.
+	// Trusting the form would let an attacker pair preview_run_id of /A
+	// with folder=/B and have /A's quarantine selections move files into
+	// /B's tree.
+	folder, ok := extractArgValue(previewRun.Snapshot().Args, "--self-check")
+	if !ok || folder == "" {
+		http.Error(w, "preview run is missing --self-check arg", http.StatusInternalServerError)
+		return
+	}
+	if ok, err := IsAllowedPath(folder); err != nil || !ok {
+		http.Error(w, "folder is outside the allowlist", http.StatusForbidden)
+		return
+	}
 	view, err := BuildResults(previewRun)
 	if err != nil {
 		http.Error(w, "build preview: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	rows := composeApplyList(view.Groups, r.Form)
+	rows := composeApplyList(view.Groups, r.Form, "self_check")
 
 	listPath, err := writeApplyList(s.opts.StateDir, rows)
 	if err != nil {
@@ -181,78 +181,6 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-// composeApplyList walks the preview's groups and the form's selections to
-// produce the rows that twincut --apply-list will execute. Each row:
-//
-//	move_path \t keep_path \t group_id \t match_reason \t hash
-//
-// Form contract:
-//   - "quarantine" values list every path the user wants moved.
-//   - "keep_<group_id>" identifies the user-chosen keeper per cluster
-//     (defaults to the preview's keeper when absent).
-//
-// Selections are validated against each cluster's known paths so a malicious
-// or stale form can't cause moves outside the preview's scope.
-func composeApplyList(groups []ResultGroup, form url.Values) [][]string {
-	wanted := map[string]bool{}
-	for _, p := range form["quarantine"] {
-		wanted[p] = true
-	}
-	var rows [][]string
-	for _, g := range groups {
-		clusterOrder := []string{g.Keep.Path}
-		clusterSet := map[string]bool{g.Keep.Path: true}
-		for _, rm := range g.Remove {
-			clusterOrder = append(clusterOrder, rm.Path)
-			clusterSet[rm.Path] = true
-		}
-
-		chosenKeep := form.Get("keep_" + strconv.Itoa(g.GroupID))
-		if !clusterSet[chosenKeep] {
-			chosenKeep = g.Keep.Path
-		}
-
-		for _, path := range clusterOrder {
-			if path == chosenKeep {
-				continue
-			}
-			if !wanted[path] {
-				continue
-			}
-			rows = append(rows, []string{
-				path,
-				chosenKeep,
-				strconv.Itoa(g.GroupID),
-				g.MatchReason,
-				g.Hash,
-			})
-		}
-	}
-	return rows
-}
-
-// writeApplyList serializes rows to a stable TSV file under
-// <stateDir>/applylists/. Returns the absolute path. Each row's columns are
-// already absolute paths and short identifiers — no escaping required for
-// TSV (twincut splits on TAB and tolerates anything else inside a column).
-func writeApplyList(stateDir string, rows [][]string) (string, error) {
-	dir := filepath.Join(stateDir, "applylists")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	f, err := os.CreateTemp(dir, "apply-*.tsv")
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	for _, row := range rows {
-		if _, err := fmt.Fprintln(f, strings.Join(row, "\t")); err != nil {
-			return "", err
-		}
-	}
-	return f.Name(), nil
 }
 
 // handleSelfCheckDone renders the post-apply summary page.

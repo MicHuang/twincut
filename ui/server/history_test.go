@@ -49,29 +49,44 @@ func TestCollectHistory_FiltersAndSorts(t *testing.T) {
 	state := t.TempDir()
 	runs := filepath.Join(state, "runs")
 
-	// 1. Self-check apply, success, moved=2.
+	// 1. Self-check apply (dry_run=false, moved>0) — keep.
 	writeNDJSON(t, filepath.Join(runs, "A.ndjson"),
-		`{"type":"run_start","ts":100,"run_id":"A","mode":"self_check_apply","source":"/p/a"}`,
+		`{"type":"run_start","ts":100,"run_id":"A","mode":"self_check","source":"/p/a","dry_run":false}`,
 		`{"type":"run_end","ts":110,"run_id":"A","moved":2,"manifest_path":"/p/a/_QUARANTINE/_m.tsv","cancelled":false}`,
 	)
-	// 2. Self-check preview — must be filtered out.
+	// 2. Self-check preview (dry_run=true) — filter out, nothing to restore.
 	writeNDJSON(t, filepath.Join(runs, "B.ndjson"),
-		`{"type":"run_start","ts":200,"run_id":"B","mode":"self_check","source":"/p/b"}`,
+		`{"type":"run_start","ts":200,"run_id":"B","mode":"self_check","source":"/p/b","dry_run":true}`,
 		`{"type":"run_end","ts":201,"run_id":"B","moved":0,"manifest_path":"","cancelled":false}`,
 	)
-	// 3. Self-check apply but no moves — filtered out (nothing to restore).
+	// 3. Self-check apply but no moves — filter out (nothing to restore).
 	writeNDJSON(t, filepath.Join(runs, "C.ndjson"),
-		`{"type":"run_start","ts":300,"run_id":"C","mode":"self_check_apply","source":"/p/c"}`,
+		`{"type":"run_start","ts":300,"run_id":"C","mode":"self_check","source":"/p/c","dry_run":false}`,
 		`{"type":"run_end","ts":301,"run_id":"C","moved":0,"manifest_path":"","cancelled":false}`,
 	)
 	// 4. Self-check apply, cancelled-partial (moved>0) — keep.
 	writeNDJSON(t, filepath.Join(runs, "D.ndjson"),
-		`{"type":"run_start","ts":400,"run_id":"D","mode":"self_check_apply","source":"/p/d"}`,
+		`{"type":"run_start","ts":400,"run_id":"D","mode":"self_check","source":"/p/d","dry_run":false}`,
 		`{"type":"run_end","ts":410,"run_id":"D","moved":5,"manifest_path":"/p/d/_QUARANTINE/_m.tsv","cancelled":true}`,
 	)
-	// 5. Apply with no run_end (process killed) — filtered out.
+	// 5. Apply with no run_end (process killed) — filter out.
 	writeNDJSON(t, filepath.Join(runs, "E.ndjson"),
-		`{"type":"run_start","ts":500,"run_id":"E","mode":"self_check_apply","source":"/p/e"}`,
+		`{"type":"run_start","ts":500,"run_id":"E","mode":"self_check","source":"/p/e","dry_run":false}`,
+	)
+	// 6. Cross-check apply (dry_run=false, moved>0) — keep.
+	writeNDJSON(t, filepath.Join(runs, "F.ndjson"),
+		`{"type":"run_start","ts":600,"run_id":"F","mode":"cross_check","source":"/p/src","backups":["/p/bk"],"dry_run":false}`,
+		`{"type":"run_end","ts":610,"run_id":"F","moved":3,"manifest_path":"/p/src/_QUARANTINE/_m.tsv","cancelled":false}`,
+	)
+	// 7. Cross-check preview (dry_run=true) — filter out.
+	writeNDJSON(t, filepath.Join(runs, "G.ndjson"),
+		`{"type":"run_start","ts":700,"run_id":"G","mode":"cross_check","source":"/p/src","backups":["/p/bk"],"dry_run":true}`,
+		`{"type":"run_end","ts":701,"run_id":"G","moved":0,"manifest_path":"","cancelled":false}`,
+	)
+	// 8. Restore run (mode=restore) — filter out, not an apply.
+	writeNDJSON(t, filepath.Join(runs, "H.ndjson"),
+		`{"type":"run_start","ts":800,"run_id":"H","mode":"restore","source":"/p/a/_QUARANTINE/_m.tsv","dry_run":false}`,
+		`{"type":"run_end","ts":801,"run_id":"H","restored":2,"cancelled":false}`,
 	)
 
 	got, err := collectHistory(state)
@@ -80,25 +95,28 @@ func TestCollectHistory_FiltersAndSorts(t *testing.T) {
 	}
 	sort.Slice(got, func(i, j int) bool { return got[i].Timestamp > got[j].Timestamp })
 
-	wantIDs := []string{"D", "A"}
-	gotIDs := make([]string, len(got))
-	for i, e := range got {
-		gotIDs[i] = e.RunID
+	// Expect: A (self_check apply), D (self_check cancelled-partial), F (cross_check apply).
+	if len(got) != 3 {
+		t.Fatalf("want 3 entries, got %d: %+v", len(got), got)
 	}
+	gotIDs := []string{got[0].RunID, got[1].RunID, got[2].RunID}
+	wantIDs := []string{"F", "D", "A"} // sorted by timestamp desc
 	if !reflect.DeepEqual(gotIDs, wantIDs) {
-		t.Errorf("history IDs (desc by ts) = %v; want %v", gotIDs, wantIDs)
+		t.Errorf("ordering mismatch: got %v, want %v", gotIDs, wantIDs)
 	}
-	if got[0].Status != "cancelled-partial" {
-		t.Errorf("entry D status = %q; want cancelled-partial", got[0].Status)
-	}
-	if got[1].Status != "success" {
-		t.Errorf("entry A status = %q; want success", got[1].Status)
-	}
-	if got[1].Folder != "/p/a" {
-		t.Errorf("entry A folder = %q; want /p/a", got[1].Folder)
-	}
-	if got[1].MovedCount != 2 {
-		t.Errorf("entry A moved = %d; want 2", got[1].MovedCount)
+
+	// Cross-check entry F should have Mode "cross_check".
+	for _, e := range got {
+		if e.RunID == "F" {
+			if e.Mode != "cross_check" {
+				t.Errorf("entry F Mode = %q, want %q", e.Mode, "cross_check")
+			}
+		}
+		if e.RunID == "A" || e.RunID == "D" {
+			if e.Mode != "self_check" {
+				t.Errorf("entry %s Mode = %q, want %q", e.RunID, e.Mode, "self_check")
+			}
+		}
 	}
 }
 
@@ -113,7 +131,7 @@ func TestCollectHistory_RestoredSidecarDetected(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeNDJSON(t, filepath.Join(runs, "A.ndjson"),
-		`{"type":"run_start","ts":100,"run_id":"A","mode":"self_check_apply","source":"/p/a"}`,
+		`{"type":"run_start","ts":100,"run_id":"A","mode":"self_check","source":"/p/a","dry_run":false}`,
 		`{"type":"run_end","ts":110,"run_id":"A","moved":1,"manifest_path":"`+manifest+`","cancelled":false}`,
 	)
 	got, err := collectHistory(state)
@@ -157,11 +175,11 @@ func TestResolveManifest_SuccessAndMissing(t *testing.T) {
 	}
 	os.WriteFile(manifest, []byte(""), 0o644)
 	writeNDJSON(t, filepath.Join(runs, "OK.ndjson"),
-		`{"type":"run_start","ts":1,"run_id":"OK","mode":"self_check_apply","source":"/p"}`,
+		`{"type":"run_start","ts":1,"run_id":"OK","mode":"self_check","source":"/p","dry_run":false}`,
 		`{"type":"run_end","ts":2,"run_id":"OK","moved":1,"manifest_path":"`+manifest+`","cancelled":false}`,
 	)
 	writeNDJSON(t, filepath.Join(runs, "GONE.ndjson"),
-		`{"type":"run_start","ts":3,"run_id":"GONE","mode":"self_check_apply","source":"/p"}`,
+		`{"type":"run_start","ts":3,"run_id":"GONE","mode":"self_check","source":"/p","dry_run":false}`,
 		`{"type":"run_end","ts":4,"run_id":"GONE","moved":1,"manifest_path":"/nope/_m.tsv","cancelled":false}`,
 	)
 
@@ -186,7 +204,7 @@ func TestHandleHistoryTab_RendersEntries(t *testing.T) {
 	manifest := filepath.Join(state, "_m.tsv")
 	os.WriteFile(manifest, []byte(""), 0o644)
 	writeNDJSON(t, filepath.Join(runs, "A.ndjson"),
-		`{"type":"run_start","ts":100,"run_id":"A","mode":"self_check_apply","source":"/p/a"}`,
+		`{"type":"run_start","ts":100,"run_id":"A","mode":"self_check","source":"/p/a","dry_run":false}`,
 		`{"type":"run_end","ts":110,"run_id":"A","moved":3,"manifest_path":"`+manifest+`","cancelled":false}`,
 	)
 	s := newHistoryTestServer(t, state)

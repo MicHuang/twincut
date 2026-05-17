@@ -16,7 +16,7 @@
   {{else}}
     <div class="alert alert-success">
       {{if eq .Mode "restore"}}
-        <strong>Restored {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}.</strong>
+        <strong>Restored {{.RestoredCount}} file{{if ne .RestoredCount 1}}s{{end}}.</strong>
       {{else}}
         <strong>Quarantined {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}.</strong>
       {{end}}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -229,5 +230,114 @@ func TestHumanBytes(t *testing.T) {
 func TestBaseName(t *testing.T) {
 	if got := filepath.Base("/a/b/c.jpg"); got != "c.jpg" {
 		t.Errorf("filepath.Base = %q", got)
+	}
+}
+
+func TestResultsTemplate_CrossCheckRendersRoleBadges(t *testing.T) {
+	srv := newCrossCheckTestServer(t)
+	view := ResultsView{
+		RunID:    "test-x",
+		ApplyURL: "/api/cross-check/apply",
+		Groups: []ResultGroup{
+			{
+				GroupID:     1,
+				MatchReason: "md5",
+				Mode:        "cross_check",
+				Keep:        ResultFile{Path: "/bk/a.jpg", SizeStr: "1.0 MB"},
+				Remove:      []ResultFile{{Path: "/src/a.jpg", SizeStr: "1.0 MB"}},
+			},
+		},
+		NumGroups: 1,
+		NumFiles:  1,
+	}
+	var buf strings.Builder
+	if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_results.html", view); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	body := buf.String()
+	for _, want := range []string{
+		`hx-post="/api/cross-check/apply"`,
+		`BACKUP · keep`,
+		`SOURCE`,
+		`/bk/a.jpg`,
+		`/src/a.jpg`,
+		`type="checkbox" name="quarantine"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q", want)
+		}
+	}
+}
+
+func TestResultsTemplate_SelfCheckUsesSelfCheckApplyURL(t *testing.T) {
+	srv := newCrossCheckTestServer(t)
+	view := ResultsView{
+		RunID:    "test-s",
+		ApplyURL: "/api/self-check/apply",
+		Groups: []ResultGroup{
+			{
+				GroupID:     1,
+				MatchReason: "md5",
+				Mode:        "self_check",
+				Keep:        ResultFile{Path: "/p/a.jpg", SizeStr: "1.0 MB"},
+				Remove:      []ResultFile{{Path: "/p/b.jpg", SizeStr: "1.0 MB"}},
+			},
+		},
+		NumGroups: 1,
+		NumFiles:  1,
+	}
+	var buf strings.Builder
+	if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_results.html", view); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `hx-post="/api/self-check/apply"`) {
+		t.Errorf("self-check apply URL not in body")
+	}
+	if strings.Contains(body, `BACKUP · keep`) || strings.Contains(body, `>SOURCE<`) {
+		t.Errorf("self-check rendering leaked cross-check role badges:\n%s", body)
+	}
+}
+
+func TestBuildResults_StampsGroupModeCrossCheck(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"cross_check","source":"/src"}`,
+		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"md5","hash":"x","keep_path":"/bk/a.jpg","keep_size":100,"keep_mtime":1,"remove_path":"/src/a.jpg","remove_size":100,"remove_mtime":1}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":1,"dupes":1,"moved":0,"cancelled":false}`,
+	})
+	// Simulate the Run.Mode being set to cross_check_preview (as StartOptions would set it)
+	r.Mode = "cross_check_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Groups) != 1 {
+		t.Fatalf("want 1 group, got %d", len(view.Groups))
+	}
+	if view.Groups[0].Mode != "cross_check" {
+		t.Errorf("group Mode = %q, want %q", view.Groups[0].Mode, "cross_check")
+	}
+	if view.ApplyURL != "/api/cross-check/apply" {
+		t.Errorf("view ApplyURL = %q, want %q", view.ApplyURL, "/api/cross-check/apply")
+	}
+}
+
+func TestBuildResults_StampsGroupModeSelfCheck(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"self_check","source":"/p"}`,
+		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"md5","hash":"x","keep_path":"/p/a.jpg","keep_size":100,"keep_mtime":1,"remove":[{"path":"/p/b.jpg","size":100,"mtime":1}]}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":2,"dupes":1,"moved":0,"cancelled":false}`,
+	})
+	// Simulate the Run.Mode being set to self_check_preview (as StartOptions would set it)
+	r.Mode = "self_check_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Groups[0].Mode != "self_check" {
+		t.Errorf("group Mode = %q, want %q", view.Groups[0].Mode, "self_check")
+	}
+	if view.ApplyURL != "/api/self-check/apply" {
+		t.Errorf("view ApplyURL = %q, want %q", view.ApplyURL, "/api/self-check/apply")
 	}
 }

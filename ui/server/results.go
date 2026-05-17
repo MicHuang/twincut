@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 // ResultsView is the structured payload the results template renders.
@@ -23,11 +24,14 @@ type ResultsView struct {
 	BytesReclaim  int64  // bytes reclaimable if the user accepts every default
 	BytesHuman    string // formatted "3.4 GB"
 	NumWarnings   int
+	ApplyURL      string // "/api/self-check/apply" or "/api/cross-check/apply"
+	Backups       []string // cross-check only: backup paths from run args (for apply form replay)
 
 	// Populated from the run_end event when present.
-	MovedCount   int
-	DeletedCount int
-	ManifestPath string
+	MovedCount    int
+	DeletedCount  int
+	RestoredCount int // populated only for mode=restore runs
+	ManifestPath  string
 	QuarantineDir string // parent of ManifestPath, for the "Open in Finder" button
 }
 
@@ -36,6 +40,7 @@ type ResultGroup struct {
 	GroupID     int
 	MatchReason string // md5, video_fast, …
 	Hash        string
+	Mode        string // "self_check" | "cross_check" — set by BuildResults from Run.Mode
 	Keep        ResultFile
 	Remove      []ResultFile
 
@@ -88,6 +93,32 @@ func BuildResults(run *Run) (ResultsView, error) {
 		Status:    snap.Status,
 	}
 
+	// For cross-check runs, extract the backup paths from the run's CLI args
+	// so the results template can replay them in the apply form.
+	if strings.HasPrefix(snap.Mode, "cross_check") {
+		args := snap.Args
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] == "--backup" {
+				view.Backups = append(view.Backups, args[i+1])
+			}
+		}
+	}
+
+	// Canonical workflow mode for templates. Strip _preview/_apply suffix
+	// from Run.Mode (which is "self_check_preview" / "self_check_apply" /
+	// "cross_check_preview" / "cross_check_apply" depending on the call site).
+	workflow := snap.Mode
+	switch {
+	case strings.HasPrefix(workflow, "cross_check"):
+		workflow = "cross_check"
+		view.ApplyURL = "/api/cross-check/apply"
+	case strings.HasPrefix(workflow, "self_check"):
+		workflow = "self_check"
+		view.ApplyURL = "/api/self-check/apply"
+	default:
+		view.ApplyURL = "/api/self-check/apply" // safe fallback
+	}
+
 	for _, ev := range run.EventsSince(0) {
 		switch ev.Type {
 		case EventRunStart:
@@ -138,12 +169,14 @@ func BuildResults(run *Run) (ResultsView, error) {
 				Cancelled    bool   `json:"cancelled"`
 				Moved        int    `json:"moved"`
 				Deleted      int    `json:"deleted"`
+				Restored     int    `json:"restored"`
 				ManifestPath string `json:"manifest_path"`
 			}
 			if err := json.Unmarshal(ev.Raw, &p); err == nil {
 				view.Cancelled = p.Cancelled
 				view.MovedCount = p.Moved
 				view.DeletedCount = p.Deleted
+				view.RestoredCount = p.Restored
 				view.ManifestPath = p.ManifestPath
 			}
 		}
@@ -153,9 +186,11 @@ func BuildResults(run *Run) (ResultsView, error) {
 	// (md5 source-self, similar-video, etc.), so two clusters can both
 	// arrive with group_id=1. The UI uses GroupID as the form key for
 	// per-cluster controls — collisions would cross-wire the radios.
-	// Re-number to a single sequence for the page.
+	// Re-number to a single sequence for the page. Also stamp the
+	// canonical workflow mode on each group for template branching.
 	for i := range view.Groups {
 		view.Groups[i].GroupID = i + 1
+		view.Groups[i].Mode = workflow
 	}
 
 	view.NumGroups = len(view.Groups)
