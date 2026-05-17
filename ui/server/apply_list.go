@@ -21,6 +21,30 @@ import (
 	"strings"
 )
 
+// extractArgValue returns the value following the first occurrence of flag
+// in args (e.g. extractArgValue(args, "--source") returns the next token).
+// Returns "", false if flag is absent or has no following value.
+func extractArgValue(args []string, flag string) (string, bool) {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag {
+			return args[i+1], true
+		}
+	}
+	return "", false
+}
+
+// extractArgValues returns every value following each occurrence of flag.
+// Used for repeated flags like --backup.
+func extractArgValues(args []string, flag string) []string {
+	var vs []string
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag {
+			vs = append(vs, args[i+1])
+		}
+	}
+	return vs
+}
+
 // composeApplyList walks the preview's groups and the form's selections to
 // produce the rows that twincut --apply-list will execute. Each row:
 //

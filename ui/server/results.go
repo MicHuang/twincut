@@ -28,9 +28,10 @@ type ResultsView struct {
 	Backups       []string // cross-check only: backup paths from run args (for apply form replay)
 
 	// Populated from the run_end event when present.
-	MovedCount   int
-	DeletedCount int
-	ManifestPath string
+	MovedCount    int
+	DeletedCount  int
+	RestoredCount int // populated only for mode=restore runs
+	ManifestPath  string
 	QuarantineDir string // parent of ManifestPath, for the "Open in Finder" button
 }
 
@@ -168,12 +169,14 @@ func BuildResults(run *Run) (ResultsView, error) {
 				Cancelled    bool   `json:"cancelled"`
 				Moved        int    `json:"moved"`
 				Deleted      int    `json:"deleted"`
+				Restored     int    `json:"restored"`
 				ManifestPath string `json:"manifest_path"`
 			}
 			if err := json.Unmarshal(ev.Raw, &p); err == nil {
 				view.Cancelled = p.Cancelled
 				view.MovedCount = p.Moved
 				view.DeletedCount = p.Deleted
+				view.RestoredCount = p.Restored
 				view.ManifestPath = p.ManifestPath
 			}
 		}

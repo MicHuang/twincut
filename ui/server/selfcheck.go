@@ -125,16 +125,6 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	folder := strings.TrimSpace(r.FormValue("folder"))
-	if folder == "" {
-		http.Error(w, "folder is required", http.StatusBadRequest)
-		return
-	}
-	if ok, err := IsAllowedPath(folder); err != nil || !ok {
-		http.Error(w, "folder is outside the allowlist", http.StatusForbidden)
-		return
-	}
-
 	previewID := r.FormValue("preview_run_id")
 	if previewID == "" {
 		http.Error(w, "preview_run_id is required", http.StatusBadRequest)
@@ -143,6 +133,19 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	previewRun := s.runs.Get(previewID)
 	if previewRun == nil {
 		http.Error(w, "preview run not found", http.StatusNotFound)
+		return
+	}
+	// Derive folder from the preview run's args, not the submitted form.
+	// Trusting the form would let an attacker pair preview_run_id of /A
+	// with folder=/B and have /A's quarantine selections move files into
+	// /B's tree.
+	folder, ok := extractArgValue(previewRun.Snapshot().Args, "--self-check")
+	if !ok || folder == "" {
+		http.Error(w, "preview run is missing --self-check arg", http.StatusInternalServerError)
+		return
+	}
+	if ok, err := IsAllowedPath(folder); err != nil || !ok {
+		http.Error(w, "folder is outside the allowlist", http.StatusForbidden)
 		return
 	}
 	view, err := BuildResults(previewRun)

@@ -328,6 +328,11 @@ process_apply_list(){
   local _sim_dir="$QUAR_DIR/${SOURCE_SIMILAR_SUBDIR:-_similar_video_source}"
   local _move _keep _gid _reason _hash _sub _dec
   while IFS=$'\t' read -r _move _keep _gid _reason _hash; do
+    # Strip trailing \r in case the apply-list was written with CRLF line
+    # endings. Without this, cross_video_strict\r would fall through the
+    # case arm to the md5 default and route to the wrong subdir.
+    _move="${_move%$'\r'}"; _keep="${_keep%$'\r'}"
+    _reason="${_reason%$'\r'}"; _hash="${_hash%$'\r'}"
     [[ -z "$_move" ]] && continue
     case "$_move" in '#'*) continue ;; esac
     _row=$((_row+1))

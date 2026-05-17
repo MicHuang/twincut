@@ -39,6 +39,45 @@ func TestIsAllowedPath(t *testing.T) {
 	}
 }
 
+func TestIsAllowedPath_RejectsSymlinkToOutsideAllowlist(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Symlink under HOME that points outside the allowlist.
+	evil := filepath.Join(home, "evil")
+	if err := os.Symlink("/etc", evil); err != nil {
+		t.Fatalf("symlink setup: %v", err)
+	}
+	got, err := IsAllowedPath(evil)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got {
+		t.Errorf("symlink %q → /etc was allowed; want rejected", evil)
+	}
+	// Also reject leaf-under-symlink (file doesn't have to exist).
+	got2, err := IsAllowedPath(filepath.Join(evil, "passwd"))
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got2 {
+		t.Errorf("%s was allowed via symlink; want rejected", filepath.Join(evil, "passwd"))
+	}
+}
+
+func TestIsAllowedPath_AllowsNonexistentLeafUnderAllowedRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// File doesn't exist yet — IsAllowedPath should still allow because
+	// the deepest existing ancestor (home) is allowlist-resolved.
+	got, err := IsAllowedPath(filepath.Join(home, "subdir", "future.jpg"))
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !got {
+		t.Errorf("nonexistent leaf under home rejected; want allowed")
+	}
+}
+
 func TestListDir_RootsWhenEmpty(t *testing.T) {
 	got, err := ListDir("")
 	if err != nil {

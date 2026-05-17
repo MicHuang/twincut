@@ -119,9 +119,29 @@ func (s *Server) handleCrossCheckApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	source, backups, err := parseCrossCheckForm(r.Form)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+	previewID := r.FormValue("preview_run_id")
+	if previewID == "" {
+		http.Error(w, "missing preview_run_id", http.StatusBadRequest)
+		return
+	}
+	previewRun := s.runs.Get(previewID)
+	if previewRun == nil {
+		http.Error(w, "preview run not found: "+previewID, http.StatusNotFound)
+		return
+	}
+	// Derive source + backups from the preview run's args, not the
+	// submitted form. Trusting the form would let an attacker pair a
+	// benign preview run with malicious source/backup paths and apply
+	// the preview's selections under a different tree.
+	previewArgs := previewRun.Snapshot().Args
+	source, ok := extractArgValue(previewArgs, "--source")
+	if !ok || source == "" {
+		http.Error(w, "preview run is missing --source arg", http.StatusInternalServerError)
+		return
+	}
+	backups := extractArgValues(previewArgs, "--backup")
+	if len(backups) == 0 {
+		http.Error(w, "preview run is missing --backup args", http.StatusInternalServerError)
 		return
 	}
 	if ok, err := IsAllowedPath(source); err != nil || !ok {
@@ -133,17 +153,6 @@ func (s *Server) handleCrossCheckApply(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("backup %q is outside the allowlist", b), http.StatusForbidden)
 			return
 		}
-	}
-
-	previewID := r.FormValue("preview_run_id")
-	if previewID == "" {
-		http.Error(w, "missing preview_run_id", http.StatusBadRequest)
-		return
-	}
-	previewRun := s.runs.Get(previewID)
-	if previewRun == nil {
-		http.Error(w, "preview run not found: "+previewID, http.StatusBadRequest)
-		return
 	}
 	view, err := BuildResults(previewRun)
 	if err != nil {
