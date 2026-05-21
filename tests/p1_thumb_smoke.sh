@@ -131,13 +131,16 @@ assert_file "$SRC/_thumbnails/_review.csv"          # thumbnail phase ran
 if command -v exiftool >/dev/null 2>&1; then
   note "6. L2 EXIF clustering (optional, requires exiftool)"
   # Build a real JPEG with EXIF then derive a smaller copy that shares EXIF.
+  # NOTE: sips -z only shrinks; use --resampleHeightWidth to force an exact
+  # size, so photo.jpg is reliably larger than photo_small.jpg regardless of
+  # what dimensions $SEED happens to be on this macOS release.
   rm -rf "$SRC"; mkdir -p "$SRC"
-  sips -s format jpeg "$SEED" --out "$SRC/photo.jpg" >/dev/null
+  sips -s format jpeg "$SEED" --resampleHeightWidth 1600 1600 --out "$SRC/photo.jpg" >/dev/null
   exiftool -overwrite_original \
     -Make=TestCam -Model=TestCam-X -SerialNumber=SN123 \
     -DateTimeOriginal="2025:01:01 12:00:00" \
     "$SRC/photo.jpg" >/dev/null
-  sips -z 200 200 "$SRC/photo.jpg" --out "$SRC/photo_small.jpg" >/dev/null
+  sips --resampleHeightWidth 200 200 "$SRC/photo.jpg" --out "$SRC/photo_small.jpg" >/dev/null
   # photo_small.jpg inherits the EXIF; sips preserves it.
 
   rm -rf "$SRC/_thumbnails"
