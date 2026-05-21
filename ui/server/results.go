@@ -115,6 +115,9 @@ func BuildResults(run *Run) (ResultsView, error) {
 	case strings.HasPrefix(workflow, "self_check"):
 		workflow = "self_check"
 		view.ApplyURL = "/api/self-check/apply"
+	case strings.HasPrefix(workflow, "thumbnail_detect"):
+		workflow = "thumbnail_detect"
+		view.ApplyURL = "/api/thumbnails/apply"
 	default:
 		view.ApplyURL = "/api/self-check/apply" // safe fallback
 	}

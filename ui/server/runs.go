@@ -237,8 +237,12 @@ func (m *RunManager) List() []Snapshot {
 
 // StartOptions describes a new run to spawn.
 type StartOptions struct {
-	// Mode is a free-form label (e.g., "self_check_preview") used for
-	// display only — twincut.sh decides the actual mode from Args.
+	// Mode is a free-form label used for display only — twincut.sh decides
+	// the actual mode from Args. Known values:
+	//   self_check_preview, self_check_apply
+	//   cross_check_preview, cross_check_apply
+	//   thumbnail_detect_preview, thumbnail_detect_apply
+	//   restore
 	Mode string
 	// Args is appended to the base invocation. The manager prepends
 	// --json-events automatically and sets TWINCUT_RUN_ID in the env.
