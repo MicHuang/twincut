@@ -4,3 +4,7 @@
 # Built Go binary (rebuild via `make build`)
 bin/twincut-ui
 _QUARANTINE/
+
+# Fixture artifacts (images are generated; only build.sh is committed)
+tests/fixtures/thumbnails/*.jpg
+tests/fixtures/thumbnails/*.jpeg
