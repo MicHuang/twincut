@@ -44,13 +44,13 @@ func (s *Server) handleThumbnailsPreview(w http.ResponseWriter, r *http.Request)
 
 	args := []string{"--thumbnail-detect", "--source", source, "--dry-run", "--json-events"}
 	if v := strings.TrimSpace(r.FormValue("max_edge")); v != "" {
-		args = append(args, "--max-edge", v)
+		args = append(args, "--thumb-max-edge", v)
 	}
 	if v := strings.TrimSpace(r.FormValue("maybe_max_edge")); v != "" {
-		args = append(args, "--maybe-max-edge", v)
+		args = append(args, "--thumb-maybe-max-edge", v)
 	}
 	if r.FormValue("require_exif_match") == "on" {
-		args = append(args, "--require-exif-match")
+		args = append(args, "--thumb-require-exif-match")
 	}
 
 	run, err := s.runs.Start(StartOptions{Mode: "thumbnail_detect_preview", Args: args})
@@ -146,7 +146,8 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	args := []string{"--thumb-confirm", tsvPath, "--assume-yes", "--json-events"}
+	thumbDir := filepath.Join(source, "_thumbnails")
+	args := []string{"--thumb-confirm", tsvPath, "--assume-yes", "--json-events", "--thumb-dir", thumbDir, "--source", source}
 	run, err := s.runs.Start(StartOptions{Mode: "thumbnail_detect_apply", Args: args})
 	if err != nil {
 		http.Error(w, "start run: "+err.Error(), http.StatusInternalServerError)

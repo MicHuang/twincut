@@ -353,3 +353,134 @@ func TestRunningPanelTitle_ThumbnailModes(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleThumbnailsPreview_PassesThumbPrefixedFlags(t *testing.T) {
+	srv := newThumbTestServer(t)
+	srcPath := os.Getenv("HOME")
+
+	form := url.Values{
+		"source":             {srcPath},
+		"max_edge":           {"600"},
+		"maybe_max_edge":     {"1200"},
+		"require_exif_match": {"on"},
+	}
+	req := httptest.NewRequest("POST", "/api/thumbnails/preview",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleThumbnailsPreview(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Result().StatusCode, w.Body.String())
+	}
+
+	// Extract the run ID from the response to verify args.
+	body := w.Body.String()
+	if !strings.Contains(body, "data-run-id") {
+		t.Fatal("body missing data-run-id")
+	}
+
+	// Find the run ID by looking for data-run-id="..."
+	var runID string
+	for _, line := range strings.Split(body, "\n") {
+		if idx := strings.Index(line, "data-run-id="); idx >= 0 {
+			start := idx + len("data-run-id=\"")
+			end := strings.Index(line[start:], "\"")
+			if end > 0 {
+				runID = line[start : start+end]
+				break
+			}
+		}
+	}
+	if runID == "" {
+		t.Fatal("could not extract runID from data-run-id attribute")
+	}
+
+	run := srv.runs.Get(runID)
+	if run == nil {
+		t.Fatalf("run not found: %s", runID)
+	}
+
+	snap := run.Snapshot()
+	argsStr := strings.Join(snap.Args, " ")
+
+	for _, want := range []string{
+		"--thumb-max-edge", "600",
+		"--thumb-maybe-max-edge", "1200",
+		"--thumb-require-exif-match",
+	} {
+		if !strings.Contains(argsStr, want) {
+			t.Errorf("args missing %q; full args: %s", want, argsStr)
+		}
+	}
+}
+
+func TestHandleThumbnailsApply_PassesThumbDirAndSource(t *testing.T) {
+	srv := newThumbTestServer(t)
+	srcPath := os.Getenv("HOME")
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"prev-apply2","mode":"thumbnail_detect_preview","source":"` + srcPath + `"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"prev-apply2","decision":"thumb_l2_exif","path":"` + srcPath + `/s.jpg","keeper":"` + srcPath + `/b.jpg","group_id":"gapply2","width":100,"height":80,"size_bytes":1024}`,
+		`{"type":"run_end","ts":3,"run_id":"prev-apply2","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	r.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run", "--json-events"}
+	storeRun(srv.runs, "prev-apply2", r)
+
+	form := url.Values{
+		"preview_run_id":        {"prev-apply2"},
+		"group:gapply2.member1": {"on"},
+	}
+	req := httptest.NewRequest("POST", "/api/thumbnails/apply",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleThumbnailsApply(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Result().StatusCode, w.Body.String())
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "data-run-id") {
+		t.Fatal("body missing data-run-id")
+	}
+
+	// Extract the apply run ID
+	var applyRunID string
+	for _, line := range strings.Split(body, "\n") {
+		if idx := strings.Index(line, "data-run-id="); idx >= 0 {
+			start := idx + len("data-run-id=\"")
+			end := strings.Index(line[start:], "\"")
+			if end > 0 {
+				applyRunID = line[start : start+end]
+				break
+			}
+		}
+	}
+	if applyRunID == "" {
+		t.Fatal("could not extract apply run ID")
+	}
+
+	applyRun := srv.runs.Get(applyRunID)
+	if applyRun == nil {
+		t.Fatalf("apply run not found: %s", applyRunID)
+	}
+
+	snap := applyRun.Snapshot()
+	argsStr := strings.Join(snap.Args, " ")
+
+	// Check for --thumb-dir with _thumbnails in path
+	if !strings.Contains(argsStr, "--thumb-dir") {
+		t.Errorf("args missing --thumb-dir; full args: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, "/_thumbnails") {
+		t.Errorf("args missing /_thumbnails path; full args: %s", argsStr)
+	}
+
+	// Check for --source
+	if !strings.Contains(argsStr, "--source") {
+		t.Errorf("args missing --source; full args: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, srcPath) {
+		t.Errorf("args missing source path %q; full args: %s", srcPath, argsStr)
+	}
+}
