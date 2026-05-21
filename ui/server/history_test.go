@@ -238,3 +238,45 @@ func TestHandleHistoryTab_EmptyState(t *testing.T) {
 		t.Errorf("missing empty-state message")
 	}
 }
+
+func TestCollectHistory_IncludesThumbnailApply(t *testing.T) {
+	state := t.TempDir()
+	runs := filepath.Join(state, "runs")
+	manifest := filepath.Join(state, "_thumb_manifest.tsv")
+	if err := os.WriteFile(manifest, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeNDJSON(t, filepath.Join(runs, "T1.ndjson"),
+		`{"type":"run_start","ts":1000,"run_id":"T1","mode":"thumbnail_detect_apply","source":"/photos","dry_run":false}`,
+		`{"type":"run_end","ts":1010,"run_id":"T1","moved":3,"manifest_path":"`+manifest+`","cancelled":false}`,
+	)
+	got, err := collectHistory(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 entry, got %d: %+v", len(got), got)
+	}
+	if got[0].RunID != "T1" {
+		t.Errorf("RunID = %q, want T1", got[0].RunID)
+	}
+	if got[0].Mode != "thumbnail_detect_apply" {
+		t.Errorf("Mode = %q, want thumbnail_detect_apply", got[0].Mode)
+	}
+}
+
+func TestCollectHistory_ExcludesThumbnailPreview(t *testing.T) {
+	state := t.TempDir()
+	runs := filepath.Join(state, "runs")
+	writeNDJSON(t, filepath.Join(runs, "P1.ndjson"),
+		`{"type":"run_start","ts":2000,"run_id":"P1","mode":"thumbnail_detect_preview","source":"/photos","dry_run":true}`,
+		`{"type":"run_end","ts":2001,"run_id":"P1","moved":0,"manifest_path":"","cancelled":false}`,
+	)
+	got, err := collectHistory(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("want 0 entries (preview excluded), got %d: %+v", len(got), got)
+	}
+}
