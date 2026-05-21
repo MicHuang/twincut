@@ -250,3 +250,38 @@ func TestHandleThumbnailsDone(t *testing.T) {
 		t.Error("done page does not show moved count 2")
 	}
 }
+
+func TestHandleThumbnailsL1Row_RendersCheckbox(t *testing.T) {
+	srv := newThumbTestServer(t)
+	type rowData struct {
+		Member  ResultMember
+		GroupID string
+		Index   int
+	}
+	data := rowData{
+		Member: ResultMember{
+			Path:   "/photos/suspect.jpg",
+			Reason: "l1_only_thumb",
+			Width:  200,
+			Height: 150,
+		},
+		GroupID: "l1-suspects",
+		Index:   0,
+	}
+	var buf strings.Builder
+	if err := srv.tmpl.ExecuteTemplate(&buf, "thumbnails_l1_row.html", data); err != nil {
+		t.Fatalf("execute template: %v", err)
+	}
+	body := buf.String()
+	for _, want := range []string{
+		"/photos/suspect.jpg",
+		"l1_only_thumb",
+		`name="group:l1-suspects.member0"`,
+		`/thumb?path=`,
+		`200`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q", want)
+		}
+	}
+}
