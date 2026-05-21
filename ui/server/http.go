@@ -85,6 +85,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/cross-check/done/{id}", s.handleCrossCheckDone)
 	mux.HandleFunc("GET /api/cross-check/add-backup-row", s.handleCrossCheckAddBackupRow)
 
+	// Thumbnail-detect workflow endpoints.
+	mux.HandleFunc("GET /tab/thumbnails", s.handleThumbnailsTab)
+	mux.HandleFunc("POST /api/thumbnails/preview", s.handleThumbnailsPreview)
+	mux.HandleFunc("GET /api/thumbnails/results/{id}", s.handleThumbnailsResults)
+	mux.HandleFunc("POST /api/thumbnails/apply", s.handleThumbnailsApply)
+	mux.HandleFunc("GET /api/thumbnails/done/{id}", s.handleThumbnailsDone)
+
 	// Directory browser.
 	mux.HandleFunc("GET /fs/list", s.handleFsList)
 
