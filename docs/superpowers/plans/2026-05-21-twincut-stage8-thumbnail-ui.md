@@ -103,7 +103,9 @@ if command -v exiftool >/dev/null 2>&1; then
 
   # At least one thumb_candidate event with decision=thumb_l2_exif
   if printf '%s\n' "$DRY_RUN_OUT" \
-      | grep -q '{"event":"thumb_candidate","decision":"thumb_l2_exif"'; then
+      | grep -q '{"type":"thumb_candidate","ts":[0-9]*,"run_id":"[^"]*","decision":"thumb_l2_exif"' \
+      || printf '%s\n' "$DRY_RUN_OUT" \
+      | grep -q '"type":"thumb_candidate".*"decision":"thumb_l2_exif"'; then
     ok "L2 dry-run: thumb_candidate NDJSON emitted"
   else
     bad "L2 dry-run: no thumb_candidate with decision=thumb_l2_exif in stdout"
@@ -173,7 +175,14 @@ with:
             read -r _ _w _h _ < <(awk -F'\t' -v pp="$p" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
             [[ -z "$_w" ]] && { local _dims; _dims="$(thumb_dimensions "$p")" && read -r _w _h <<<"$_dims" || true; }
             _sz="$(wc -c < "$p" 2>/dev/null | tr -d ' ')" || _sz=0
-            printf '{"event":"thumb_candidate","decision":"thumb_l2_exif","path":"%s","keeper":"%s","group_id":"%s","width":%s,"height":%s,"size_bytes":%s}\n' \
+            emit_event "thumb_candidate" \
+              "\"decision\":\"thumb_l2_exif\"" \
+              "\"path\":\"$(json_escape "$p")\"" \
+              "\"keeper\":\"$(json_escape "$keep")\"" \
+              "\"group_id\":\"$(json_escape "$fp")\"" \
+              "\"width\":${_w:-0}" \
+              "\"height\":${_h:-0}" \
+              "\"size_bytes\":${_sz:-0}"
               "$(json_escape "$p")" "$(json_escape "$keep")" "$(json_escape "$fp")" \
               "${_w:-0}" "${_h:-0}" "${_sz:-0}"
             THUMB_L2_HITS=$((THUMB_L2_HITS+1))
@@ -248,7 +257,7 @@ if command -v exiftool >/dev/null 2>&1; then
 
   # At least one thumb_candidate event with decision=thumb_l3_embed
   if printf '%s\n' "$DRY_RUN_L3_OUT" \
-      | grep -q '{"event":"thumb_candidate","decision":"thumb_l3_embed"'; then
+      | grep -q '"type":"thumb_candidate".*"decision":"thumb_l3_embed"'; then
     ok "L3 dry-run: thumb_candidate NDJSON emitted"
   else
     # L3 match requires the embedded thumb md5 == small file md5 exactly;
@@ -308,7 +317,14 @@ with:
             # group_id for L3 = sha1 of the big (keeper) path
             local _gid
             _gid="$(printf '%s' "$matched" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
-            printf '{"event":"thumb_candidate","decision":"thumb_l3_embed","path":"%s","keeper":"%s","group_id":"l3:%s","width":%s,"height":%s,"size_bytes":%s}\n' \
+            emit_event "thumb_candidate" \
+              "\"decision\":\"thumb_l3_embed\"" \
+              "\"path\":\"$(json_escape "$p")\"" \
+              "\"keeper\":\"$(json_escape "$keep")\"" \
+              "\"group_id\":\"l3:$(json_escape "$_sha")\"" \
+              "\"width\":${_w:-0}" \
+              "\"height\":${_h:-0}" \
+              "\"size_bytes\":${_sz:-0}"
               "$(json_escape "$f")" "$(json_escape "$matched")" "$(json_escape "$_gid")" \
               "${_w:-0}" "${_h:-0}" "${_sz:-0}"
             THUMB_L3_HITS=$((THUMB_L3_HITS+1))
@@ -875,7 +891,7 @@ EOF
 
 ```go
 func TestParseThumbCandidate_L2(t *testing.T) {
-	line := `{"type":"thumb_candidate","ts":1700000010,"run_id":"r1","event":"thumb_candidate","decision":"thumb_l2_exif","path":"/src/small.jpg","keeper":"/src/big.jpg","group_id":"aabbccdd","width":200,"height":150,"size_bytes":4096}`
+	line := `{"type":"thumb_candidate","ts":1700000010,"run_id":"r1","decision":"thumb_l2_exif","path":"/src/small.jpg","keeper":"/src/big.jpg","group_id":"aabbccdd","width":200,"height":150,"size_bytes":4096}`
 	ev, err := ParseEvent([]byte(line))
 	if err != nil {
 		t.Fatalf("ParseEvent: %v", err)

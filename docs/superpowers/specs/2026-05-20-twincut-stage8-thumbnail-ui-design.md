@@ -40,14 +40,14 @@ Stage 8 wires thumbnail-detect into the UI as a preview → pick → apply flow,
 L2 dry-run event (one per thumbnail candidate):
 
 ```bash
-printf '{"event":"thumb_candidate","decision":"thumb_l2_exif","path":"%s","keeper":"%s","group_id":"%s","width":%d,"height":%d,"size_bytes":%d}\n' \
+printf '{"type":"thumb_candidate","decision":"thumb_l2_exif","path":"%s","keeper":"%s","group_id":"%s","width":%d,"height":%d,"size_bytes":%d}\n' \
   "$_thumb_path" "$_keeper_path" "$_fingerprint_sha1" "$_w" "$_h" "$_sz"
 ```
 
 L3 dry-run event (one per pair):
 
 ```bash
-printf '{"event":"thumb_candidate","decision":"thumb_l3_embed","path":"%s","keeper":"%s","group_id":"l3:%s","width":%d,"height":%d,"size_bytes":%d}\n' \
+printf '{"type":"thumb_candidate","decision":"thumb_l3_embed","path":"%s","keeper":"%s","group_id":"l3:%s","width":%d,"height":%d,"size_bytes":%d}\n' \
   "$_thumb_path" "$_big_path" "$_sha1_of_big_path" "$_w" "$_h" "$_sz"
 ```
 
