@@ -287,6 +287,98 @@ grep -qi "unknown\|invalid\|reject" /tmp/twincut_confirm9c.log \
   || bad "9c: no warning for unknown decision value"
 
 # ----------------------------------------------------------------------------
+note "10. run_start _mode field for thumbnail paths"
+
+# 10a: --thumbnail-detect --dry-run --json-events → mode=thumbnail_detect_preview
+rm -rf "$SRC"; mkdir -p "$SRC"
+sips -z 200 200 "$SEED" --out "$SRC/s.png" >/dev/null
+MODE_OUT="$(
+  "$TWINCUT" --source "$SRC" --thumbnail-detect --dry-run --json-events --assume-yes \
+    2>/dev/null
+)"
+if printf '%s\n' "$MODE_OUT" | grep -q '"type":"run_start".*"mode":"thumbnail_detect_preview"'; then
+  ok "10a: run_start mode=thumbnail_detect_preview on dry-run"
+else
+  bad "10a: expected mode=thumbnail_detect_preview in run_start"
+  printf '%s\n' "$MODE_OUT" | grep '"type":"run_start"' || true
+fi
+
+# 10b: --thumb-confirm --json-events → mode=thumbnail_detect_apply
+rm -rf "$SRC"; mkdir -p "$SRC"
+sips -z 200 200 "$SEED" --out "$SRC/tc.png" >/dev/null
+THUMB_DIR10="$TMP/td10"; mkdir -p "$THUMB_DIR10"
+CSV10="$THUMB_DIR10/_r10.csv"
+printf 'path,reason,width,height,note\n' > "$CSV10"
+printf '"%s","l1_only_thumb","200","200",""\n' "$SRC/tc.png" >> "$CSV10"
+CONFIRM_OUT="$(
+  "$TWINCUT" --thumb-confirm "$CSV10" --thumb-dir "$THUMB_DIR10" --json-events --assume-yes \
+    2>/dev/null
+)"
+if printf '%s\n' "$CONFIRM_OUT" | grep -q '"type":"run_start".*"mode":"thumbnail_detect_apply"'; then
+  ok "10b: run_start mode=thumbnail_detect_apply on --thumb-confirm"
+else
+  bad "10b: expected mode=thumbnail_detect_apply in run_start"
+  printf '%s\n' "$CONFIRM_OUT" | grep '"type":"run_start"' || true
+fi
+
+# 10c: --thumbnail-detect + --apply-list must exit non-zero with usage error
+set +e
+GUARD_OUT="$(
+  "$TWINCUT" --source "$SRC" --thumbnail-detect --apply-list /tmp/nonexistent.tsv \
+    2>&1
+)"
+GUARD_RC=$?
+set -e
+if [[ "$GUARD_RC" -ne 0 ]]; then
+  ok "10c: --thumbnail-detect + --apply-list exits non-zero (rc=$GUARD_RC)"
+else
+  bad "10c: expected non-zero exit for --thumbnail-detect + --apply-list combination"
+fi
+if printf '%s\n' "$GUARD_OUT" | grep -qi "mutually exclusive\|cannot combine\|usage"; then
+  ok "10c: usage error message printed"
+else
+  bad "10c: no usage error message for --thumbnail-detect + --apply-list"
+fi
+
+# ----------------------------------------------------------------------------
+note "11. dry-run leaves L1-only files on disk (no thumbnails/ writes)"
+rm -rf "$SRC"; mkdir -p "$SRC"
+sips -z 200 200 "$SEED" --out "$SRC/dry_tiny.png" >/dev/null
+sips -z 500 700 "$SEED" --out "$SRC/dry_maybe.png" >/dev/null
+sips -z 2000 2000 "$SEED" --out "$SRC/dry_big.png" >/dev/null
+
+rm -rf "$SRC/_thumbnails"
+"$TWINCUT" --source "$SRC" --thumbnail-detect --dry-run --assume-yes \
+  >/tmp/twincut_dry11.log 2>&1
+
+# Files must still be in source
+assert_file "$SRC/dry_tiny.png"
+assert_file "$SRC/dry_maybe.png"
+assert_file "$SRC/dry_big.png"
+
+# _thumbnails/ must either not exist or contain NO image files (only review.csv is ok)
+if [[ -d "$SRC/_thumbnails" ]]; then
+  MOVED_COUNT="$(find "$SRC/_thumbnails" -type f ! -name '*.csv' ! -name '_manifest*' | wc -l | tr -d ' ')"
+  if [[ "$MOVED_COUNT" -eq 0 ]]; then
+    ok "11: dry-run left no image files in _thumbnails/"
+  else
+    bad "11: dry-run moved $MOVED_COUNT file(s) into _thumbnails/ — should not move"
+  fi
+else
+  ok "11: _thumbnails/ not created by dry-run"
+fi
+
+# review.csv, if written, must have exactly 5 columns in the header (no decision column)
+REVIEW11="$SRC/_thumbnails/_review.csv"
+if [[ -f "$REVIEW11" ]]; then
+  HEADER11="$(head -n1 "$REVIEW11")"
+  if [[ "$HEADER11" == "path,reason,width,height,note" ]]; then
+    ok "11: review.csv header has 5 columns (no decision column)"
+  else
+    bad "11: review.csv header is '$HEADER11', want 'path,reason,width,height,note'"
+  fi
+fi
+
 echo
 echo "===== RESULT: $PASS passed, $FAIL failed ====="
 [[ $FAIL -eq 0 ]] || exit 1
