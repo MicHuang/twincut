@@ -424,9 +424,10 @@ func TestBuildResults_ThumbnailMode_L1Group(t *testing.T) {
 		t.Fatal(err)
 	}
 	reviewCSV := filepath.Join(thumbDir, "_review.csv")
-	reviewContent := "path,reason,width,height,note\n" +
-		`"` + filepath.Join(tmp, "suspect1.jpg") + `","l1_only_thumb","80","60",""` + "\n" +
-		`"` + filepath.Join(tmp, "suspect2.jpg") + `","l1_only_maybe","90","70",""` + "\n"
+	// File content is TSV (matches thumb_write_review's stage-8 followup output).
+	reviewContent := "path\treason\twidth\theight\tnote\n" +
+		filepath.Join(tmp, "suspect1.jpg") + "\tl1_only_thumb\t80\t60\t\n" +
+		filepath.Join(tmp, "suspect2.jpg") + "\tl1_only_maybe\t90\t70\t\n"
 	if err := os.WriteFile(reviewCSV, []byte(reviewContent), 0o644); err != nil {
 		t.Fatal(err)
 	}

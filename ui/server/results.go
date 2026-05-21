@@ -258,12 +258,15 @@ func BuildResults(run *Run) (ResultsView, error) {
 	}
 
 	// Thumbnail mode: read _review.csv for L1 suspects and append as a
-	// synthetic group. Absent file is silently skipped (no L1 suspects).
+	// synthetic group. File content is TSV despite the .csv extension
+	// (legacy filename; thumb_write_review switched to TSV in stage-8
+	// followup). Absent file is silently skipped (no L1 suspects).
 	if strings.HasPrefix(snap.Mode, "thumbnail_detect") && view.SourcePath != "" {
 		reviewPath := filepath.Join(view.SourcePath, "_thumbnails", "_review.csv")
 		if rf, err := os.Open(reviewPath); err == nil {
 			defer rf.Close()
 			cr := csv.NewReader(rf)
+			cr.Comma = '\t'
 			cr.FieldsPerRecord = -1
 			var l1Group ResultGroup
 			l1Group.StringGroupID = "l1-suspects"
@@ -283,12 +286,12 @@ func BuildResults(run *Run) (ResultsView, error) {
 				if len(rec) < 2 {
 					continue
 				}
-				path := strings.Trim(rec[0], `"`)
-				reason := strings.Trim(rec[1], `"`)
+				path := rec[0]
+				reason := rec[1]
 				var w, h int
 				if len(rec) >= 4 {
-					fmt.Sscan(strings.Trim(rec[2], `"`), &w)
-					fmt.Sscan(strings.Trim(rec[3], `"`), &h)
+					fmt.Sscan(rec[2], &w)
+					fmt.Sscan(rec[3], &h)
 				}
 				l1Group.Members = append(l1Group.Members, ResultMember{
 					Path:     path,
