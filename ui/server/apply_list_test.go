@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/csv"
 	"net/url"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -207,5 +209,140 @@ func TestMapReason(t *testing.T) {
 		if got := mapReason(c.mode, c.in); got != c.want {
 			t.Errorf("mapReason(%q, %q) = %q, want %q", c.mode, c.in, got, c.want)
 		}
+	}
+}
+
+// thumbnailGroups returns synthetic ResultGroups for composeThumbnailConfirmCSV tests.
+func thumbnailGroups() []ResultGroup {
+	return []ResultGroup{
+		{
+			StringGroupID: "exifsha1abc",
+			Members: []ResultMember{
+				{Path: "/src/big.jpg", Role: "keeper", Decision: ""},
+				{Path: "/src/small1.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Width: 200, Height: 150, SizeBytes: 4096},
+				{Path: "/src/small2.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 75, SizeBytes: 2048},
+			},
+		},
+		{
+			StringGroupID: "l3:keepersha1",
+			Members: []ResultMember{
+				{Path: "/src/bigvid.jpg", Role: "keeper", Decision: ""},
+				{Path: "/src/embed.jpg", Role: "thumbnail", Decision: "thumb_l3_embed", Width: 160, Height: 120, SizeBytes: 1024},
+			},
+		},
+		{
+			StringGroupID: "l1-suspects",
+			Members: []ResultMember{
+				{Path: "/src/suspect1.jpg", Role: "suspect", Decision: "thumb_confirmed", Reason: "l1_only_thumb", Width: 80, Height: 60, SizeBytes: 512},
+				{Path: "/src/suspect2.jpg", Role: "suspect", Decision: "thumb_confirmed", Reason: "l1_only_maybe", Width: 90, Height: 70, SizeBytes: 640},
+			},
+		},
+	}
+}
+
+func TestComposeThumbnailConfirmCSV_ChecksFiltered(t *testing.T) {
+	form := url.Values{
+		"group:exifsha1abc.member1": {"on"},
+	}
+	data, err := composeThumbnailConfirmCSV(thumbnailGroups(), form)
+	if err != nil {
+		t.Fatalf("composeThumbnailConfirmCSV: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "/src/small1.jpg") {
+		t.Errorf("small1.jpg not in CSV output:\n%s", body)
+	}
+	if strings.Contains(body, "/src/small2.jpg") {
+		t.Errorf("small2.jpg unexpectedly in CSV output:\n%s", body)
+	}
+	if strings.Contains(body, "/src/big.jpg") {
+		t.Errorf("keeper big.jpg unexpectedly in CSV output:\n%s", body)
+	}
+}
+
+func TestComposeThumbnailConfirmCSV_DecisionPropagation(t *testing.T) {
+	form := url.Values{
+		"group:exifsha1abc.member1":   {"on"},
+		"group:l3:keepersha1.member1": {"on"},
+		"group:l1-suspects.member0":   {"on"},
+	}
+	data, err := composeThumbnailConfirmCSV(thumbnailGroups(), form)
+	if err != nil {
+		t.Fatalf("composeThumbnailConfirmCSV: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "thumb_l2_exif") {
+		t.Errorf("thumb_l2_exif not in CSV:\n%s", body)
+	}
+	if !strings.Contains(body, "thumb_l3_embed") {
+		t.Errorf("thumb_l3_embed not in CSV:\n%s", body)
+	}
+	if !strings.Contains(body, "thumb_confirmed") {
+		t.Errorf("thumb_confirmed not in CSV:\n%s", body)
+	}
+}
+
+func TestComposeThumbnailConfirmCSV_CSVEscaping(t *testing.T) {
+	groups := []ResultGroup{
+		{
+			StringGroupID: "g1",
+			Members: []ResultMember{
+				{Path: `/src/file with "quotes" and,comma.jpg`, Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 80, SizeBytes: 512},
+			},
+		},
+	}
+	form := url.Values{"group:g1.member0": {"on"}}
+	data, err := composeThumbnailConfirmCSV(groups, form)
+	if err != nil {
+		t.Fatalf("composeThumbnailConfirmCSV: %v", err)
+	}
+	r := csv.NewReader(strings.NewReader(string(data)))
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("csv.ReadAll on output: %v", err)
+	}
+	found := false
+	for _, rec := range records[1:] {
+		if strings.Contains(rec[0], "quotes") && strings.Contains(rec[0], "comma") {
+			found = true
+			if rec[5] != "thumb_l2_exif" {
+				t.Errorf("decision col = %q, want thumb_l2_exif", rec[5])
+			}
+		}
+	}
+	if !found {
+		t.Errorf("path with quotes and comma not found in output:\n%s", data)
+	}
+}
+
+func TestComposeThumbnailConfirmCSV_UnicodePaths(t *testing.T) {
+	groups := []ResultGroup{
+		{
+			StringGroupID: "g2",
+			Members: []ResultMember{
+				{Path: `/src/照片/小缩略图.jpg`, Role: "thumbnail", Decision: "thumb_l3_embed", Width: 80, Height: 60, SizeBytes: 256},
+			},
+		},
+	}
+	form := url.Values{"group:g2.member0": {"on"}}
+	data, err := composeThumbnailConfirmCSV(groups, form)
+	if err != nil {
+		t.Fatalf("composeThumbnailConfirmCSV: %v", err)
+	}
+	r := csv.NewReader(strings.NewReader(string(data)))
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("csv.ReadAll on unicode output: %v", err)
+	}
+	found := false
+	for _, rec := range records[1:] {
+		if rec[0] == `/src/照片/小缩略图.jpg` {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("unicode path not round-tripped; output:\n%s", data)
 	}
 }

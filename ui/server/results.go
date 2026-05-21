@@ -48,6 +48,23 @@ type ResultGroup struct {
 	// (anything except md5). The template uses this to decide whether
 	// to render thumbnails + per-file metadata.
 	IsSimilar bool
+
+	// Thumbnail-detect mode fields. StringGroupID is the stable string key
+	// used as the form name prefix (EXIF fingerprint SHA1, "l3:<sha1>", or
+	// "l1-suspects"). Members replaces Keep/Remove for thumbnail clusters.
+	StringGroupID string
+	Members       []ResultMember
+}
+
+// ResultMember is one file in a thumbnail-detect cluster.
+type ResultMember struct {
+	Path      string // absolute path
+	Role      string // "keeper" | "thumbnail" | "suspect"
+	Decision  string // "thumb_l2_exif" | "thumb_l3_embed" | "thumb_confirmed"
+	Reason    string // "l1_only_thumb" | "l1_only_maybe" (L1 suspects only)
+	Width     int
+	Height    int
+	SizeBytes int64
 }
 
 // ResultFile is a single file inside a group (either the keeper or a

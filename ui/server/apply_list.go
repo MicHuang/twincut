@@ -13,6 +13,8 @@ package server
 // scan-mode behavior.
 
 import (
+	"bytes"
+	"encoding/csv"
 	"fmt"
 	"net/url"
 	"os"
@@ -138,4 +140,48 @@ func writeApplyList(stateDir string, rows [][]string) (string, error) {
 		}
 	}
 	return f.Name(), nil
+}
+
+// composeThumbnailConfirmCSV walks thumbnail ResultGroups and the apply form
+// to produce the six-column enhanced review CSV consumed by --thumb-confirm.
+// Only checked members (form key "group:<gid>.member<i>=on") are included.
+// Keeper-role members are never included regardless of form state.
+//
+// CSV columns: path,reason,width,height,note,decision
+func composeThumbnailConfirmCSV(groups []ResultGroup, form url.Values) ([]byte, error) {
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+
+	if err := w.Write([]string{"path", "reason", "width", "height", "note", "decision"}); err != nil {
+		return nil, fmt.Errorf("write CSV header: %w", err)
+	}
+
+	for _, g := range groups {
+		for i, m := range g.Members {
+			if m.Role == "keeper" {
+				continue
+			}
+			key := "group:" + g.StringGroupID + ".member" + strconv.Itoa(i)
+			if form.Get(key) != "on" {
+				continue
+			}
+			row := []string{
+				m.Path,
+				m.Reason,
+				strconv.Itoa(m.Width),
+				strconv.Itoa(m.Height),
+				"",
+				m.Decision,
+			}
+			if err := w.Write(row); err != nil {
+				return nil, fmt.Errorf("write CSV row for %s: %w", m.Path, err)
+			}
+		}
+	}
+
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return nil, fmt.Errorf("flush CSV: %w", err)
+	}
+	return buf.Bytes(), nil
 }
