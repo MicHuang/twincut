@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newThumbTestServer builds a Server with templates, a real RunManager, and a
@@ -482,5 +483,102 @@ func TestHandleThumbnailsApply_PassesThumbDirAndSource(t *testing.T) {
 	}
 	if !strings.Contains(argsStr, srcPath) {
 		t.Errorf("args missing source path %q; full args: %s", srcPath, argsStr)
+	}
+}
+
+func TestHandleThumbnailsApply_RejectsWrongMode(t *testing.T) {
+	srv := newThumbTestServer(t)
+	srcPath := os.Getenv("HOME")
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"wrong-mode","mode":"self_check_preview","source":"` + srcPath + `"}`,
+		`{"type":"run_end","ts":2,"run_id":"wrong-mode","total":0,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "self_check_preview"
+	r.Args = []string{"--self-check", "--source", srcPath, "--dry-run", "--json-events"}
+	storeRun(srv.runs, "wrong-mode", r)
+
+	form := url.Values{
+		"preview_run_id": {"wrong-mode"},
+	}
+	req := httptest.NewRequest("POST", "/api/thumbnails/apply",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleThumbnailsApply(w, req)
+	resp := w.Result()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body: %s", resp.StatusCode, http.StatusUnprocessableEntity, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "non-thumbnail-preview") {
+		t.Errorf("body missing 'non-thumbnail-preview'; got: %s", body)
+	}
+}
+
+func TestHandleThumbnailsApply_RejectsStillRunning(t *testing.T) {
+	srv := newThumbTestServer(t)
+	srcPath := os.Getenv("HOME")
+
+	// Build a run with RunStatusRunning by creating a Run struct directly
+	// and setting it to not have a closed done channel.
+	r := &Run{
+		ID:        "still-running",
+		Mode:      "thumbnail_detect_preview",
+		Args:      []string{"--thumbnail-detect", "--source", srcPath, "--dry-run", "--json-events"},
+		StartedAt: time.Now(),
+		status:    RunStatusRunning,
+		events:    []Event{},
+		done:      make(chan struct{}), // not closed
+	}
+	storeRun(srv.runs, "still-running", r)
+
+	form := url.Values{
+		"preview_run_id": {"still-running"},
+	}
+	req := httptest.NewRequest("POST", "/api/thumbnails/apply",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleThumbnailsApply(w, req)
+	resp := w.Result()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", resp.StatusCode, http.StatusConflict, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "still in progress") {
+		t.Errorf("body missing 'still in progress'; got: %s", body)
+	}
+}
+
+func TestHandleThumbnailsApply_RejectsFailedRun(t *testing.T) {
+	srv := newThumbTestServer(t)
+	srcPath := os.Getenv("HOME")
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"failed-run","mode":"thumbnail_detect_preview","source":"` + srcPath + `"}`,
+		`{"type":"run_end","ts":2,"run_id":"failed-run","total":0,"dupes":0,"moved":0,"cancelled":false,"exit_code":1}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	r.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run", "--json-events"}
+	// Manually set status to Failed
+	r.mu.Lock()
+	r.status = RunStatusFailed
+	r.mu.Unlock()
+	storeRun(srv.runs, "failed-run", r)
+
+	form := url.Values{
+		"preview_run_id": {"failed-run"},
+	}
+	req := httptest.NewRequest("POST", "/api/thumbnails/apply",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleThumbnailsApply(w, req)
+	resp := w.Result()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body: %s", resp.StatusCode, http.StatusUnprocessableEntity, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "did not succeed") {
+		t.Errorf("body missing 'did not succeed'; got: %s", body)
 	}
 }
