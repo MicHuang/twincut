@@ -309,6 +309,9 @@ func TestComposeThumbnailConfirmTSV_AllowsCommasAndQuotesUnescaped(t *testing.T)
 	if fields[5] != "thumb_l2_exif" {
 		t.Errorf("decision col = %q, want thumb_l2_exif", fields[5])
 	}
+	if len(fields) != 7 {
+		t.Errorf("expected 7 columns, got %d: %q", len(fields), lines[1])
+	}
 }
 
 func TestComposeThumbnailConfirmTSV_UnicodePaths(t *testing.T) {
@@ -374,5 +377,71 @@ func TestComposeThumbnailConfirmTSV_RejectsNewlineInPath(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "forbidden character") {
 		t.Errorf("error = %q, want it to contain 'forbidden character'", err.Error())
+	}
+}
+
+func TestComposeThumbnailConfirmTSV_KeeperColumnFromMembers(t *testing.T) {
+	groups := []ResultGroup{
+		{
+			StringGroupID: "l2:abc123",
+			Members: []ResultMember{
+				{Path: "/src/keeper-a.jpg", Role: "keeper"},
+				{Path: "/src/thumb-a.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Keeper: "/src/keeper-a.jpg", Width: 200, Height: 200},
+			},
+		},
+		{
+			StringGroupID: "l3:def456",
+			Members: []ResultMember{
+				{Path: "/src/keeper-b.jpg", Role: "keeper"},
+				{Path: "/src/thumb-b.jpg", Role: "thumbnail", Decision: "thumb_l3_embed", Keeper: "/src/keeper-b.jpg", Width: 300, Height: 300},
+			},
+		},
+		{
+			StringGroupID: "l1-suspects",
+			Members: []ResultMember{
+				{Path: "/src/orphan.jpg", Role: "suspect", Decision: "thumb_confirmed", Reason: "l1_only_suspect", Width: 400, Height: 400},
+			},
+		},
+	}
+	form := url.Values{
+		"group:l2:abc123.member1": []string{"on"},
+		"group:l3:def456.member1": []string{"on"},
+		"group:l1-suspects.member0": []string{"on"},
+	}
+	out, err := composeThumbnailConfirmTSV(groups, form)
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("want 4 lines (header + 3 rows), got %d: %q", len(lines), string(out))
+	}
+	wantHeader := "path\treason\twidth\theight\tnote\tdecision\tkeeper"
+	if lines[0] != wantHeader {
+		t.Errorf("header:\n got %q\nwant %q", lines[0], wantHeader)
+	}
+	if !strings.HasSuffix(lines[1], "\tthumb_l2_exif\t/src/keeper-a.jpg") {
+		t.Errorf("L2 row missing keeper: %q", lines[1])
+	}
+	if !strings.HasSuffix(lines[2], "\tthumb_l3_embed\t/src/keeper-b.jpg") {
+		t.Errorf("L3 row missing keeper: %q", lines[2])
+	}
+	if !strings.HasSuffix(lines[3], "\tthumb_confirmed\t") {
+		t.Errorf("L1 row should end with empty keeper column: %q", lines[3])
+	}
+}
+
+func TestComposeThumbnailConfirmTSV_RejectsTabInKeeper(t *testing.T) {
+	groups := []ResultGroup{{
+		StringGroupID: "l2:x",
+		Members: []ResultMember{
+			{Path: "/src/k.jpg", Role: "keeper"},
+			{Path: "/src/t.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Keeper: "/src/bad\tkeeper.jpg"},
+		},
+	}}
+	form := url.Values{"group:l2:x.member1": []string{"on"}}
+	_, err := composeThumbnailConfirmTSV(groups, form)
+	if err == nil {
+		t.Fatal("expected error for tab-in-keeper, got nil")
 	}
 }

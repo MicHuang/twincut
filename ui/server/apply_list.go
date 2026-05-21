@@ -142,18 +142,20 @@ func writeApplyList(stateDir string, rows [][]string) (string, error) {
 }
 
 // composeThumbnailConfirmTSV walks thumbnail ResultGroups and the apply form
-// to produce the six-column enhanced review TSV consumed by --thumb-confirm.
+// to produce the seven-column enhanced review TSV consumed by --thumb-confirm.
 // Only checked members (form key "group:<gid>.member<i>=on") are included.
 // Keeper-role members are never included regardless of form state.
 //
-// TSV columns (tab-separated, no quoting): path\treason\twidth\theight\tnote\tdecision
+// TSV columns (tab-separated, no quoting):
 //
-// Fields containing a tab or newline are rejected with an error — they would
-// break the TSV contract and are vanishingly rare in real file paths.
+//	path  reason  width  height  note  decision  keeper
+//
+// Keeper is hydrated from m.Keeper (populated from thumb_candidate events
+// for L2/L3). L1 members have m.Keeper == "" (intentional — no paired keeper).
 func composeThumbnailConfirmTSV(groups []ResultGroup, form url.Values) ([]byte, error) {
 	var buf bytes.Buffer
 
-	header := []string{"path", "reason", "width", "height", "note", "decision"}
+	header := []string{"path", "reason", "width", "height", "note", "decision", "keeper"}
 	fmt.Fprintln(&buf, strings.Join(header, "\t"))
 
 	for _, g := range groups {
@@ -172,6 +174,7 @@ func composeThumbnailConfirmTSV(groups []ResultGroup, form url.Values) ([]byte, 
 				strconv.Itoa(m.Height),
 				"",
 				m.Decision,
+				m.Keeper,
 			}
 			for _, field := range row {
 				if strings.ContainsAny(field, "\t\n") {

@@ -65,6 +65,7 @@ type ResultMember struct {
 	Width     int
 	Height    int
 	SizeBytes int64
+	Keeper    string // absolute path of the kept original (L2/L3); empty for L1 (no paired keeper)
 }
 
 // ResultFile is a single file inside a group (either the keeper or a
@@ -258,6 +259,7 @@ func BuildResults(run *Run) (ResultsView, error) {
 				Path:      tc.Path,
 				Role:      "thumbnail",
 				Decision:  tc.Decision,
+				Keeper:    tc.Keeper,
 				Width:     tc.Width,
 				Height:    tc.Height,
 				SizeBytes: tc.SizeBytes,
