@@ -11,23 +11,25 @@ import (
 type EventType string
 
 const (
-	EventRunStart EventType = "run_start"
-	EventRunEnd   EventType = "run_end"
-	EventProgress EventType = "progress"
-	EventDupGroup EventType = "dup_group"
-	EventAction   EventType = "action"
-	EventWarn     EventType = "warn"
-	EventError    EventType = "error"
+	EventRunStart       EventType = "run_start"
+	EventRunEnd         EventType = "run_end"
+	EventProgress       EventType = "progress"
+	EventDupGroup       EventType = "dup_group"
+	EventAction         EventType = "action"
+	EventWarn           EventType = "warn"
+	EventError          EventType = "error"
+	EventThumbCandidate EventType = "thumb_candidate"
 )
 
 var knownEventTypes = map[EventType]bool{
-	EventRunStart: true,
-	EventRunEnd:   true,
-	EventProgress: true,
-	EventDupGroup: true,
-	EventAction:   true,
-	EventWarn:     true,
-	EventError:    true,
+	EventRunStart:       true,
+	EventRunEnd:         true,
+	EventProgress:       true,
+	EventDupGroup:       true,
+	EventAction:         true,
+	EventWarn:           true,
+	EventError:          true,
+	EventThumbCandidate: true,
 }
 
 // Event is the parsed form of one NDJSON line. We keep the raw bytes too so
@@ -70,6 +72,30 @@ func ParseEvent(line []byte) (Event, error) {
 		RunID: head.RunID,
 		Raw:   raw,
 	}, nil
+}
+
+// ThumbCandidate is the parsed payload of a "thumb_candidate" event emitted
+// by lib/thumb.sh during --dry-run --json-events. One event per candidate file.
+type ThumbCandidate struct {
+	Decision  string `json:"decision"`   // thumb_l2_exif | thumb_l3_embed
+	Path      string `json:"path"`       // absolute path of the candidate thumbnail
+	Keeper    string `json:"keeper"`     // absolute path of the file being kept
+	GroupID   string `json:"group_id"`   // L2: EXIF fingerprint SHA1; L3: "l3:<sha1>"
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+// UnmarshalThumbCandidate decodes the raw payload of a thumb_candidate event
+// into tc. Returns an error if Decision is empty (malformed event).
+func UnmarshalThumbCandidate(ev Event, tc *ThumbCandidate) error {
+	if err := json.Unmarshal(ev.Raw, tc); err != nil {
+		return fmt.Errorf("unmarshal thumb_candidate: %w", err)
+	}
+	if tc.Decision == "" {
+		return fmt.Errorf("thumb_candidate seq=%d: missing decision field", ev.Seq)
+	}
+	return nil
 }
 
 // IsTerminal reports whether the event type ends a run.
