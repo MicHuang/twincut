@@ -368,16 +368,40 @@ thumb_confirm_review(){
   local moved=0 skipped=0 missing=0
   echo "[*] confirming review: $csv → $THUMB_DIR"
 
-  # Skip header row.
+  # Allowed decision values for the optional 6th column.
+  # Any other non-empty value → reject the row with a warning.
+  local _allowed_decisions="thumb_l2_exif thumb_l3_embed thumb_confirmed"
+
+  # Skip header row. Read up to 6 comma-separated fields.
+  # IFS=, splits on commas; the 6th field (decision_q) may be absent
+  # for legacy 5-column CSVs, in which case it is empty string.
   local first=true
-  while IFS=, read -r p_q reason_q w_q h_q note_q; do
+  while IFS=, read -r p_q reason_q w_q h_q note_q decision_q; do
     if $first; then first=false; continue; fi
     local p="${p_q%\"}"; p="${p#\"}"
     [[ -z "$p" ]] && continue
+
+    # Parse decision column: strip surrounding quotes, trim whitespace.
+    local dec="${decision_q%\"}"; dec="${dec#\"}"; dec="${dec// /}"
+    # Default to thumb_confirmed when absent (legacy 5-column CSV).
+    [[ -z "$dec" ]] && dec="thumb_confirmed"
+
+    # Validate against the allowed set.
+    local _valid=false
+    local _allowed
+    for _allowed in $_allowed_decisions; do
+      [[ "$dec" == "$_allowed" ]] && _valid=true && break
+    done
+    if ! $_valid; then
+      echo "[warn] unknown decision value '$dec' for '$p' — skipping row" >&2
+      skipped=$((skipped+1))
+      continue
+    fi
+
     if [[ ! -e "$p" ]]; then
       echo "[missing] $p"; missing=$((missing+1)); continue
     fi
-    if qmove "$p" "$THUMB_DIR" "" "" "thumb_confirmed"; then
+    if qmove "$p" "$THUMB_DIR" "" "" "$dec"; then
       moved=$((moved+1))
     else
       skipped=$((skipped+1))

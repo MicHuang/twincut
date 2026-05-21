@@ -223,6 +223,70 @@ if command -v exiftool >/dev/null 2>&1; then
 fi
 
 # ----------------------------------------------------------------------------
+# Section 9: --thumb-confirm decision column
+note "9. --thumb-confirm: 6-column CSV uses decision column verbatim"
+rm -rf "$SRC"; mkdir -p "$SRC"
+sips -z 200 200 "$SEED" --out "$SRC/thumbA.png" >/dev/null
+sips -z 300 300 "$SEED" --out "$SRC/thumbB.png" >/dev/null
+sips -z 400 400 "$SEED" --out "$SRC/thumbC.png" >/dev/null
+
+THUMB_DIR9="$TMP/td9"; mkdir -p "$THUMB_DIR9"
+CSV9="$THUMB_DIR9/_review9.csv"
+# 6-column CSV: path,reason,width,height,note,decision
+printf 'path,reason,width,height,note,decision\n' > "$CSV9"
+printf '"%s","l1_only_thumb","200","200","","thumb_l2_exif"\n' "$SRC/thumbA.png" >> "$CSV9"
+printf '"%s","l1_only_thumb","300","300","","thumb_l3_embed"\n' "$SRC/thumbB.png" >> "$CSV9"
+printf '"%s","l1_only_thumb","400","400","","thumb_confirmed"\n' "$SRC/thumbC.png" >> "$CSV9"
+
+"$TWINCUT" --thumb-confirm "$CSV9" --thumb-dir "$THUMB_DIR9" --assume-yes \
+  >/tmp/twincut_confirm9.log 2>&1
+
+MF9=$(ls -t "$THUMB_DIR9"/_manifest-*.tsv 2>/dev/null | head -n1 || true)
+[[ -n "$MF9" ]] && ok "section 9: manifest created" || bad "section 9: no manifest"
+
+grep -q "thumb_l2_exif"   "$MF9" && ok "manifest has thumb_l2_exif row"   || bad "manifest missing thumb_l2_exif"
+grep -q "thumb_l3_embed"  "$MF9" && ok "manifest has thumb_l3_embed row"  || bad "manifest missing thumb_l3_embed"
+grep -q "thumb_confirmed" "$MF9" && ok "manifest has thumb_confirmed row"  || bad "manifest missing thumb_confirmed"
+
+# ----------------------------------------------------------------------------
+note "9b. --thumb-confirm: legacy 5-column CSV falls back to thumb_confirmed"
+rm -rf "$SRC"; mkdir -p "$SRC"
+sips -z 200 200 "$SEED" --out "$SRC/thumbD.png" >/dev/null
+
+THUMB_DIR9B="$TMP/td9b"; mkdir -p "$THUMB_DIR9B"
+CSV9B="$THUMB_DIR9B/_review9b.csv"
+# 5-column CSV (legacy): no decision column
+printf 'path,reason,width,height,note\n' > "$CSV9B"
+printf '"%s","l1_only_thumb","200","200",""\n' "$SRC/thumbD.png" >> "$CSV9B"
+
+"$TWINCUT" --thumb-confirm "$CSV9B" --thumb-dir "$THUMB_DIR9B" --assume-yes \
+  >/tmp/twincut_confirm9b.log 2>&1
+
+MF9B=$(ls -t "$THUMB_DIR9B"/_manifest-*.tsv 2>/dev/null | head -n1 || true)
+[[ -n "$MF9B" ]] && ok "section 9b: manifest created" || bad "section 9b: no manifest"
+grep -q "thumb_confirmed" "$MF9B" && ok "9b: legacy CSV defaults to thumb_confirmed" || bad "9b: missing thumb_confirmed"
+
+# ----------------------------------------------------------------------------
+note "9c. --thumb-confirm: unknown decision value is rejected with warning, row skipped"
+rm -rf "$SRC"; mkdir -p "$SRC"
+sips -z 200 200 "$SEED" --out "$SRC/thumbE.png" >/dev/null
+
+THUMB_DIR9C="$TMP/td9c"; mkdir -p "$THUMB_DIR9C"
+CSV9C="$THUMB_DIR9C/_review9c.csv"
+printf 'path,reason,width,height,note,decision\n' > "$CSV9C"
+printf '"%s","l1_only_thumb","200","200","","invalid_value"\n' "$SRC/thumbE.png" >> "$CSV9C"
+
+"$TWINCUT" --thumb-confirm "$CSV9C" --thumb-dir "$THUMB_DIR9C" --assume-yes \
+  >/tmp/twincut_confirm9c.log 2>&1 || true
+
+# thumbE.png must still be in source (row was skipped)
+assert_file "$SRC/thumbE.png"
+# Warning must appear in stderr (captured in log via 2>&1)
+grep -qi "unknown\|invalid\|reject" /tmp/twincut_confirm9c.log \
+  && ok "9c: unknown decision value warning printed" \
+  || bad "9c: no warning for unknown decision value"
+
+# ----------------------------------------------------------------------------
 echo
 echo "===== RESULT: $PASS passed, $FAIL failed ====="
 [[ $FAIL -eq 0 ]] || exit 1
