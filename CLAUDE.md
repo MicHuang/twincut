@@ -66,3 +66,21 @@ Things that are non-obvious from skimming a single function:
 - **Quarantine vs delete.** `DEST_ACTION` (`move|delete|list`) controls what happens to source-side duplicates; `move` (default) goes to `QUAR_DIR` (default `./_QUARANTINE`). `move_unique` handles name collisions in the quarantine.
 
 - **Similar-video output** lives under per-side subdirs: `_similar_video`, `_similar_video_backup`, `_similar_video_source`, with a CSV map `_similar_video_map.csv`.
+
+## Agent operational notes
+
+These rules emerged from real session failures on this codebase. Follow them when working here.
+
+### Subagent output token limit (~32k)
+
+Dispatching a single subagent to produce a large markdown/code deliverable (>~800 lines) often fails: the agent streams content as prose, exceeds the 32k output-token cap, and the call returns an error with no `Write`/`Edit` ever called — the work is lost.
+
+When the deliverable would be that large:
+- Split the work across 2-3 sequential dispatches (e.g., a 15-task plan as header+tasks 1-5 / tasks 6-10 / tasks 11-15+closers).
+- Instruct each agent to `Write` (chunk 1) or `Edit` (chunks 2+) directly to the target file. Cap the agent's text reply at ~150 words.
+
+### NDJSON / schema naming follows the codebase, not the spec
+
+Every NDJSON event emitted by `bin/twincut.sh` (and `lib/*.sh` via the `emit_event` helper) uses `"type":"<name>"` as the discriminator key — never `"event":"<name>"`. Before adding a new event kind to a spec or plan, `grep '"type":' bin/*.sh lib/*.sh ui/server/events.go` to confirm the schema and adopt it. The Go-side parser (`ui/server/events.go`) is keyed on `"type"`.
+
+The same principle applies to other naming (struct fields, routes, helpers): search the codebase first, then write the spec.
