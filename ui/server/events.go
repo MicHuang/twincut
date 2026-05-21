@@ -77,10 +77,11 @@ func ParseEvent(line []byte) (Event, error) {
 // ThumbCandidate is the parsed payload of a "thumb_candidate" event emitted
 // by lib/thumb.sh during --dry-run --json-events. One event per candidate file.
 type ThumbCandidate struct {
-	Decision  string `json:"decision"`   // thumb_l2_exif | thumb_l3_embed
+	Decision  string `json:"decision"`   // thumb_l2_exif | thumb_l3_embed | thumb_l1_review
 	Path      string `json:"path"`       // absolute path of the candidate thumbnail
-	Keeper    string `json:"keeper"`     // absolute path of the file being kept
-	GroupID   string `json:"group_id"`   // L2: EXIF fingerprint SHA1; L3: "l3:<sha1>"
+	Keeper    string `json:"keeper"`     // absolute path of the file being kept (L2/L3 only; empty for L1)
+	GroupID   string `json:"group_id"`   // L2: EXIF fingerprint SHA1; L3: "l3:<sha1>"; absent for L1
+	Reason    string `json:"reason"`     // L1 only: "l1_only_suspect" | "l1_only_maybe"; empty for L2/L3
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
 	SizeBytes int64  `json:"size_bytes"`

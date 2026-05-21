@@ -8,6 +8,56 @@ import (
 	"time"
 )
 
+func TestBuildResults_L1FromEvents_NoDiskRead(t *testing.T) {
+	tmp := t.TempDir()
+	srcDir := filepath.Join(tmp, "src")
+	runID := "20260521T140000Z-stage85t2"
+
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1700000000,"run_id":"` + runID + `","mode":"thumbnail_detect_preview","source":"` + srcDir + `"}`,
+		`{"type":"thumb_candidate","ts":1700000001,"run_id":"` + runID + `","decision":"thumb_l1_review","path":"` + srcDir + `/orphanA.png","reason":"l1_only_suspect","width":200,"height":200,"size_bytes":1234}`,
+		`{"type":"thumb_candidate","ts":1700000002,"run_id":"` + runID + `","decision":"thumb_l1_review","path":"` + srcDir + `/orphanB.png","reason":"l1_only_maybe","width":300,"height":300,"size_bytes":5678}`,
+		`{"type":"run_end","ts":1700000003,"run_id":"` + runID + `","cancelled":false,"moved":0,"deleted":0,"restored":0}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+
+	var l1 *ResultGroup
+	for i := range view.Groups {
+		if view.Groups[i].StringGroupID == "l1-suspects" {
+			l1 = &view.Groups[i]
+			break
+		}
+	}
+	if l1 == nil {
+		t.Fatalf("no l1-suspects group; groups=%+v", view.Groups)
+	}
+	if len(l1.Members) != 2 {
+		t.Fatalf("expected 2 l1 members, got %d", len(l1.Members))
+	}
+	if l1.Members[0].Path != srcDir+"/orphanA.png" || l1.Members[0].Role != "suspect" {
+		t.Errorf("l1 member 0 unexpected: %+v", l1.Members[0])
+	}
+	if l1.Members[0].Reason != "l1_only_suspect" {
+		t.Errorf("l1 member 0 reason: got %q want %q", l1.Members[0].Reason, "l1_only_suspect")
+	}
+	if l1.Members[0].Decision != "thumb_confirmed" {
+		t.Errorf("l1 member 0 decision: got %q want %q (apply TSV needs allow-listed value)", l1.Members[0].Decision, "thumb_confirmed")
+	}
+	if l1.Members[1].Reason != "l1_only_maybe" {
+		t.Errorf("l1 member 1 reason: got %q want %q", l1.Members[1].Reason, "l1_only_maybe")
+	}
+
+	// srcDir was never created on disk — confirm BuildResults didn't try to read from it.
+	if _, err := os.Stat(filepath.Join(srcDir, "_thumbnails")); err == nil {
+		t.Errorf("BuildResults created/read source _thumbnails dir; should be event-only")
+	}
+}
+
 // Helper: synthesize a Run from a list of canned NDJSON event lines.
 func runFromEvents(t *testing.T, lines []string) *Run {
 	t.Helper()
@@ -419,21 +469,13 @@ func TestBuildResults_ThumbnailMode_L3Pair(t *testing.T) {
 
 func TestBuildResults_ThumbnailMode_L1Group(t *testing.T) {
 	tmp := t.TempDir()
-	thumbDir := filepath.Join(tmp, "_thumbnails")
-	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	reviewCSV := filepath.Join(thumbDir, "_review.csv")
-	// File content is TSV (matches thumb_write_review's stage-8 followup output).
-	reviewContent := "path\treason\twidth\theight\tnote\n" +
-		filepath.Join(tmp, "suspect1.jpg") + "\tl1_only_thumb\t80\t60\t\n" +
-		filepath.Join(tmp, "suspect2.jpg") + "\tl1_only_maybe\t90\t70\t\n"
-	if err := os.WriteFile(reviewCSV, []byte(reviewContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	suspect1 := filepath.Join(tmp, "suspect1.jpg")
+	suspect2 := filepath.Join(tmp, "suspect2.jpg")
 	r := runFromEvents(t, []string{
 		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"` + tmp + `"}`,
-		`{"type":"run_end","ts":2,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l1_review","path":"` + suspect1 + `","reason":"l1_only_thumb","width":80,"height":60,"size_bytes":1000}`,
+		`{"type":"thumb_candidate","ts":3,"run_id":"x","decision":"thumb_l1_review","path":"` + suspect2 + `","reason":"l1_only_maybe","width":90,"height":70,"size_bytes":2000}`,
+		`{"type":"run_end","ts":4,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
 	})
 	r.Mode = "thumbnail_detect_preview"
 	view, err := BuildResults(r)

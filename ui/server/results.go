@@ -1,11 +1,8 @@
 package server
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -199,6 +196,32 @@ func BuildResults(run *Run) (ResultsView, error) {
 				})
 				break
 			}
+			// Stage 8.5 Fix 1: L1 suspects are flat (no paired keeper). They aggregate
+			// into a single synthetic "l1-suspects" group; the apply path emits them
+			// with decision=thumb_confirmed (the apply-TSV allow-listed value).
+			if tc.Decision == "thumb_l1_review" {
+				l1Idx := -1
+				for gi := range view.Groups {
+					if view.Groups[gi].StringGroupID == "l1-suspects" {
+						l1Idx = gi
+						break
+					}
+				}
+				if l1Idx == -1 {
+					view.Groups = append(view.Groups, ResultGroup{StringGroupID: "l1-suspects"})
+					l1Idx = len(view.Groups) - 1
+				}
+				view.Groups[l1Idx].Members = append(view.Groups[l1Idx].Members, ResultMember{
+					Path:      tc.Path,
+					Role:      "suspect",
+					Decision:  "thumb_confirmed",
+					Reason:    tc.Reason,
+					Width:     tc.Width,
+					Height:    tc.Height,
+					SizeBytes: tc.SizeBytes,
+				})
+				break
+			}
 			// Find or create the ResultGroup for this group_id.
 			groupIdx := -1
 			for gi := range view.Groups {
@@ -253,57 +276,6 @@ func BuildResults(run *Run) (ResultsView, error) {
 				view.DeletedCount = p.Deleted
 				view.RestoredCount = p.Restored
 				view.ManifestPath = p.ManifestPath
-			}
-		}
-	}
-
-	// Thumbnail mode: read _review.csv for L1 suspects and append as a
-	// synthetic group. File content is TSV despite the .csv extension
-	// (legacy filename; thumb_write_review switched to TSV in stage-8
-	// followup). Absent file is silently skipped (no L1 suspects).
-	if strings.HasPrefix(snap.Mode, "thumbnail_detect") && view.SourcePath != "" {
-		reviewPath := filepath.Join(view.SourcePath, "_thumbnails", "_review.csv")
-		if rf, err := os.Open(reviewPath); err == nil {
-			defer rf.Close()
-			cr := csv.NewReader(rf)
-			cr.Comma = '\t'
-			cr.FieldsPerRecord = -1
-			var l1Group ResultGroup
-			l1Group.StringGroupID = "l1-suspects"
-			firstRow := true
-			for {
-				rec, err := cr.Read()
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					break
-				}
-				if firstRow {
-					firstRow = false
-					continue // skip header
-				}
-				if len(rec) < 2 {
-					continue
-				}
-				path := rec[0]
-				reason := rec[1]
-				var w, h int
-				if len(rec) >= 4 {
-					fmt.Sscan(rec[2], &w)
-					fmt.Sscan(rec[3], &h)
-				}
-				l1Group.Members = append(l1Group.Members, ResultMember{
-					Path:     path,
-					Role:     "suspect",
-					Decision: "thumb_confirmed",
-					Reason:   reason,
-					Width:    w,
-					Height:   h,
-				})
-			}
-			if len(l1Group.Members) > 0 {
-				view.Groups = append(view.Groups, l1Group)
 			}
 		}
 	}
