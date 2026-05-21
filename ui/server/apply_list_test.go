@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/csv"
 	"net/url"
 	"os"
 	"reflect"
@@ -212,7 +211,7 @@ func TestMapReason(t *testing.T) {
 	}
 }
 
-// thumbnailGroups returns synthetic ResultGroups for composeThumbnailConfirmCSV tests.
+// thumbnailGroups returns synthetic ResultGroups for composeThumbnailConfirmTSV tests.
 func thumbnailGroups() []ResultGroup {
 	return []ResultGroup{
 		{
@@ -240,109 +239,140 @@ func thumbnailGroups() []ResultGroup {
 	}
 }
 
-func TestComposeThumbnailConfirmCSV_ChecksFiltered(t *testing.T) {
+func TestComposeThumbnailConfirmTSV_ChecksFiltered(t *testing.T) {
 	form := url.Values{
 		"group:exifsha1abc.member1": {"on"},
 	}
-	data, err := composeThumbnailConfirmCSV(thumbnailGroups(), form)
+	data, err := composeThumbnailConfirmTSV(thumbnailGroups(), form)
 	if err != nil {
-		t.Fatalf("composeThumbnailConfirmCSV: %v", err)
+		t.Fatalf("composeThumbnailConfirmTSV: %v", err)
 	}
 	body := string(data)
 	if !strings.Contains(body, "/src/small1.jpg") {
-		t.Errorf("small1.jpg not in CSV output:\n%s", body)
+		t.Errorf("small1.jpg not in TSV output:\n%s", body)
 	}
 	if strings.Contains(body, "/src/small2.jpg") {
-		t.Errorf("small2.jpg unexpectedly in CSV output:\n%s", body)
+		t.Errorf("small2.jpg unexpectedly in TSV output:\n%s", body)
 	}
 	if strings.Contains(body, "/src/big.jpg") {
-		t.Errorf("keeper big.jpg unexpectedly in CSV output:\n%s", body)
+		t.Errorf("keeper big.jpg unexpectedly in TSV output:\n%s", body)
 	}
 }
 
-func TestComposeThumbnailConfirmCSV_DecisionPropagation(t *testing.T) {
+func TestComposeThumbnailConfirmTSV_DecisionPropagation(t *testing.T) {
 	form := url.Values{
 		"group:exifsha1abc.member1":   {"on"},
 		"group:l3:keepersha1.member1": {"on"},
 		"group:l1-suspects.member0":   {"on"},
 	}
-	data, err := composeThumbnailConfirmCSV(thumbnailGroups(), form)
+	data, err := composeThumbnailConfirmTSV(thumbnailGroups(), form)
 	if err != nil {
-		t.Fatalf("composeThumbnailConfirmCSV: %v", err)
+		t.Fatalf("composeThumbnailConfirmTSV: %v", err)
 	}
 	body := string(data)
 	if !strings.Contains(body, "thumb_l2_exif") {
-		t.Errorf("thumb_l2_exif not in CSV:\n%s", body)
+		t.Errorf("thumb_l2_exif not in TSV:\n%s", body)
 	}
 	if !strings.Contains(body, "thumb_l3_embed") {
-		t.Errorf("thumb_l3_embed not in CSV:\n%s", body)
+		t.Errorf("thumb_l3_embed not in TSV:\n%s", body)
 	}
 	if !strings.Contains(body, "thumb_confirmed") {
-		t.Errorf("thumb_confirmed not in CSV:\n%s", body)
+		t.Errorf("thumb_confirmed not in TSV:\n%s", body)
 	}
 }
 
-func TestComposeThumbnailConfirmCSV_CSVEscaping(t *testing.T) {
+func TestComposeThumbnailConfirmTSV_AllowsCommasAndQuotesUnescaped(t *testing.T) {
+	// TSV does not quote — paths with commas and double-quotes must appear verbatim.
+	path := `/src/file with "quotes" and,comma.jpg`
 	groups := []ResultGroup{
 		{
 			StringGroupID: "g1",
 			Members: []ResultMember{
-				{Path: `/src/file with "quotes" and,comma.jpg`, Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 80, SizeBytes: 512},
+				{Path: path, Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 80, SizeBytes: 512},
 			},
 		},
 	}
 	form := url.Values{"group:g1.member0": {"on"}}
-	data, err := composeThumbnailConfirmCSV(groups, form)
+	data, err := composeThumbnailConfirmTSV(groups, form)
 	if err != nil {
-		t.Fatalf("composeThumbnailConfirmCSV: %v", err)
+		t.Fatalf("composeThumbnailConfirmTSV: %v", err)
 	}
-	r := csv.NewReader(strings.NewReader(string(data)))
-	r.FieldsPerRecord = -1
-	records, err := r.ReadAll()
-	if err != nil {
-		t.Fatalf("csv.ReadAll on output: %v", err)
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	// lines[0] = header, lines[1] = data row
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d:\n%s", len(lines), data)
 	}
-	found := false
-	for _, rec := range records[1:] {
-		if strings.Contains(rec[0], "quotes") && strings.Contains(rec[0], "comma") {
-			found = true
-			if rec[5] != "thumb_l2_exif" {
-				t.Errorf("decision col = %q, want thumb_l2_exif", rec[5])
-			}
-		}
+	fields := strings.Split(lines[1], "\t")
+	if fields[0] != path {
+		t.Errorf("path field = %q, want %q (no escaping expected in TSV)", fields[0], path)
 	}
-	if !found {
-		t.Errorf("path with quotes and comma not found in output:\n%s", data)
+	if fields[5] != "thumb_l2_exif" {
+		t.Errorf("decision col = %q, want thumb_l2_exif", fields[5])
 	}
 }
 
-func TestComposeThumbnailConfirmCSV_UnicodePaths(t *testing.T) {
+func TestComposeThumbnailConfirmTSV_UnicodePaths(t *testing.T) {
+	path := `/src/照片/小缩略图.jpg`
 	groups := []ResultGroup{
 		{
 			StringGroupID: "g2",
 			Members: []ResultMember{
-				{Path: `/src/照片/小缩略图.jpg`, Role: "thumbnail", Decision: "thumb_l3_embed", Width: 80, Height: 60, SizeBytes: 256},
+				{Path: path, Role: "thumbnail", Decision: "thumb_l3_embed", Width: 80, Height: 60, SizeBytes: 256},
 			},
 		},
 	}
 	form := url.Values{"group:g2.member0": {"on"}}
-	data, err := composeThumbnailConfirmCSV(groups, form)
+	data, err := composeThumbnailConfirmTSV(groups, form)
 	if err != nil {
-		t.Fatalf("composeThumbnailConfirmCSV: %v", err)
+		t.Fatalf("composeThumbnailConfirmTSV: %v", err)
 	}
-	r := csv.NewReader(strings.NewReader(string(data)))
-	r.FieldsPerRecord = -1
-	records, err := r.ReadAll()
-	if err != nil {
-		t.Fatalf("csv.ReadAll on unicode output: %v", err)
-	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	found := false
-	for _, rec := range records[1:] {
-		if rec[0] == `/src/照片/小缩略图.jpg` {
+	for _, line := range lines[1:] {
+		fields := strings.Split(line, "\t")
+		if fields[0] == path {
 			found = true
 		}
 	}
 	if !found {
 		t.Errorf("unicode path not round-tripped; output:\n%s", data)
+	}
+}
+
+func TestComposeThumbnailConfirmTSV_RejectsTabInPath(t *testing.T) {
+	groups := []ResultGroup{
+		{
+			StringGroupID: "g3",
+			Members: []ResultMember{
+				{Path: "/src/file\twith_tab.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 80, SizeBytes: 512},
+			},
+		},
+	}
+	form := url.Values{"group:g3.member0": {"on"}}
+	_, err := composeThumbnailConfirmTSV(groups, form)
+	if err == nil {
+		t.Fatal("expected error for path containing tab, got nil")
+	}
+	if !strings.Contains(err.Error(), "forbidden character") {
+		t.Errorf("error = %q, want it to contain 'forbidden character'", err.Error())
+	}
+}
+
+func TestComposeThumbnailConfirmTSV_RejectsNewlineInPath(t *testing.T) {
+	groups := []ResultGroup{
+		{
+			StringGroupID: "g4",
+			Members: []ResultMember{
+				{Path: "/src/file\nwith_newline.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 80, SizeBytes: 512},
+			},
+		},
+	}
+	form := url.Values{"group:g4.member0": {"on"}}
+	_, err := composeThumbnailConfirmTSV(groups, form)
+	if err == nil {
+		t.Fatal("expected error for path containing newline, got nil")
+	}
+	if !strings.Contains(err.Error(), "forbidden character") {
+		t.Errorf("error = %q, want it to contain 'forbidden character'", err.Error())
 	}
 }

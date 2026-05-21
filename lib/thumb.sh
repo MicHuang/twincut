@@ -296,14 +296,14 @@ thumb_write_review(){
 
   mkdir -p "$THUMB_DIR" || die3 "cannot create $THUMB_DIR"
   if [[ ! -f "$THUMB_REVIEW_CSV" ]]; then
-    echo 'path,reason,width,height,note' > "$THUMB_REVIEW_CSV"
+    printf 'path\treason\twidth\theight\tnote\n' > "$THUMB_REVIEW_CSV"
   fi
 
   while IFS=$'\t' read -r f w h cls; do
     [[ "$cls" == "ok" ]] && continue
     [[ ! -e "$f" ]] && continue   # already handled by L2/L3
     local reason="l1_only_${cls}"
-    printf '"%s","%s","%s","%s","%s"\n' "$f" "$reason" "$w" "$h" "" >> "$THUMB_REVIEW_CSV"
+    printf '%s\t%s\t%s\t%s\t\n' "$f" "$reason" "$w" "$h" >> "$THUMB_REVIEW_CSV"
     THUMB_REVIEW_CNT=$((THUMB_REVIEW_CNT+1))
   done < "$THUMB_INDEX_FILE"
 
@@ -372,18 +372,21 @@ thumb_confirm_review(){
   # Any other non-empty value → reject the row with a warning.
   local _allowed_decisions="thumb_l2_exif thumb_l3_embed thumb_confirmed"
 
-  # Skip header row. Read up to 6 comma-separated fields.
-  # IFS=, splits on commas; the 6th field (decision_q) may be absent
-  # for legacy 5-column CSVs, in which case it is empty string.
+  # Skip header row. Parse each TSV row with awk to handle empty fields
+  # correctly — bash IFS=$'\t' read collapses consecutive tabs, losing
+  # empty fields. awk -F'\t' does not collapse, matching TSV contract.
   local first=true
-  while IFS=, read -r p_q reason_q w_q h_q note_q decision_q; do
+  while IFS= read -r _raw_line; do
     if $first; then first=false; continue; fi
-    local p="${p_q%\"}"; p="${p#\"}"
+    # Extract fields with awk to avoid bash IFS tab-collapse.
+    local p dec
+    p="$(awk -F'\t' '{print $1}' <<< "$_raw_line")"
+    dec="$(awk -F'\t' '{print $6}' <<< "$_raw_line")"
     [[ -z "$p" ]] && continue
 
-    # Parse decision column: strip surrounding quotes, trim whitespace.
-    local dec="${decision_q%\"}"; dec="${dec#\"}"; dec="${dec// /}"
-    # Default to thumb_confirmed when absent (legacy 5-column CSV).
+    # Trim whitespace (TSV has no quoting).
+    dec="${dec// /}"
+    # Default to thumb_confirmed when absent (legacy 5-column TSV).
     [[ -z "$dec" ]] && dec="thumb_confirmed"
 
     # Validate against the allowed set.

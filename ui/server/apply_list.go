@@ -14,7 +14,6 @@ package server
 
 import (
 	"bytes"
-	"encoding/csv"
 	"fmt"
 	"net/url"
 	"os"
@@ -142,19 +141,20 @@ func writeApplyList(stateDir string, rows [][]string) (string, error) {
 	return f.Name(), nil
 }
 
-// composeThumbnailConfirmCSV walks thumbnail ResultGroups and the apply form
-// to produce the six-column enhanced review CSV consumed by --thumb-confirm.
+// composeThumbnailConfirmTSV walks thumbnail ResultGroups and the apply form
+// to produce the six-column enhanced review TSV consumed by --thumb-confirm.
 // Only checked members (form key "group:<gid>.member<i>=on") are included.
 // Keeper-role members are never included regardless of form state.
 //
-// CSV columns: path,reason,width,height,note,decision
-func composeThumbnailConfirmCSV(groups []ResultGroup, form url.Values) ([]byte, error) {
+// TSV columns (tab-separated, no quoting): path\treason\twidth\theight\tnote\tdecision
+//
+// Fields containing a tab or newline are rejected with an error — they would
+// break the TSV contract and are vanishingly rare in real file paths.
+func composeThumbnailConfirmTSV(groups []ResultGroup, form url.Values) ([]byte, error) {
 	var buf bytes.Buffer
-	w := csv.NewWriter(&buf)
 
-	if err := w.Write([]string{"path", "reason", "width", "height", "note", "decision"}); err != nil {
-		return nil, fmt.Errorf("write CSV header: %w", err)
-	}
+	header := []string{"path", "reason", "width", "height", "note", "decision"}
+	fmt.Fprintln(&buf, strings.Join(header, "\t"))
 
 	for _, g := range groups {
 		for i, m := range g.Members {
@@ -173,15 +173,14 @@ func composeThumbnailConfirmCSV(groups []ResultGroup, form url.Values) ([]byte, 
 				"",
 				m.Decision,
 			}
-			if err := w.Write(row); err != nil {
-				return nil, fmt.Errorf("write CSV row for %s: %w", m.Path, err)
+			for _, field := range row {
+				if strings.ContainsAny(field, "\t\n") {
+					return nil, fmt.Errorf("field contains forbidden character (tab or newline): %q", field)
+				}
 			}
+			fmt.Fprintln(&buf, strings.Join(row, "\t"))
 		}
 	}
 
-	w.Flush()
-	if err := w.Error(); err != nil {
-		return nil, fmt.Errorf("flush CSV: %w", err)
-	}
 	return buf.Bytes(), nil
 }

@@ -124,15 +124,15 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csvData, err := composeThumbnailConfirmCSV(view.Groups, r.Form)
+	tsvData, err := composeThumbnailConfirmTSV(view.Groups, r.Form)
 	if err != nil {
-		http.Error(w, "compose confirm CSV: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "compose confirm TSV: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Write CSV before starting the run so we have a stable file path.
-	// Generate an ID, write the CSV, then start the run. If the run gets
-	// a different ID, rename the CSV to match run.ID so the name stays
+	// Write TSV before starting the run so we have a stable file path.
+	// Generate an ID, write the TSV, then start the run. If the run gets
+	// a different ID, rename the TSV to match run.ID so the name stays
 	// consistent for downstream tooling.
 	applyRunID := newRunID()
 	runsDir := filepath.Join(s.opts.StateDir, "runs")
@@ -140,24 +140,24 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mkdir runs: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	csvPath := filepath.Join(runsDir, applyRunID+".thumb-confirm.csv")
-	if err := os.WriteFile(csvPath, csvData, 0o644); err != nil {
-		http.Error(w, "write confirm CSV: "+err.Error(), http.StatusInternalServerError)
+	tsvPath := filepath.Join(runsDir, applyRunID+".thumb-confirm.tsv")
+	if err := os.WriteFile(tsvPath, tsvData, 0o644); err != nil {
+		http.Error(w, "write confirm TSV: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	args := []string{"--thumb-confirm", csvPath, "--assume-yes", "--json-events"}
+	args := []string{"--thumb-confirm", tsvPath, "--assume-yes", "--json-events"}
 	run, err := s.runs.Start(StartOptions{Mode: "thumbnail_detect_apply", Args: args})
 	if err != nil {
 		http.Error(w, "start run: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// If the run manager assigned a different ID, rename the CSV to match.
+	// If the run manager assigned a different ID, rename the TSV to match.
 	if run.ID != applyRunID {
-		newCSVPath := filepath.Join(runsDir, run.ID+".thumb-confirm.csv")
-		if renameErr := os.Rename(csvPath, newCSVPath); renameErr != nil {
-			// Non-fatal: log but continue — CSV still exists under applyRunID name.
+		newTSVPath := filepath.Join(runsDir, run.ID+".thumb-confirm.tsv")
+		if renameErr := os.Rename(tsvPath, newTSVPath); renameErr != nil {
+			// Non-fatal: log but continue — TSV still exists under applyRunID name.
 			_ = renameErr
 		}
 	}

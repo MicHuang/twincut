@@ -159,7 +159,7 @@ func TestHandleThumbnailsResults_BuildsView(t *testing.T) {
 	}
 }
 
-func TestHandleThumbnailsApply_WritesCSV(t *testing.T) {
+func TestHandleThumbnailsApply_WritesTSV(t *testing.T) {
 	srv := newThumbTestServer(t)
 	// srcPath must be under HOME so the allowlist check in Apply passes.
 	srcPath := os.Getenv("HOME")
@@ -191,25 +191,25 @@ func TestHandleThumbnailsApply_WritesCSV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir %s: %v", runsDir, err)
 	}
-	var csvPath string
+	var tsvPath string
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".thumb-confirm.csv") {
-			csvPath = filepath.Join(runsDir, e.Name())
+		if strings.HasSuffix(e.Name(), ".thumb-confirm.tsv") {
+			tsvPath = filepath.Join(runsDir, e.Name())
 			break
 		}
 	}
-	if csvPath == "" {
-		t.Fatal("no .thumb-confirm.csv file found under StateDir/runs/")
+	if tsvPath == "" {
+		t.Fatal("no .thumb-confirm.tsv file found under StateDir/runs/")
 	}
-	data, err := os.ReadFile(csvPath)
+	data, err := os.ReadFile(tsvPath)
 	if err != nil {
-		t.Fatalf("read csv: %v", err)
+		t.Fatalf("read tsv: %v", err)
 	}
 	if !strings.Contains(string(data), "small.jpg") {
-		t.Errorf("CSV does not contain small.jpg:\n%s", data)
+		t.Errorf("TSV does not contain small.jpg:\n%s", data)
 	}
 	if !strings.Contains(string(data), "thumb_l2_exif") {
-		t.Errorf("CSV does not contain thumb_l2_exif decision:\n%s", data)
+		t.Errorf("TSV does not contain thumb_l2_exif decision:\n%s", data)
 	}
 }
 

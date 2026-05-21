@@ -224,19 +224,19 @@ fi
 
 # ----------------------------------------------------------------------------
 # Section 9: --thumb-confirm decision column
-note "9. --thumb-confirm: 6-column CSV uses decision column verbatim"
+note "9. --thumb-confirm: 6-column TSV uses decision column verbatim"
 rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/thumbA.png" >/dev/null
 sips -z 300 300 "$SEED" --out "$SRC/thumbB.png" >/dev/null
 sips -z 400 400 "$SEED" --out "$SRC/thumbC.png" >/dev/null
 
 THUMB_DIR9="$TMP/td9"; mkdir -p "$THUMB_DIR9"
-CSV9="$THUMB_DIR9/_review9.csv"
-# 6-column CSV: path,reason,width,height,note,decision
-printf 'path,reason,width,height,note,decision\n' > "$CSV9"
-printf '"%s","l1_only_thumb","200","200","","thumb_l2_exif"\n' "$SRC/thumbA.png" >> "$CSV9"
-printf '"%s","l1_only_thumb","300","300","","thumb_l3_embed"\n' "$SRC/thumbB.png" >> "$CSV9"
-printf '"%s","l1_only_thumb","400","400","","thumb_confirmed"\n' "$SRC/thumbC.png" >> "$CSV9"
+CSV9="$THUMB_DIR9/_review9.tsv"
+# 6-column TSV: path\treason\twidth\theight\tnote\tdecision (no quoting)
+printf 'path\treason\twidth\theight\tnote\tdecision\n' > "$CSV9"
+printf '%s\tl1_only_thumb\t200\t200\t\tthumb_l2_exif\n' "$SRC/thumbA.png" >> "$CSV9"
+printf '%s\tl1_only_thumb\t300\t300\t\tthumb_l3_embed\n' "$SRC/thumbB.png" >> "$CSV9"
+printf '%s\tl1_only_thumb\t400\t400\t\tthumb_confirmed\n' "$SRC/thumbC.png" >> "$CSV9"
 
 "$TWINCUT" --thumb-confirm "$CSV9" --thumb-dir "$THUMB_DIR9" --assume-yes \
   >/tmp/twincut_confirm9.log 2>&1
@@ -249,22 +249,22 @@ grep -q "thumb_l3_embed"  "$MF9" && ok "manifest has thumb_l3_embed row"  || bad
 grep -q "thumb_confirmed" "$MF9" && ok "manifest has thumb_confirmed row"  || bad "manifest missing thumb_confirmed"
 
 # ----------------------------------------------------------------------------
-note "9b. --thumb-confirm: legacy 5-column CSV falls back to thumb_confirmed"
+note "9b. --thumb-confirm: legacy 5-column TSV falls back to thumb_confirmed"
 rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/thumbD.png" >/dev/null
 
 THUMB_DIR9B="$TMP/td9b"; mkdir -p "$THUMB_DIR9B"
-CSV9B="$THUMB_DIR9B/_review9b.csv"
-# 5-column CSV (legacy): no decision column
-printf 'path,reason,width,height,note\n' > "$CSV9B"
-printf '"%s","l1_only_thumb","200","200",""\n' "$SRC/thumbD.png" >> "$CSV9B"
+CSV9B="$THUMB_DIR9B/_review9b.tsv"
+# 5-column TSV (legacy): no decision column (no quoting)
+printf 'path\treason\twidth\theight\tnote\n' > "$CSV9B"
+printf '%s\tl1_only_thumb\t200\t200\t\n' "$SRC/thumbD.png" >> "$CSV9B"
 
 "$TWINCUT" --thumb-confirm "$CSV9B" --thumb-dir "$THUMB_DIR9B" --assume-yes \
   >/tmp/twincut_confirm9b.log 2>&1
 
 MF9B=$(ls -t "$THUMB_DIR9B"/_manifest-*.tsv 2>/dev/null | head -n1 || true)
 [[ -n "$MF9B" ]] && ok "section 9b: manifest created" || bad "section 9b: no manifest"
-grep -q "thumb_confirmed" "$MF9B" && ok "9b: legacy CSV defaults to thumb_confirmed" || bad "9b: missing thumb_confirmed"
+grep -q "thumb_confirmed" "$MF9B" && ok "9b: legacy TSV defaults to thumb_confirmed" || bad "9b: missing thumb_confirmed"
 
 # ----------------------------------------------------------------------------
 note "9c. --thumb-confirm: unknown decision value is rejected with warning, row skipped"
@@ -272,9 +272,9 @@ rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/thumbE.png" >/dev/null
 
 THUMB_DIR9C="$TMP/td9c"; mkdir -p "$THUMB_DIR9C"
-CSV9C="$THUMB_DIR9C/_review9c.csv"
-printf 'path,reason,width,height,note,decision\n' > "$CSV9C"
-printf '"%s","l1_only_thumb","200","200","","invalid_value"\n' "$SRC/thumbE.png" >> "$CSV9C"
+CSV9C="$THUMB_DIR9C/_review9c.tsv"
+printf 'path\treason\twidth\theight\tnote\tdecision\n' > "$CSV9C"
+printf '%s\tl1_only_thumb\t200\t200\t\tinvalid_value\n' "$SRC/thumbE.png" >> "$CSV9C"
 
 "$TWINCUT" --thumb-confirm "$CSV9C" --thumb-dir "$THUMB_DIR9C" --assume-yes \
   >/tmp/twincut_confirm9c.log 2>&1 || true
@@ -307,9 +307,9 @@ fi
 rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/tc.png" >/dev/null
 THUMB_DIR10="$TMP/td10"; mkdir -p "$THUMB_DIR10"
-CSV10="$THUMB_DIR10/_r10.csv"
-printf 'path,reason,width,height,note\n' > "$CSV10"
-printf '"%s","l1_only_thumb","200","200",""\n' "$SRC/tc.png" >> "$CSV10"
+CSV10="$THUMB_DIR10/_r10.tsv"
+printf 'path\treason\twidth\theight\tnote\n' > "$CSV10"
+printf '%s\tl1_only_thumb\t200\t200\t\n' "$SRC/tc.png" >> "$CSV10"
 CONFIRM_OUT="$(
   "$TWINCUT" --thumb-confirm "$CSV10" --thumb-dir "$THUMB_DIR10" --json-events --assume-yes \
     2>/dev/null
@@ -368,14 +368,14 @@ else
   ok "11: _thumbnails/ not created by dry-run"
 fi
 
-# review.csv, if written, must have exactly 5 columns in the header (no decision column)
+# review.csv, if written, must have exactly 5 tab-separated columns in the header (no decision column)
 REVIEW11="$SRC/_thumbnails/_review.csv"
 if [[ -f "$REVIEW11" ]]; then
   HEADER11="$(head -n1 "$REVIEW11")"
-  if [[ "$HEADER11" == "path,reason,width,height,note" ]]; then
-    ok "11: review.csv header has 5 columns (no decision column)"
+  if [[ "$HEADER11" == $'path\treason\twidth\theight\tnote' ]]; then
+    ok "11: review.csv header has 5 TSV columns (no decision column)"
   else
-    bad "11: review.csv header is '$HEADER11', want 'path,reason,width,height,note'"
+    bad "11: review.csv header is '$HEADER11', want tab-separated 'path\treason\twidth\theight\tnote'"
   fi
 fi
 
