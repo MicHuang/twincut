@@ -326,3 +326,30 @@ func TestAppHTML_ThumbnailsNavLink(t *testing.T) {
 		t.Error("footer still says stage 4 or other old value")
 	}
 }
+
+func TestRunningPanelTitle_ThumbnailModes(t *testing.T) {
+	srv := newThumbTestServer(t)
+	for _, tc := range []struct {
+		mode string
+		want string
+	}{
+		{"thumbnail_detect_preview", "Detecting thumbnails"},
+		{"thumbnail_detect_apply", "Confirming thumbnail moves"},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			var buf strings.Builder
+			data := selfCheckRunningData{
+				RunID:   "x",
+				Folder:  "/photos",
+				Mode:    tc.mode,
+				NextURL: "/api/thumbnails/results/x",
+			}
+			if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_running.html", data); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+			if !strings.Contains(buf.String(), tc.want) {
+				t.Errorf("running panel title missing %q for mode=%s", tc.want, tc.mode)
+			}
+		})
+	}
+}
