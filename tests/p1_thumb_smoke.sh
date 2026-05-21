@@ -379,6 +379,55 @@ if [[ -f "$REVIEW11" ]]; then
   fi
 fi
 
+# ---------------------------------------------------------------------
+# Section 12: Stage 8.5 Fix 1 — L1 → NDJSON events under --json-events
+# ---------------------------------------------------------------------
+note "12. thumb-detect with --json-events emits thumb_l1_review events and skips _review.csv"
+rm -rf "$SRC"; mkdir -p "$SRC"
+sips -z 200 200 "$SEED" --out "$SRC/orphanA.png" >/dev/null
+sips -z 300 300 "$SEED" --out "$SRC/orphanB.png" >/dev/null
+
+LOG12="/tmp/twincut_stage85_t12.log"
+"$TWINCUT" --thumbnail-detect --dry-run --json-events \
+  --source "$SRC" --assume-yes >"$LOG12" 2>&1
+
+[[ ! -f "$SRC/_thumbnails/_review.csv" ]] \
+  && ok "section 12: _review.csv NOT created under --json-events" \
+  || bad "section 12: _review.csv was created under --json-events (should be skipped)"
+
+N12=$(grep -c '"decision":"thumb_l1_review"' "$LOG12" || true)
+[[ "$N12" -ge 2 ]] \
+  && ok "section 12: $N12 thumb_l1_review events emitted (>=2 expected)" \
+  || bad "section 12: only $N12 thumb_l1_review events in log (expected >=2)"
+
+grep '"decision":"thumb_l1_review"' "$LOG12" | head -1 | \
+  grep -q '"path":".*"' && \
+  grep '"decision":"thumb_l1_review"' "$LOG12" | head -1 | \
+  grep -q '"reason":"l1_only_' && \
+  grep '"decision":"thumb_l1_review"' "$LOG12" | head -1 | \
+  grep -q '"width":[0-9]' \
+  && ok "section 12: L1 event has path/reason/width fields" \
+  || bad "section 12: L1 event missing required fields"
+
+# ---------------------------------------------------------------------
+# Section 12b: Stage 8.5 regression — legacy CLI (no --json-events) still writes file
+# ---------------------------------------------------------------------
+note "12b. thumb-detect without --json-events still writes _review.csv (legacy CLI regression guard)"
+rm -rf "$SRC"; mkdir -p "$SRC"
+sips -z 200 200 "$SEED" --out "$SRC/orphanC.png" >/dev/null
+
+LOG12B="/tmp/twincut_stage85_t12b.log"
+"$TWINCUT" --thumbnail-detect --dry-run \
+  --source "$SRC" --assume-yes >"$LOG12B" 2>&1
+
+[[ -f "$SRC/_thumbnails/_review.csv" ]] \
+  && ok "section 12b: _review.csv written for legacy CLI path" \
+  || bad "section 12b: _review.csv missing for legacy CLI path"
+
+grep -q "orphanC.png" "$SRC/_thumbnails/_review.csv" \
+  && ok "section 12b: review file contains expected suspect" \
+  || bad "section 12b: review file missing expected suspect"
+
 echo
 echo "===== RESULT: $PASS passed, $FAIL failed ====="
 [[ $FAIL -eq 0 ]] || exit 1

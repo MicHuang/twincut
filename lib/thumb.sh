@@ -288,11 +288,36 @@ thumb_run_l3(){
   echo "[*] L3 embedded-thumbnail matches: $THUMB_L3_HITS"
 }
 
-# Anything still L1=suspect (after L2/L3 passes) and still on disk goes to review.csv.
+# Anything still L1=suspect (after L2/L3 passes) and still on disk:
+# - Under --json-events: emit one thumb_candidate event per suspect (decision=thumb_l1_review);
+#   do not write the source-scoped _review.csv (Stage 8.5 Fix 1: Go consumes events, not disk).
+# - Legacy CLI (no --json-events): write _review.csv as before.
 # We never delete or move L1-only suspects automatically.
 thumb_write_review(){
   THUMB_REVIEW_CNT=0
   [[ -s "${THUMB_INDEX_FILE:-}" ]] || return 0
+
+  if $JSON_EVENTS; then
+    local f w h cls _sz
+    while IFS=$'\t' read -r f w h cls; do
+      [[ "$cls" == "ok" ]] && continue
+      [[ ! -e "$f" ]] && continue
+      _sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || _sz=0
+      emit_event "thumb_candidate" \
+        "decision=thumb_l1_review" \
+        "path=$f" \
+        "reason=l1_only_${cls}" \
+        "width=@${w:-0}" \
+        "height=@${h:-0}" \
+        "size_bytes=@${_sz:-0}"
+      THUMB_REVIEW_CNT=$((THUMB_REVIEW_CNT+1))
+    done < "$THUMB_INDEX_FILE"
+
+    if (( THUMB_REVIEW_CNT > 0 )); then
+      echo "[*] L1-only suspects emitted as events: $THUMB_REVIEW_CNT"
+    fi
+    return 0
+  fi
 
   mkdir -p "$THUMB_DIR" || die3 "cannot create $THUMB_DIR"
   if [[ ! -f "$THUMB_REVIEW_CSV" ]]; then
@@ -301,7 +326,7 @@ thumb_write_review(){
 
   while IFS=$'\t' read -r f w h cls; do
     [[ "$cls" == "ok" ]] && continue
-    [[ ! -e "$f" ]] && continue   # already handled by L2/L3
+    [[ ! -e "$f" ]] && continue
     local reason="l1_only_${cls}"
     printf '%s\t%s\t%s\t%s\t\n' "$f" "$reason" "$w" "$h" >> "$THUMB_REVIEW_CSV"
     THUMB_REVIEW_CNT=$((THUMB_REVIEW_CNT+1))
