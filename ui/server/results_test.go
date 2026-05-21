@@ -1,6 +1,7 @@
 package server
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -339,5 +340,142 @@ func TestBuildResults_StampsGroupModeSelfCheck(t *testing.T) {
 	}
 	if view.ApplyURL != "/api/self-check/apply" {
 		t.Errorf("view ApplyURL = %q, want %q", view.ApplyURL, "/api/self-check/apply")
+	}
+}
+
+func TestBuildResults_ThumbnailMode_L2Cluster(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"/photos"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l2_exif","path":"/photos/small1.jpg","keeper":"/photos/big.jpg","group_id":"sha1abc","width":200,"height":150,"size_bytes":4096}`,
+		`{"type":"thumb_candidate","ts":3,"run_id":"x","decision":"thumb_l2_exif","path":"/photos/small2.jpg","keeper":"/photos/big.jpg","group_id":"sha1abc","width":100,"height":75,"size_bytes":2048}`,
+		`{"type":"run_end","ts":4,"run_id":"x","total":3,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.NumGroups != 1 {
+		t.Fatalf("NumGroups = %d, want 1", view.NumGroups)
+	}
+	g := view.Groups[0]
+	if g.StringGroupID != "sha1abc" {
+		t.Errorf("StringGroupID = %q, want sha1abc", g.StringGroupID)
+	}
+	if len(g.Members) != 3 {
+		t.Fatalf("len(Members) = %d, want 3 (1 keeper + 2 thumbnails)", len(g.Members))
+	}
+	var keepers, thumbs int
+	for _, m := range g.Members {
+		switch m.Role {
+		case "keeper":
+			keepers++
+			if m.Path != "/photos/big.jpg" {
+				t.Errorf("keeper Path = %q, want /photos/big.jpg", m.Path)
+			}
+		case "thumbnail":
+			thumbs++
+			if m.Decision != "thumb_l2_exif" {
+				t.Errorf("thumbnail Decision = %q, want thumb_l2_exif", m.Decision)
+			}
+		}
+	}
+	if keepers != 1 {
+		t.Errorf("keeper count = %d, want 1", keepers)
+	}
+	if thumbs != 2 {
+		t.Errorf("thumbnail count = %d, want 2", thumbs)
+	}
+}
+
+func TestBuildResults_ThumbnailMode_L3Pair(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"/photos"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l3_embed","path":"/photos/embed_small.jpg","keeper":"/photos/big.jpg","group_id":"l3:keepersha1","width":160,"height":120,"size_bytes":1024}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.NumGroups != 1 {
+		t.Fatalf("NumGroups = %d, want 1", view.NumGroups)
+	}
+	g := view.Groups[0]
+	if g.StringGroupID != "l3:keepersha1" {
+		t.Errorf("StringGroupID = %q, want l3:keepersha1", g.StringGroupID)
+	}
+	if len(g.Members) != 2 {
+		t.Fatalf("len(Members) = %d, want 2 (keeper + embed)", len(g.Members))
+	}
+	if g.Members[0].Role != "keeper" {
+		t.Errorf("Members[0].Role = %q, want keeper", g.Members[0].Role)
+	}
+	if g.Members[1].Role != "thumbnail" || g.Members[1].Decision != "thumb_l3_embed" {
+		t.Errorf("Members[1] = %+v, want role=thumbnail decision=thumb_l3_embed", g.Members[1])
+	}
+}
+
+func TestBuildResults_ThumbnailMode_L1Group(t *testing.T) {
+	tmp := t.TempDir()
+	thumbDir := filepath.Join(tmp, "_thumbnails")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reviewCSV := filepath.Join(thumbDir, "_review.csv")
+	reviewContent := "path,reason,width,height,note\n" +
+		`"` + filepath.Join(tmp, "suspect1.jpg") + `","l1_only_thumb","80","60",""` + "\n" +
+		`"` + filepath.Join(tmp, "suspect2.jpg") + `","l1_only_maybe","90","70",""` + "\n"
+	if err := os.WriteFile(reviewCSV, []byte(reviewContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"` + tmp + `"}`,
+		`{"type":"run_end","ts":2,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.NumGroups != 1 {
+		t.Fatalf("NumGroups = %d, want 1 (l1-suspects group)", view.NumGroups)
+	}
+	g := view.Groups[0]
+	if g.StringGroupID != "l1-suspects" {
+		t.Errorf("StringGroupID = %q, want l1-suspects", g.StringGroupID)
+	}
+	if len(g.Members) != 2 {
+		t.Fatalf("len(Members) = %d, want 2", len(g.Members))
+	}
+	if g.Members[0].Reason != "l1_only_thumb" {
+		t.Errorf("Members[0].Reason = %q, want l1_only_thumb", g.Members[0].Reason)
+	}
+	if g.Members[1].Reason != "l1_only_maybe" {
+		t.Errorf("Members[1].Reason = %q, want l1_only_maybe", g.Members[1].Reason)
+	}
+	for _, m := range g.Members {
+		if m.Role != "suspect" {
+			t.Errorf("L1 member Role = %q, want suspect", m.Role)
+		}
+		if m.Decision != "thumb_confirmed" {
+			t.Errorf("L1 member Decision = %q, want thumb_confirmed", m.Decision)
+		}
+	}
+}
+
+func TestBuildResults_ThumbnailMode_ApplyURL(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"/photos"}`,
+		`{"type":"run_end","ts":2,"run_id":"x","total":0,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.ApplyURL != "/api/thumbnails/apply" {
+		t.Errorf("ApplyURL = %q, want /api/thumbnails/apply", view.ApplyURL)
 	}
 }

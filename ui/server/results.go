@@ -1,8 +1,11 @@
 package server
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -184,6 +187,58 @@ func BuildResults(run *Run) (ResultsView, error) {
 			if err := json.Unmarshal(ev.Raw, &p); err == nil {
 				view.ErrorMessage = fmt.Sprintf("%s: %s", p.Code, p.Detail)
 			}
+		case EventThumbCandidate:
+			if !strings.HasPrefix(snap.Mode, "thumbnail_detect") {
+				break
+			}
+			var tc ThumbCandidate
+			if err := UnmarshalThumbCandidate(ev, &tc); err != nil {
+				view.Warnings = append(view.Warnings, ResultWarn{
+					Code:   "bad_thumb_candidate",
+					Detail: err.Error(),
+				})
+				break
+			}
+			// Find or create the ResultGroup for this group_id.
+			groupIdx := -1
+			for gi := range view.Groups {
+				if view.Groups[gi].StringGroupID == tc.GroupID {
+					groupIdx = gi
+					break
+				}
+			}
+			if groupIdx == -1 {
+				view.Groups = append(view.Groups, ResultGroup{
+					StringGroupID: tc.GroupID,
+					Members: []ResultMember{
+						{Path: tc.Keeper, Role: "keeper"},
+					},
+				})
+				groupIdx = len(view.Groups) - 1
+			} else {
+				// Ensure keeper sentinel exists (one per unique keeper path).
+				keeperPresent := false
+				for _, m := range view.Groups[groupIdx].Members {
+					if m.Path == tc.Keeper && m.Role == "keeper" {
+						keeperPresent = true
+						break
+					}
+				}
+				if !keeperPresent {
+					view.Groups[groupIdx].Members = append(
+						[]ResultMember{{Path: tc.Keeper, Role: "keeper"}},
+						view.Groups[groupIdx].Members...,
+					)
+				}
+			}
+			view.Groups[groupIdx].Members = append(view.Groups[groupIdx].Members, ResultMember{
+				Path:      tc.Path,
+				Role:      "thumbnail",
+				Decision:  tc.Decision,
+				Width:     tc.Width,
+				Height:    tc.Height,
+				SizeBytes: tc.SizeBytes,
+			})
 		case EventRunEnd:
 			var p struct {
 				Cancelled    bool   `json:"cancelled"`
@@ -198,6 +253,54 @@ func BuildResults(run *Run) (ResultsView, error) {
 				view.DeletedCount = p.Deleted
 				view.RestoredCount = p.Restored
 				view.ManifestPath = p.ManifestPath
+			}
+		}
+	}
+
+	// Thumbnail mode: read _review.csv for L1 suspects and append as a
+	// synthetic group. Absent file is silently skipped (no L1 suspects).
+	if strings.HasPrefix(snap.Mode, "thumbnail_detect") && view.SourcePath != "" {
+		reviewPath := filepath.Join(view.SourcePath, "_thumbnails", "_review.csv")
+		if rf, err := os.Open(reviewPath); err == nil {
+			defer rf.Close()
+			cr := csv.NewReader(rf)
+			cr.FieldsPerRecord = -1
+			var l1Group ResultGroup
+			l1Group.StringGroupID = "l1-suspects"
+			firstRow := true
+			for {
+				rec, err := cr.Read()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					break
+				}
+				if firstRow {
+					firstRow = false
+					continue // skip header
+				}
+				if len(rec) < 2 {
+					continue
+				}
+				path := strings.Trim(rec[0], `"`)
+				reason := strings.Trim(rec[1], `"`)
+				var w, h int
+				if len(rec) >= 4 {
+					fmt.Sscan(strings.Trim(rec[2], `"`), &w)
+					fmt.Sscan(strings.Trim(rec[3], `"`), &h)
+				}
+				l1Group.Members = append(l1Group.Members, ResultMember{
+					Path:     path,
+					Role:     "suspect",
+					Decision: "thumb_confirmed",
+					Reason:   reason,
+					Width:    w,
+					Height:   h,
+				})
+			}
+			if len(l1Group.Members) > 0 {
+				view.Groups = append(view.Groups, l1Group)
 			}
 		}
 	}
