@@ -188,8 +188,18 @@ thumb_run_l2(){
           ;;
         move|review)
           # Even in review-only mode, L2 evidence is conclusive → move.
-          if qmove "$p" "$THUMB_DIR" "$keep" "" "thumb_l2_exif"; then
+          # In dry-run mode, emit a NDJSON event instead of moving.
+          if ${DRY_RUN:-false}; then
+            local _w="" _h="" _sz=""
+            read -r _ _w _h _ < <(awk -F'\t' -v pp="$p" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
+            [[ -z "$_w" ]] && { local _dims; _dims="$(thumb_dimensions "$p")" && read -r _w _h <<<"$_dims" || true; }
+            _sz="$(wc -c < "$p" 2>/dev/null | tr -d ' ')" || _sz=0
+            emit_event "thumb_candidate" "decision=thumb_l2_exif" "path=$p" "keeper=$keep" "group_id=$fp" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
             THUMB_L2_HITS=$((THUMB_L2_HITS+1))
+          else
+            if qmove "$p" "$THUMB_DIR" "$keep" "" "thumb_l2_exif"; then
+              THUMB_L2_HITS=$((THUMB_L2_HITS+1))
+            fi
           fi
           ;;
       esac

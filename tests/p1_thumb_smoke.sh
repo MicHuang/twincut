@@ -155,6 +155,42 @@ if command -v exiftool >/dev/null 2>&1; then
 fi
 
 # ----------------------------------------------------------------------------
+# Section 7: L2 dry-run emits thumb_candidate NDJSON (no file moved)
+if command -v exiftool >/dev/null 2>&1; then
+  note "7. L2 dry-run emits thumb_candidate NDJSON — no file moved"
+  rm -rf "$SRC"; mkdir -p "$SRC"
+  sips -s format jpeg "$SEED" --resampleHeightWidth 1600 1600 --out "$SRC/photo.jpg" >/dev/null
+  exiftool -overwrite_original \
+    -Make=TestCam -Model=TestCam-X -SerialNumber=SN123 \
+    -DateTimeOriginal="2025:01:01 12:00:00" \
+    "$SRC/photo.jpg" >/dev/null
+  sips --resampleHeightWidth 200 200 "$SRC/photo.jpg" --out "$SRC/photo_small.jpg" >/dev/null
+
+  rm -rf "$SRC/_thumbnails"
+  DRY_RUN_OUT="$(
+    "$TWINCUT" --source "$SRC" --thumbnail-detect --dry-run --json-events --assume-yes \
+      2>/dev/null
+  )"
+
+  if printf '%s\n' "$DRY_RUN_OUT" \
+      | grep -q '"type":"thumb_candidate".*"decision":"thumb_l2_exif"'; then
+    ok "L2 dry-run: thumb_candidate NDJSON emitted"
+  else
+    bad "L2 dry-run: no thumb_candidate with decision=thumb_l2_exif in stdout"
+    printf '%s\n' "$DRY_RUN_OUT" | tail -10
+  fi
+
+  if printf '%s\n' "$DRY_RUN_OUT" \
+      | grep -q '"keeper":"'; then
+    ok "L2 dry-run: keeper field present"
+  else
+    bad "L2 dry-run: keeper field missing from event"
+  fi
+
+  assert_file "$SRC/photo_small.jpg"
+fi
+
+# ----------------------------------------------------------------------------
 echo
 echo "===== RESULT: $PASS passed, $FAIL failed ====="
 [[ $FAIL -eq 0 ]] || exit 1
