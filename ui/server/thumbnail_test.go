@@ -303,3 +303,26 @@ func TestHandleThumbnailsL1Row_RendersCheckbox(t *testing.T) {
 		}
 	}
 }
+
+func TestAppHTML_ThumbnailsNavLink(t *testing.T) {
+	srv := newThumbTestServer(t)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	srv.handleIndex(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", w.Result().StatusCode)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `hx-get="/tab/thumbnails"`) {
+		t.Error("sidebar missing Thumbnails nav link")
+	}
+	if strings.Contains(body, `nav-item disabled`) {
+		t.Error("sidebar still has nav-item disabled class (stale)")
+	}
+	if strings.Contains(body, `muted-tag`) {
+		t.Error("sidebar still has muted-tag soon badge (stale)")
+	}
+	if !strings.Contains(body, "stage 8") {
+		t.Error("footer still says stage 4 or other old value")
+	}
+}
