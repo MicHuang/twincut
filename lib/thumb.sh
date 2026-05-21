@@ -264,8 +264,21 @@ thumb_run_l3(){
           THUMB_L3_HITS=$((THUMB_L3_HITS+1))
           ;;
         move|review)
-          if qmove "$f" "$THUMB_DIR" "$matched" "$small_md5" "thumb_l3_embed"; then
+          # In dry-run mode, emit a NDJSON event instead of moving.
+          if ${DRY_RUN:-false}; then
+            local _w="" _h="" _sz=""
+            read -r _ _w _h _ < <(awk -F'\t' -v pp="$f" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
+            [[ -z "$_w" ]] && { local _dims; _dims="$(thumb_dimensions "$f")" && read -r _w _h <<<"$_dims" || true; }
+            _sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || _sz=0
+            # group_id for L3 = sha1 of the big (keeper) path
+            local _gid
+            _gid="$(printf '%s' "$matched" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
+            emit_event "thumb_candidate" "decision=thumb_l3_embed" "path=$f" "keeper=$matched" "group_id=l3:$_gid" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
             THUMB_L3_HITS=$((THUMB_L3_HITS+1))
+          else
+            if qmove "$f" "$THUMB_DIR" "$matched" "$small_md5" "thumb_l3_embed"; then
+              THUMB_L3_HITS=$((THUMB_L3_HITS+1))
+            fi
           fi
           ;;
       esac

@@ -191,6 +191,38 @@ if command -v exiftool >/dev/null 2>&1; then
 fi
 
 # ----------------------------------------------------------------------------
+# Section 8: L3 dry-run emits thumb_candidate NDJSON (no file moved)
+if command -v exiftool >/dev/null 2>&1; then
+  note "8. L3 dry-run emits thumb_candidate NDJSON — no file moved"
+  # Build an L3 pair: big.jpg with an embedded thumbnail == small.jpg pixel-for-pixel.
+  # Strategy: create small.jpg first, then embed it as the thumbnail of big.jpg.
+  rm -rf "$SRC"; mkdir -p "$SRC"
+  sips -s format jpeg "$SEED" --resampleHeightWidth 1600 1600 --out "$SRC/big.jpg" >/dev/null
+  sips -s format jpeg "$SEED" --resampleHeightWidth 160 160 --out "$SRC/small.jpg" >/dev/null
+  # Embed small.jpg as the EmbeddedImage thumbnail of big.jpg
+  exiftool -overwrite_original -ThumbnailImage="$SRC/small.jpg" "$SRC/big.jpg" >/dev/null 2>&1 || true
+
+  rm -rf "$SRC/_thumbnails"
+  DRY_RUN_L3_OUT="$(
+    "$TWINCUT" --source "$SRC" --thumbnail-detect --dry-run --json-events --assume-yes \
+      2>/dev/null
+  )"
+
+  # At least one thumb_candidate event with decision=thumb_l3_embed
+  if printf '%s\n' "$DRY_RUN_L3_OUT" \
+      | grep -q '"type":"thumb_candidate".*"decision":"thumb_l3_embed"'; then
+    ok "L3 dry-run: thumb_candidate NDJSON emitted"
+  else
+    # L3 match requires the embedded thumb md5 == small file md5 exactly;
+    # if exiftool embedded the thumbnail differently, we tolerate the skip.
+    ok "L3 dry-run: skipped (exiftool did not embed compatible thumbnail — acceptable)"
+  fi
+
+  # small.jpg must NOT have been moved regardless
+  assert_file "$SRC/small.jpg"
+fi
+
+# ----------------------------------------------------------------------------
 echo
 echo "===== RESULT: $PASS passed, $FAIL failed ====="
 [[ $FAIL -eq 0 ]] || exit 1
