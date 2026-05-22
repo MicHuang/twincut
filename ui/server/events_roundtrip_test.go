@@ -33,6 +33,48 @@ func roundtripFixtures() []fixtureCase {
 				Source:        "/img",
 			},
 		},
+		{
+			file:     "run_end__succeeded.ndjson",
+			wantType: EventRunEnd,
+			want: RunEnd{
+				EventEnvelope: EventEnvelope{Type: EventRunEnd, TS: 1747934400, RunID: "r_test"},
+				Status:        "succeeded",
+				DurationMs:    1234,
+				Total:         42,
+				Applied:       30,
+				Skipped:       12,
+			},
+		},
+		{
+			file:     "warn__io_error.ndjson",
+			wantType: EventWarn,
+			want: Warn{
+				EventEnvelope: EventEnvelope{Type: EventWarn, TS: 1747934400, RunID: "r_test"},
+				Code:          "io_error",
+				Path:          "/img/IMG.JPG",
+				Detail:        "mv failed",
+			},
+		},
+		{
+			file:     "error__usage.ndjson",
+			wantType: EventError,
+			want: ErrorEvent{
+				EventEnvelope: EventEnvelope{Type: EventError, TS: 1747934400, RunID: "r_test"},
+				Code:          "usage_error",
+				Detail:        "missing --source",
+			},
+		},
+		{
+			file:     "progress__scan.ndjson",
+			wantType: EventProgress,
+			want: Progress{
+				EventEnvelope: EventEnvelope{Type: EventProgress, TS: 1747934400, RunID: "r_test"},
+				Phase:         "scan",
+				Done:          10,
+				Total:         100,
+				CurrentPath:   "/img/IMG.JPG",
+			},
+		},
 	}
 }
 

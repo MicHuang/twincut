@@ -40,6 +40,22 @@ run_case(){
 run_case "run_start basic" "run_start__basic.ndjson" \
   emit_run_start --mode thumbnail_detect_preview --source /img
 
+# === run_end ===
+run_case "run_end succeeded" "run_end__succeeded.ndjson" \
+  emit_run_end --status succeeded --duration-ms 1234 --total 42 --applied 30 --skipped 12
+
+# === warn ===
+run_case "warn io_error" "warn__io_error.ndjson" \
+  emit_warn --code io_error --path /img/IMG.JPG --detail "mv failed"
+
+# === error ===
+run_case "error usage" "error__usage.ndjson" \
+  emit_error --code usage_error --detail "missing --source"
+
+# === progress ===
+run_case "progress scan" "progress__scan.ndjson" \
+  emit_progress --phase scan --done 10 --total 100 --current-path /img/IMG.JPG
+
 echo
 echo "=========================================="
 echo "PASS=$PASS FAIL=$FAIL"

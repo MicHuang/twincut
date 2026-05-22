@@ -79,3 +79,121 @@ emit_run_start(){
   out+='}'
   _emit_write "$out"
 }
+
+# emit_run_end — terminal event for a run.
+#   --status VAL         one of: succeeded | failed | interrupted
+#   --duration-ms INT    optional total run duration
+#   --total INT          optional candidate count (apply: total commands seen)
+#   --applied INT        optional apply success count
+#   --skipped INT        optional apply skip count
+emit_run_end(){
+  $JSON_EVENTS || return 0
+  local status="" duration_ms="" total="" applied="" skipped="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --status)       status="$2"; shift 2 ;;
+      --duration-ms)  duration_ms="$2"; shift 2 ;;
+      --total)        total="$2"; shift 2 ;;
+      --applied)      applied="$2"; shift 2 ;;
+      --skipped)      skipped="$2"; shift 2 ;;
+      --run-id)       run_id="$2"; shift 2 ;;
+      *) echo "emit_run_end: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"run_end","ts":'"$ts"
+  [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"status":"'"$(json_escape "$status")"'"'
+  [[ -n "$duration_ms" ]] && out+=',"duration_ms":'"$(_emit_num duration_ms "$duration_ms")"
+  [[ -n "$total" ]]       && out+=',"total":'"$(_emit_num total "$total")"
+  [[ -n "$applied" ]]     && out+=',"applied":'"$(_emit_num applied "$applied")"
+  [[ -n "$skipped" ]]     && out+=',"skipped":'"$(_emit_num skipped "$skipped")"
+  out+='}'
+  _emit_write "$out"
+}
+
+# emit_warn — non-fatal warning event.
+#   --code VAL    enum (io_error | missing_file | bad_video | appledouble | ...)
+#   --path VAL    optional path the warning is about
+#   --detail VAL  free-text human-readable explanation
+emit_warn(){
+  $JSON_EVENTS || return 0
+  local code="" path="" detail="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --code)    code="$2"; shift 2 ;;
+      --path)    path="$2"; shift 2 ;;
+      --detail)  detail="$2"; shift 2 ;;
+      --run-id)  run_id="$2"; shift 2 ;;
+      *) echo "emit_warn: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"warn","ts":'"$ts"
+  [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"code":"'"$(json_escape "$code")"'"'
+  [[ -n "$path" ]]   && out+=',"path":"'"$(json_escape "$path")"'"'
+  [[ -n "$detail" ]] && out+=',"detail":"'"$(json_escape "$detail")"'"'
+  out+='}'
+  _emit_write "$out"
+}
+
+# emit_error — fatal-ish error event (run may still continue, but the
+# specific operation failed).
+#   --code VAL    enum (usage_error | runtime_error | apply_failed | mv_failed | ...)
+#   --path VAL    optional path the error is about
+#   --detail VAL  free-text
+emit_error(){
+  $JSON_EVENTS || return 0
+  local code="" path="" detail="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --code)    code="$2"; shift 2 ;;
+      --path)    path="$2"; shift 2 ;;
+      --detail)  detail="$2"; shift 2 ;;
+      --run-id)  run_id="$2"; shift 2 ;;
+      *) echo "emit_error: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"error","ts":'"$ts"
+  [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"code":"'"$(json_escape "$code")"'"'
+  [[ -n "$path" ]]   && out+=',"path":"'"$(json_escape "$path")"'"'
+  [[ -n "$detail" ]] && out+=',"detail":"'"$(json_escape "$detail")"'"'
+  out+='}'
+  _emit_write "$out"
+}
+
+# emit_progress — progress beacon during a long phase.
+#   --phase VAL          enum (scan | hash | phash | apply | restore)
+#   --done INT           count of items processed so far
+#   --total INT          best-known total
+#   --current-path VAL   what's currently being processed
+emit_progress(){
+  $JSON_EVENTS || return 0
+  local phase="" done="" total="" current_path="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --phase)         phase="$2"; shift 2 ;;
+      --done)          done="$2"; shift 2 ;;
+      --total)         total="$2"; shift 2 ;;
+      --current-path)  current_path="$2"; shift 2 ;;
+      --run-id)        run_id="$2"; shift 2 ;;
+      *) echo "emit_progress: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"progress","ts":'"$ts"
+  [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"phase":"'"$(json_escape "$phase")"'"'
+  [[ -n "$done" ]]         && out+=',"done":'"$(_emit_num done "$done")"
+  [[ -n "$total" ]]        && out+=',"total":'"$(_emit_num total "$total")"
+  [[ -n "$current_path" ]] && out+=',"current_path":"'"$(json_escape "$current_path")"'"'
+  out+='}'
+  _emit_write "$out"
+}

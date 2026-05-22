@@ -91,6 +91,43 @@ type RunStart struct {
 	Source string `json:"source"`
 }
 
+// RunEnd is the typed payload of a "run_end" event. Twincut emits exactly
+// one per run, after all other events.
+type RunEnd struct {
+	EventEnvelope
+	Status     string `json:"status"`
+	DurationMs int64  `json:"duration_ms,omitempty"`
+	Total      int64  `json:"total,omitempty"`
+	Applied    int64  `json:"applied,omitempty"`
+	Skipped    int64  `json:"skipped,omitempty"`
+}
+
+// Warn is the typed payload of a "warn" event (non-fatal warning).
+type Warn struct {
+	EventEnvelope
+	Code   string `json:"code"`
+	Path   string `json:"path,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// ErrorEvent is the typed payload of an "error" event. Named ErrorEvent to
+// avoid collision with Go's built-in error interface.
+type ErrorEvent struct {
+	EventEnvelope
+	Code   string `json:"code"`
+	Path   string `json:"path,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// Progress is the typed payload of a "progress" event emitted during long phases.
+type Progress struct {
+	EventEnvelope
+	Phase       string `json:"phase"`
+	Done        int64  `json:"done,omitempty"`
+	Total       int64  `json:"total,omitempty"`
+	CurrentPath string `json:"current_path,omitempty"`
+}
+
 // ThumbCandidate is the parsed payload of a "thumb_candidate" event emitted
 // by lib/thumb.sh during --dry-run --json-events. One event per candidate file.
 type ThumbCandidate struct {
