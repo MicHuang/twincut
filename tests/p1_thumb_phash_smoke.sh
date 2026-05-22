@@ -261,6 +261,89 @@ if $HAVE_PHASH_DEPS; then
   fi
 fi
 
+# ---------------------------------------------------------------------
+# Section 10: THUMB_PHASH_ENABLED=false skips the phase silently
+# ---------------------------------------------------------------------
+note "10. THUMB_PHASH_ENABLED=false → no phase, no index, fallback to flat L1"
+rm -rf "$SRC"; mkdir -p "$SRC"
+if $HAVE_PHASH_DEPS; then
+  gen_fixtures
+else
+  SEED="/System/Library/Desktop Pictures/Solid Colors/Black.png"
+  [[ -f "$SEED" ]] || SEED="/System/Library/Desktop Pictures/Solid Colors/Stone.png"
+  sips -z 2000 1500 "$SEED" --out "$SRC/big.png" >/dev/null
+  sips -z 200 150 "$SEED" --out "$SRC/small.png" >/dev/null
+fi
+LOG10="$TMP/run10.log"
+THUMB_PHASH_ENABLED=false "$TWINCUT" --thumbnail-detect --dry-run --json-events \
+  --source "$SRC" --assume-yes >"$LOG10" 2>&1 || true
+grep -q "L1 pHash disabled by env" "$LOG10" \
+  && ok "section 10: env-disable message present" \
+  || bad "section 10: env-disable message missing"
+assert_not_file "$SRC/.thumb_phash_index.tsv"
+grep -q '"decision":"thumb_l1_review"' "$LOG10" \
+  && ok "section 10: L1 suspects still emit when phash disabled" \
+  || bad "section 10: no L1 events when phash disabled"
+grep '"decision":"thumb_l1_review"' "$LOG10" | grep -q '"keeper":' \
+  && bad "section 10: keeper field appeared while phash disabled" \
+  || ok "section 10: no keeper field on events (phash disabled)"
+
+# ---------------------------------------------------------------------
+# Section 11: simulated deps failure (fake phash.py exits 3) → graceful
+# ---------------------------------------------------------------------
+note "11. simulated dependency failure exits 0 and skips gracefully"
+ORIG_PHASH="$ROOT/bin/phash.py"
+mv "$ORIG_PHASH" "$ORIG_PHASH.real"
+cat > "$ORIG_PHASH" <<'FAKE'
+#!/usr/bin/env python3
+import sys
+sys.stderr.write("phash: missing dependency (PIL); install with: pip3 install --user pillow imagehash\n")
+sys.exit(3)
+FAKE
+chmod +x "$ORIG_PHASH"
+
+rm -rf "$SRC"; mkdir -p "$SRC"
+if $HAVE_PHASH_DEPS; then
+  gen_fixtures
+else
+  SEED="/System/Library/Desktop Pictures/Solid Colors/Black.png"
+  [[ -f "$SEED" ]] || SEED="/System/Library/Desktop Pictures/Solid Colors/Stone.png"
+  sips -z 2000 1500 "$SEED" --out "$SRC/big.png" >/dev/null
+  sips -z 200 150 "$SEED" --out "$SRC/small.png" >/dev/null
+fi
+LOG11="$TMP/run11.log"
+set +e
+"$TWINCUT" --thumbnail-detect --dry-run --json-events \
+  --source "$SRC" --assume-yes >"$LOG11" 2>&1
+RC=$?
+set -e
+
+mv -f "$ORIG_PHASH.real" "$ORIG_PHASH"
+
+[[ "$RC" -eq 0 ]] \
+  && ok "section 11: twincut exit 0 despite phash.py exit 3" \
+  || bad "section 11: twincut exit $RC, expected 0"
+grep -q "L1 pHash skipped" "$LOG11" \
+  && ok "section 11: skip warning logged" \
+  || bad "section 11: skip warning missing"
+grep '"decision":"thumb_l1_review"' "$LOG11" | grep -q '"keeper":' \
+  && bad "section 11: keeper appeared despite phash skip" \
+  || ok "section 11: no keeper on events after phash skip"
+
+# ---------------------------------------------------------------------
+# Section 12: legacy CLI path (no --json-events) still writes _review.csv
+# ---------------------------------------------------------------------
+note "12. legacy CLI writes _review.csv as before"
+rm -rf "$SRC"; mkdir -p "$SRC"
+SEED="/System/Library/Desktop Pictures/Solid Colors/Black.png"
+[[ -f "$SEED" ]] || SEED="/System/Library/Desktop Pictures/Solid Colors/Stone.png"
+sips -z 200 200 "$SEED" --out "$SRC/orphan.png" >/dev/null
+LOG12="$TMP/run12.log"
+"$TWINCUT" --thumbnail-detect --dry-run \
+  --source "$SRC" --assume-yes >"$LOG12" 2>&1 || true
+assert_file "$SRC/_thumbnails/_review.csv"
+ok "section 12: legacy CSV path preserved"
+
 printf '\n=========================================\n'
 printf 'PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))
