@@ -153,8 +153,6 @@ THUMB_ACTION="move"            # move | list | review
 THUMB_MAX_EDGE=512
 THUMB_MAYBE_MAX_EDGE=1024
 THUMB_REQUIRE_EXIF_MATCH=false
-THUMB_CONFIRM_FILE=""
-
 # P1 wave 2: L1 perceptual-hash knobs (env-only, no CLI flag)
 THUMB_PHASH_ENABLED="${THUMB_PHASH_ENABLED:-true}"
 THUMB_PHASH_HAMMING="${THUMB_PHASH_HAMMING:-5}"
@@ -692,9 +690,6 @@ Thumbnail detection (L1 resolution + L2 EXIF cluster + L3 embedded thumb):
                    [--thumb-require-exif-match]
                    [--thumb-review-csv <PATH>]
 
-Confirm review (process rows from a (possibly user-edited) review.csv):
-  $(basename "$0") --thumb-confirm <review.csv> [--thumb-dir <DIR>]
-
 Self-check (find duplicates within a single folder, role-agnostic):
   $(basename "$0") --self-check <DIR> [--dry-run] [--include-similar-video]
                    [--algo md5|sha1] [--min-size 300k] [--ext "jpg,png,..."]
@@ -942,7 +937,6 @@ while [[ $# -gt 0 ]]; do
     --thumb-maybe-max-edge)    THUMB_MAYBE_MAX_EDGE="${2:-}"; shift 2;;
     --thumb-require-exif-match) THUMB_REQUIRE_EXIF_MATCH=true; shift;;
     --thumb-review-csv)        THUMB_REVIEW_CSV="${2:-}"; shift 2;;
-    --thumb-confirm)           THUMB_CONFIRM_FILE="${2:-}"; shift 2;;
 
     -h|--help) usage 0;;
     *) echo "Unknown option: $1" >&2; usage 2;;
@@ -983,25 +977,6 @@ if $THUMB_DETECT_APPLY && $JSON_IN; then
   emit_run_start --mode thumbnail_detect_apply --source "${SOURCE_DIR:-}"
   init_manifest
   process_apply_list_jsonin
-  exit 0
-fi
-
-# --thumb-confirm short-circuits as well (read review.csv → qmove rows).
-if [[ -n "$THUMB_CONFIRM_FILE" ]]; then
-  $THUMB_LIB_LOADED || die "thumbnail lib not loaded; expected $LIB_DIR/thumb.sh"
-  if $JSON_EVENTS; then
-    emit_event run_start mode="thumbnail_detect_apply" \
-      source="${SOURCE_DIR:-}" \
-      dry_run=@"$DRY_RUN"
-  fi
-  thumb_confirm_review "$THUMB_CONFIRM_FILE"
-  emit_event run_end \
-    total=@0 dupes=@0 moved=@"${MOVED:-0}" deleted=@0 similar=@0 \
-    source_internal_dupes=@0 backup_internal_dupes=@0 \
-    skipped_hardlink=@"${SKIPPED_HARDLINK:-0}" \
-    skipped_symlink=@"${SKIPPED_SYMLINK:-0}" \
-    manifest_path="${MANIFEST_FILE:-}" \
-    cancelled=@false
   exit 0
 fi
 
