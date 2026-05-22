@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 )
 
 // Options configures a Server. All fields are required unless documented
@@ -39,7 +40,24 @@ type Server struct {
 // errors — these are baked-in assets, so failure means the binary itself is
 // broken.
 func New(opts Options) *Server {
-	tmpl, err := template.ParseFS(opts.Assets, "templates/*.html")
+	funcMap := template.FuncMap{
+		"dict": func(args ...any) (map[string]any, error) {
+			if len(args)%2 != 0 {
+				return nil, fmt.Errorf("dict requires even number of args")
+			}
+			m := make(map[string]any, len(args)/2)
+			for i := 0; i < len(args); i += 2 {
+				key, ok := args[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict key %v is not a string", args[i])
+				}
+				m[key] = args[i+1]
+			}
+			return m, nil
+		},
+		"hasPrefix": strings.HasPrefix,
+	}
+	tmpl, err := template.New("").Funcs(funcMap).ParseFS(opts.Assets, "templates/*.html")
 	if err != nil {
 		panic("twincut-ui: parse embedded templates: " + err.Error())
 	}
@@ -84,6 +102,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/cross-check/apply", s.handleCrossCheckApply)
 	mux.HandleFunc("GET /api/cross-check/done/{id}", s.handleCrossCheckDone)
 	mux.HandleFunc("GET /api/cross-check/add-backup-row", s.handleCrossCheckAddBackupRow)
+
+	// Thumbnail-detect workflow endpoints.
+	mux.HandleFunc("GET /tab/thumbnails", s.handleThumbnailsTab)
+	mux.HandleFunc("POST /api/thumbnails/preview", s.handleThumbnailsPreview)
+	mux.HandleFunc("GET /api/thumbnails/results/{id}", s.handleThumbnailsResults)
+	mux.HandleFunc("POST /api/thumbnails/apply", s.handleThumbnailsApply)
+	mux.HandleFunc("GET /api/thumbnails/done/{id}", s.handleThumbnailsDone)
 
 	// Directory browser.
 	mux.HandleFunc("GET /fs/list", s.handleFsList)

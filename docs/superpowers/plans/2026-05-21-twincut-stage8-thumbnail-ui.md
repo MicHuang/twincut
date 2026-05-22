@@ -175,16 +175,7 @@ with:
             read -r _ _w _h _ < <(awk -F'\t' -v pp="$p" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
             [[ -z "$_w" ]] && { local _dims; _dims="$(thumb_dimensions "$p")" && read -r _w _h <<<"$_dims" || true; }
             _sz="$(wc -c < "$p" 2>/dev/null | tr -d ' ')" || _sz=0
-            emit_event "thumb_candidate" \
-              "\"decision\":\"thumb_l2_exif\"" \
-              "\"path\":\"$(json_escape "$p")\"" \
-              "\"keeper\":\"$(json_escape "$keep")\"" \
-              "\"group_id\":\"$(json_escape "$fp")\"" \
-              "\"width\":${_w:-0}" \
-              "\"height\":${_h:-0}" \
-              "\"size_bytes\":${_sz:-0}"
-              "$(json_escape "$p")" "$(json_escape "$keep")" "$(json_escape "$fp")" \
-              "${_w:-0}" "${_h:-0}" "${_sz:-0}"
+            emit_event "thumb_candidate" "decision=thumb_l2_exif" "path=$p" "keeper=$keep" "group_id=$fp" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
             THUMB_L2_HITS=$((THUMB_L2_HITS+1))
           else
             if qmove "$p" "$THUMB_DIR" "$keep" "" "thumb_l2_exif"; then
@@ -317,16 +308,7 @@ with:
             # group_id for L3 = sha1 of the big (keeper) path
             local _gid
             _gid="$(printf '%s' "$matched" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
-            emit_event "thumb_candidate" \
-              "\"decision\":\"thumb_l3_embed\"" \
-              "\"path\":\"$(json_escape "$p")\"" \
-              "\"keeper\":\"$(json_escape "$keep")\"" \
-              "\"group_id\":\"l3:$(json_escape "$_sha")\"" \
-              "\"width\":${_w:-0}" \
-              "\"height\":${_h:-0}" \
-              "\"size_bytes\":${_sz:-0}"
-              "$(json_escape "$f")" "$(json_escape "$matched")" "$(json_escape "$_gid")" \
-              "${_w:-0}" "${_h:-0}" "${_sz:-0}"
+            emit_event "thumb_candidate" "decision=thumb_l3_embed" "path=$f" "keeper=$matched" "group_id=l3:$_gid" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
             THUMB_L3_HITS=$((THUMB_L3_HITS+1))
           else
             if qmove "$f" "$THUMB_DIR" "$matched" "$small_md5" "thumb_l3_embed"; then

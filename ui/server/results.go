@@ -48,6 +48,24 @@ type ResultGroup struct {
 	// (anything except md5). The template uses this to decide whether
 	// to render thumbnails + per-file metadata.
 	IsSimilar bool
+
+	// Thumbnail-detect mode fields. StringGroupID is the stable string key
+	// used as the form name prefix (EXIF fingerprint SHA1, "l3:<sha1>", or
+	// "l1-suspects"). Members replaces Keep/Remove for thumbnail clusters.
+	StringGroupID string
+	Members       []ResultMember
+}
+
+// ResultMember is one file in a thumbnail-detect cluster.
+type ResultMember struct {
+	Path      string // absolute path
+	Role      string // "keeper" | "thumbnail" | "suspect"
+	Decision  string // "thumb_l2_exif" | "thumb_l3_embed" | "thumb_confirmed"
+	Reason    string // "l1_only_thumb" | "l1_only_maybe" (L1 suspects only)
+	Width     int
+	Height    int
+	SizeBytes int64
+	Keeper    string // absolute path of the kept original (L2/L3); empty for L1 (no paired keeper)
 }
 
 // ResultFile is a single file inside a group (either the keeper or a
@@ -115,6 +133,9 @@ func BuildResults(run *Run) (ResultsView, error) {
 	case strings.HasPrefix(workflow, "self_check"):
 		workflow = "self_check"
 		view.ApplyURL = "/api/self-check/apply"
+	case strings.HasPrefix(workflow, "thumbnail_detect"):
+		workflow = "thumbnail_detect"
+		view.ApplyURL = "/api/thumbnails/apply"
 	default:
 		view.ApplyURL = "/api/self-check/apply" // safe fallback
 	}
@@ -164,6 +185,85 @@ func BuildResults(run *Run) (ResultsView, error) {
 			if err := json.Unmarshal(ev.Raw, &p); err == nil {
 				view.ErrorMessage = fmt.Sprintf("%s: %s", p.Code, p.Detail)
 			}
+		case EventThumbCandidate:
+			if !strings.HasPrefix(snap.Mode, "thumbnail_detect") {
+				break
+			}
+			var tc ThumbCandidate
+			if err := UnmarshalThumbCandidate(ev, &tc); err != nil {
+				view.Warnings = append(view.Warnings, ResultWarn{
+					Code:   "bad_thumb_candidate",
+					Detail: err.Error(),
+				})
+				break
+			}
+			// Stage 8.5 Fix 1: L1 suspects are flat (no paired keeper). They aggregate
+			// into a single synthetic "l1-suspects" group; the apply path emits them
+			// with decision=thumb_confirmed (the apply-TSV allow-listed value).
+			if tc.Decision == "thumb_l1_review" {
+				l1Idx := -1
+				for gi := range view.Groups {
+					if view.Groups[gi].StringGroupID == "l1-suspects" {
+						l1Idx = gi
+						break
+					}
+				}
+				if l1Idx == -1 {
+					view.Groups = append(view.Groups, ResultGroup{StringGroupID: "l1-suspects"})
+					l1Idx = len(view.Groups) - 1
+				}
+				view.Groups[l1Idx].Members = append(view.Groups[l1Idx].Members, ResultMember{
+					Path:      tc.Path,
+					Role:      "suspect",
+					Decision:  "thumb_confirmed",
+					Reason:    tc.Reason,
+					Width:     tc.Width,
+					Height:    tc.Height,
+					SizeBytes: tc.SizeBytes,
+				})
+				break
+			}
+			// Find or create the ResultGroup for this group_id.
+			groupIdx := -1
+			for gi := range view.Groups {
+				if view.Groups[gi].StringGroupID == tc.GroupID {
+					groupIdx = gi
+					break
+				}
+			}
+			if groupIdx == -1 {
+				view.Groups = append(view.Groups, ResultGroup{
+					StringGroupID: tc.GroupID,
+					Members: []ResultMember{
+						{Path: tc.Keeper, Role: "keeper"},
+					},
+				})
+				groupIdx = len(view.Groups) - 1
+			} else {
+				// Ensure keeper sentinel exists (one per unique keeper path).
+				keeperPresent := false
+				for _, m := range view.Groups[groupIdx].Members {
+					if m.Path == tc.Keeper && m.Role == "keeper" {
+						keeperPresent = true
+						break
+					}
+				}
+				if !keeperPresent {
+					view.Groups[groupIdx].Members = append(
+						[]ResultMember{{Path: tc.Keeper, Role: "keeper"}},
+						view.Groups[groupIdx].Members...,
+					)
+				}
+			}
+			view.Groups[groupIdx].Members = append(view.Groups[groupIdx].Members, ResultMember{
+				Path:      tc.Path,
+				Role:      "thumbnail",
+				Decision:  tc.Decision,
+				Keeper:    tc.Keeper,
+				Width:     tc.Width,
+				Height:    tc.Height,
+				SizeBytes: tc.SizeBytes,
+			})
 		case EventRunEnd:
 			var p struct {
 				Cancelled    bool   `json:"cancelled"`

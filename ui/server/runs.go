@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"sync"
 	"syscall"
@@ -235,10 +236,19 @@ func (m *RunManager) List() []Snapshot {
 	return snaps
 }
 
+var runIDRegex = regexp.MustCompile(`^\d{8}T\d{6}Z-[a-z0-9]+$`)
+
 // StartOptions describes a new run to spawn.
 type StartOptions struct {
-	// Mode is a free-form label (e.g., "self_check_preview") used for
-	// display only — twincut.sh decides the actual mode from Args.
+	// ID is optional; empty → newRunID(). If non-empty, must match
+	// ^\d{8}T\d{6}Z-[a-z0-9]+$ and not collide with an existing journal.
+	ID string
+	// Mode is a free-form label used for display only — twincut.sh decides
+	// the actual mode from Args. Known values:
+	//   self_check_preview, self_check_apply
+	//   cross_check_preview, cross_check_apply
+	//   thumbnail_detect_preview, thumbnail_detect_apply
+	//   restore
 	Mode string
 	// Args is appended to the base invocation. The manager prepends
 	// --json-events automatically and sets TWINCUT_RUN_ID in the env.
@@ -251,10 +261,22 @@ type StartOptions struct {
 // already registered with the manager and its event-pump goroutine is
 // running.
 func (m *RunManager) Start(opts StartOptions) (*Run, error) {
-	id := newRunID()
+	var id string
+	if opts.ID == "" {
+		id = newRunID()
+	} else {
+		if !runIDRegex.MatchString(opts.ID) {
+			return nil, fmt.Errorf("invalid caller-provided run ID: %q", opts.ID)
+		}
+		journalCheckPath := filepath.Join(m.stateDir, "runs", opts.ID+".ndjson")
+		if _, err := os.Stat(journalCheckPath); err == nil {
+			return nil, fmt.Errorf("run journal already exists for ID: %q", opts.ID)
+		}
+		id = opts.ID
+	}
 
 	journalPath := filepath.Join(m.stateDir, "runs", id+".ndjson")
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_EXCL, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open journal %s: %w", journalPath, err)
 	}

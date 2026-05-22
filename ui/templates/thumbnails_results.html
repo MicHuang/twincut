@@ -1,0 +1,164 @@
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Thumbnail candidates</h2>
+    <p class="subtitle"><code>{{.SourcePath}}</code></p>
+  </header>
+
+  {{if .HasError}}
+    <div class="alert alert-error">
+      <strong>Error during preview:</strong> {{.ErrorMessage}}
+    </div>
+    <div class="form-actions">
+      <a href="#" class="btn btn-secondary" hx-get="/tab/thumbnails" hx-target="#tab-content">Back to form</a>
+    </div>
+  {{else if eq .NumGroups 0}}
+    <div class="alert alert-info">
+      <strong>No thumbnail candidates found.</strong> Nothing to do.
+    </div>
+    <div class="form-actions">
+      <a href="#" class="btn btn-secondary" hx-get="/tab/thumbnails" hx-target="#tab-content">Back to form</a>
+    </div>
+  {{else}}
+
+    <div class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-value">{{.NumGroups}}</div>
+        <div class="summary-label">cluster{{if ne .NumGroups 1}}s{{end}} detected</div>
+      </div>
+    </div>
+
+    {{if .NumWarnings}}
+    <details class="alert alert-warn">
+      <summary><strong>{{.NumWarnings}} warning{{if ne .NumWarnings 1}}s{{end}}</strong> during scan</summary>
+      <ul class="warn-list">
+        {{range .Warnings}}<li><code>{{.Code}}</code> · <span class="muted">{{.Path}}</span></li>{{end}}
+      </ul>
+    </details>
+    {{end}}
+
+    <form id="thumbnails-apply-form"
+          hx-post="/api/thumbnails/apply"
+          hx-target="#tab-content"
+          hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+      <input type="hidden" name="preview_run_id" value="{{.RunID}}">
+
+      {{range $g := .Groups}}
+        {{if ne $g.StringGroupID "l1-suspects"}}
+        <div class="result-group" data-group-id="{{$g.StringGroupID}}">
+          <div class="result-group-header">
+            <span class="badge badge-match">
+              {{if hasPrefix $g.StringGroupID "l3:"}}L3 · embedded thumb{{else}}L2 · EXIF cluster{{end}}
+            </span>
+            <span class="muted small">group <code>{{$g.StringGroupID}}</code></span>
+          </div>
+          <div class="cluster-cards">
+            {{range $i, $m := $g.Members}}
+              {{if eq $m.Role "keeper"}}
+              <div class="cluster-card cluster-card-keeper">
+                <div class="cluster-card-badge">
+                  <span class="badge badge-role-backup">keep</span>
+                </div>
+                <button type="button" class="thumb-btn"
+                        data-thumb-src="/thumb?path={{$m.Path}}&size=1024"
+                        data-thumb-alt="keeper">
+                  <img class="thumb" loading="lazy"
+                       src="/thumb?path={{$m.Path}}&size=320"
+                       alt="keeper">
+                </button>
+                <div class="cluster-card-meta muted small">
+                  <code>{{$m.Path}}</code>
+                </div>
+              </div>
+              {{else}}
+              <div class="cluster-card cluster-card-thumb">
+                <div class="cluster-card-controls">
+                  <label class="role-checkbox">
+                    <input type="checkbox"
+                           name="group:{{$g.StringGroupID}}.member{{$i}}"
+                           aria-label="quarantine {{$m.Path}}"
+                           checked>
+                    <span>Quarantine</span>
+                  </label>
+                </div>
+                <button type="button" class="thumb-btn"
+                        data-thumb-src="/thumb?path={{$m.Path}}&size=1024"
+                        data-thumb-alt="thumbnail candidate">
+                  <img class="thumb" loading="lazy"
+                       src="/thumb?path={{$m.Path}}&size=320"
+                       alt="thumbnail candidate">
+                </button>
+                <div class="cluster-card-meta muted small">
+                  <code>{{$m.Path}}</code>
+                  {{if and $m.Width $m.Height}}<span>{{$m.Width}}×{{$m.Height}}</span>{{end}}
+                </div>
+              </div>
+              {{end}}
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+      {{end}}
+
+      {{range $g := .Groups}}
+        {{if eq $g.StringGroupID "l1-suspects"}}
+        <details class="l1-review-block">
+          <summary class="l1-review-summary">
+            L1 review ({{len $g.Members}} suspect{{if ne (len $g.Members) 1}}s{{end}}, no peer)
+            <span class="muted small">— unchecked by default; opt-in to quarantine</span>
+          </summary>
+          <table class="l1-table">
+            <thead>
+              <tr>
+                <th>Preview</th>
+                <th>Path</th>
+                <th>Reason</th>
+                <th>Dimensions</th>
+                <th>Quarantine?</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range $i, $m := $g.Members}}
+                {{template "thumbnails_l1_row.html" dict "Member" $m "GroupID" $g.StringGroupID "Index" $i}}
+              {{end}}
+            </tbody>
+          </table>
+        </details>
+        {{end}}
+      {{end}}
+
+      <div class="form-actions form-actions-sticky">
+        <button type="submit" class="btn btn-primary">Apply</button>
+        <a href="#" class="btn btn-secondary" hx-get="/tab/thumbnails" hx-target="#tab-content">Cancel</a>
+      </div>
+    </form>
+
+    <div id="lightbox" class="lightbox" hidden onclick="this.hidden=true; this.querySelector('img').removeAttribute('src');">
+      <img alt="">
+    </div>
+    <script>
+      (function () {
+        const lb = document.getElementById('lightbox');
+        const lbImg = lb && lb.querySelector('img');
+        if (lb && lbImg) {
+          document.querySelectorAll('.thumb-btn').forEach(function (btn) {
+            btn.addEventListener('click', function (ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              lbImg.src = btn.dataset.thumbSrc;
+              lbImg.alt = btn.dataset.thumbAlt || '';
+              lb.hidden = false;
+            });
+          });
+          document.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape' && !lb.hidden) {
+              lb.hidden = true;
+              lbImg.removeAttribute('src');
+            }
+          });
+        }
+      })();
+    </script>
+
+  {{end}}
+</section>

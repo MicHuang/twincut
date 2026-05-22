@@ -13,6 +13,7 @@ package server
 // scan-mode behavior.
 
 import (
+	"bytes"
 	"fmt"
 	"net/url"
 	"os"
@@ -138,4 +139,51 @@ func writeApplyList(stateDir string, rows [][]string) (string, error) {
 		}
 	}
 	return f.Name(), nil
+}
+
+// composeThumbnailConfirmTSV walks thumbnail ResultGroups and the apply form
+// to produce the seven-column enhanced review TSV consumed by --thumb-confirm.
+// Only checked members (form key "group:<gid>.member<i>=on") are included.
+// Keeper-role members are never included regardless of form state.
+//
+// TSV columns (tab-separated, no quoting):
+//
+//	path  reason  width  height  note  decision  keeper
+//
+// Keeper is hydrated from m.Keeper (populated from thumb_candidate events
+// for L2/L3). L1 members have m.Keeper == "" (intentional — no paired keeper).
+func composeThumbnailConfirmTSV(groups []ResultGroup, form url.Values) ([]byte, error) {
+	var buf bytes.Buffer
+
+	header := []string{"path", "reason", "width", "height", "note", "decision", "keeper"}
+	fmt.Fprintln(&buf, strings.Join(header, "\t"))
+
+	for _, g := range groups {
+		for i, m := range g.Members {
+			if m.Role == "keeper" {
+				continue
+			}
+			key := "group:" + g.StringGroupID + ".member" + strconv.Itoa(i)
+			if form.Get(key) != "on" {
+				continue
+			}
+			row := []string{
+				m.Path,
+				m.Reason,
+				strconv.Itoa(m.Width),
+				strconv.Itoa(m.Height),
+				"",
+				m.Decision,
+				m.Keeper,
+			}
+			for _, field := range row {
+				if strings.ContainsAny(field, "\t\n") {
+					return nil, fmt.Errorf("field contains forbidden character (tab or newline): %q", field)
+				}
+			}
+			fmt.Fprintln(&buf, strings.Join(row, "\t"))
+		}
+	}
+
+	return buf.Bytes(), nil
 }

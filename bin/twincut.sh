@@ -916,7 +916,19 @@ fi
 # --thumb-confirm short-circuits as well (read review.csv → qmove rows).
 if [[ -n "$THUMB_CONFIRM_FILE" ]]; then
   $THUMB_LIB_LOADED || die "thumbnail lib not loaded; expected $LIB_DIR/thumb.sh"
+  if $JSON_EVENTS; then
+    emit_event run_start mode="thumbnail_detect_apply" \
+      source="${SOURCE_DIR:-}" \
+      dry_run=@"$DRY_RUN"
+  fi
   thumb_confirm_review "$THUMB_CONFIRM_FILE"
+  emit_event run_end \
+    total=@0 dupes=@0 moved=@"${MOVED:-0}" deleted=@0 similar=@0 \
+    source_internal_dupes=@0 backup_internal_dupes=@0 \
+    skipped_hardlink=@"${SKIPPED_HARDLINK:-0}" \
+    skipped_symlink=@"${SKIPPED_SYMLINK:-0}" \
+    manifest_path="${MANIFEST_FILE:-}" \
+    cancelled=@false
   exit 0
 fi
 
@@ -967,6 +979,7 @@ fi
 if $DO_THUMB; then
   [[ -z "$SOURCE_DIR" ]] && die "--thumbnail-detect requires --source"
   $THUMB_LIB_LOADED || die "thumbnail lib not loaded; expected $LIB_DIR/thumb.sh"
+  [[ -n "${APPLY_LIST:-}" ]] && die "--thumbnail-detect and --apply-list are mutually exclusive (separate apply paths)"
 fi
 # If only --thumbnail-detect is set with no other mode, that's fine (standalone).
 # It can also coexist with cross/self checks; thumb phase runs after them.
@@ -982,7 +995,12 @@ if $JSON_EVENTS; then
   if ! $SELF_CHECK_MODE; then
     if $DO_SOURCE_SELF && ! $DO_CROSS; then _mode="source_self"; fi
     if $DO_BACKUP_SELF && ! $DO_CROSS; then _mode="backup_self"; fi
-    $DO_THUMB && [[ "$_mode" == "cross_check" ]] && _mode="thumbnail_detect"
+    if $DO_THUMB && ! $DO_CROSS && ! $DO_SOURCE_SELF && ! $DO_BACKUP_SELF; then
+      # Standalone thumbnail-detect: discriminate preview vs non-preview.
+      if $DRY_RUN; then _mode="thumbnail_detect_preview"
+      else              _mode="thumbnail_detect"
+      fi
+    fi
   fi
   _bk_json="["
   _first=true

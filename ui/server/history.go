@@ -121,11 +121,16 @@ func loadHistoryEntry(path string) (HistoryEntry, bool, error) {
 		return HistoryEntry{}, false, nil
 	}
 	mode, _ := start["mode"].(string)
-	// Only surface self-check and cross-check apply runs.
-	// Bash emits mode="self_check" or "cross_check" for both preview and
-	// apply; the dry_run flag discriminates. Restore runs (mode="restore")
-	// are filtered too — they have nothing further to restore.
-	if mode != "self_check" && mode != "cross_check" {
+	// Only surface apply runs that produced a restorable manifest.
+	// self_check / cross_check: bash emits the bare mode name; dry_run
+	//   flag discriminates preview vs apply.
+	// thumbnail_detect_apply: bash emits the full apply-mode name;
+	//   thumbnail_detect_preview is excluded by the dry_run check below.
+	// Restore runs (mode="restore") are filtered — nothing further to restore.
+	allowedMode := mode == "self_check" ||
+		mode == "cross_check" ||
+		mode == "thumbnail_detect_apply"
+	if !allowedMode {
 		return HistoryEntry{}, false, nil
 	}
 	if dry, _ := start["dry_run"].(bool); dry {

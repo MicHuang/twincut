@@ -1,0 +1,55 @@
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Thumbnails</h2>
+    <p class="subtitle">Find files in <strong>source</strong> that look like thumbnails of other files in the same folder, then move them to quarantine.</p>
+  </header>
+
+  <form id="thumbnails-form"
+        hx-post="/api/thumbnails/preview"
+        hx-target="#tab-content"
+        hx-swap="innerHTML"
+        hx-disabled-elt="find button">
+
+    <label class="field">
+      <span class="field-label">Source folder</span>
+      <div class="folder-picker">
+        <input type="text" name="source" id="thumb-source-input"
+               placeholder="/Users/me/Pictures/2024"
+               autocomplete="off" required>
+      </div>
+      {{if .Recents}}
+      <div class="recents">
+        {{range .Recents}}
+          <button type="button" class="recent-chip"
+                  onclick="document.getElementById('thumb-source-input').value=this.dataset.path"
+                  data-path="{{.}}">{{.}}</button>
+        {{end}}
+      </div>
+      {{end}}
+    </label>
+
+    <details class="advanced">
+      <summary>Detection thresholds</summary>
+      <div class="advanced-grid">
+        <label class="field">
+          <span class="field-label">Max edge (px) — definite thumbnail</span>
+          <input type="number" name="max_edge" value="512" min="1">
+        </label>
+        <label class="field">
+          <span class="field-label">Maybe max edge (px) — L1 review candidate</span>
+          <input type="number" name="maybe_max_edge" value="1024" min="1">
+        </label>
+        <label class="field field-wide">
+          <span class="field-label">
+            <input type="checkbox" name="require_exif_match">
+            Require EXIF match for L2 clustering
+          </span>
+        </label>
+      </div>
+    </details>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Preview</button>
+    </div>
+  </form>
+</section>

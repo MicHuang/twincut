@@ -188,8 +188,18 @@ thumb_run_l2(){
           ;;
         move|review)
           # Even in review-only mode, L2 evidence is conclusive → move.
-          if qmove "$p" "$THUMB_DIR" "$keep" "" "thumb_l2_exif"; then
+          # In dry-run mode, emit a NDJSON event instead of moving.
+          if ${DRY_RUN:-false}; then
+            local _w="" _h="" _sz=""
+            read -r _ _w _h _ < <(awk -F'\t' -v pp="$p" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
+            [[ -z "$_w" ]] && { local _dims; _dims="$(thumb_dimensions "$p")" && read -r _w _h <<<"$_dims" || true; }
+            _sz="$(wc -c < "$p" 2>/dev/null | tr -d ' ')" || _sz=0
+            emit_event "thumb_candidate" "decision=thumb_l2_exif" "path=$p" "keeper=$keep" "group_id=$fp" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
             THUMB_L2_HITS=$((THUMB_L2_HITS+1))
+          else
+            if qmove "$p" "$THUMB_DIR" "$keep" "" "thumb_l2_exif"; then
+              THUMB_L2_HITS=$((THUMB_L2_HITS+1))
+            fi
           fi
           ;;
       esac
@@ -254,8 +264,21 @@ thumb_run_l3(){
           THUMB_L3_HITS=$((THUMB_L3_HITS+1))
           ;;
         move|review)
-          if qmove "$f" "$THUMB_DIR" "$matched" "$small_md5" "thumb_l3_embed"; then
+          # In dry-run mode, emit a NDJSON event instead of moving.
+          if ${DRY_RUN:-false}; then
+            local _w="" _h="" _sz=""
+            read -r _ _w _h _ < <(awk -F'\t' -v pp="$f" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
+            [[ -z "$_w" ]] && { local _dims; _dims="$(thumb_dimensions "$f")" && read -r _w _h <<<"$_dims" || true; }
+            _sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || _sz=0
+            # group_id for L3 = sha1 of the big (keeper) path
+            local _gid
+            _gid="$(printf '%s' "$matched" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
+            emit_event "thumb_candidate" "decision=thumb_l3_embed" "path=$f" "keeper=$matched" "group_id=l3:$_gid" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
             THUMB_L3_HITS=$((THUMB_L3_HITS+1))
+          else
+            if qmove "$f" "$THUMB_DIR" "$matched" "$small_md5" "thumb_l3_embed"; then
+              THUMB_L3_HITS=$((THUMB_L3_HITS+1))
+            fi
           fi
           ;;
       esac
@@ -265,22 +288,47 @@ thumb_run_l3(){
   echo "[*] L3 embedded-thumbnail matches: $THUMB_L3_HITS"
 }
 
-# Anything still L1=suspect (after L2/L3 passes) and still on disk goes to review.csv.
+# Anything still L1=suspect (after L2/L3 passes) and still on disk:
+# - Under --json-events: emit one thumb_candidate event per suspect (decision=thumb_l1_review);
+#   do not write the source-scoped _review.csv (Stage 8.5 Fix 1: Go consumes events, not disk).
+# - Legacy CLI (no --json-events): write _review.csv as before.
 # We never delete or move L1-only suspects automatically.
 thumb_write_review(){
   THUMB_REVIEW_CNT=0
   [[ -s "${THUMB_INDEX_FILE:-}" ]] || return 0
 
+  if $JSON_EVENTS; then
+    local f w h cls _sz
+    while IFS=$'\t' read -r f w h cls; do
+      [[ "$cls" == "ok" ]] && continue
+      [[ ! -e "$f" ]] && continue
+      _sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || _sz=0
+      emit_event "thumb_candidate" \
+        "decision=thumb_l1_review" \
+        "path=$f" \
+        "reason=l1_only_${cls}" \
+        "width=@${w:-0}" \
+        "height=@${h:-0}" \
+        "size_bytes=@${_sz:-0}"
+      THUMB_REVIEW_CNT=$((THUMB_REVIEW_CNT+1))
+    done < "$THUMB_INDEX_FILE"
+
+    if (( THUMB_REVIEW_CNT > 0 )); then
+      echo "[*] L1-only suspects emitted as events: $THUMB_REVIEW_CNT"
+    fi
+    return 0
+  fi
+
   mkdir -p "$THUMB_DIR" || die3 "cannot create $THUMB_DIR"
   if [[ ! -f "$THUMB_REVIEW_CSV" ]]; then
-    echo 'path,reason,width,height,note' > "$THUMB_REVIEW_CSV"
+    printf 'path\treason\twidth\theight\tnote\n' > "$THUMB_REVIEW_CSV"
   fi
 
   while IFS=$'\t' read -r f w h cls; do
     [[ "$cls" == "ok" ]] && continue
-    [[ ! -e "$f" ]] && continue   # already handled by L2/L3
+    [[ ! -e "$f" ]] && continue
     local reason="l1_only_${cls}"
-    printf '"%s","%s","%s","%s","%s"\n' "$f" "$reason" "$w" "$h" "" >> "$THUMB_REVIEW_CSV"
+    printf '%s\t%s\t%s\t%s\t\n' "$f" "$reason" "$w" "$h" >> "$THUMB_REVIEW_CSV"
     THUMB_REVIEW_CNT=$((THUMB_REVIEW_CNT+1))
   done < "$THUMB_INDEX_FILE"
 
@@ -345,16 +393,45 @@ thumb_confirm_review(){
   local moved=0 skipped=0 missing=0
   echo "[*] confirming review: $csv → $THUMB_DIR"
 
-  # Skip header row.
+  # Allowed decision values for the optional 6th column.
+  # Any other non-empty value → reject the row with a warning.
+  local _allowed_decisions="thumb_l2_exif thumb_l3_embed thumb_confirmed"
+
+  # Skip header row. Parse each TSV row with awk to handle empty fields
+  # correctly — bash IFS=$'\t' read collapses consecutive tabs, losing
+  # empty fields. awk -F'\t' does not collapse, matching TSV contract.
   local first=true
-  while IFS=, read -r p_q reason_q w_q h_q note_q; do
+  while IFS= read -r _raw_line; do
     if $first; then first=false; continue; fi
-    local p="${p_q%\"}"; p="${p#\"}"
+    # Extract fields with awk to avoid bash IFS tab-collapse.
+    local p dec keeper
+    p="$(awk -F'\t' '{print $1}' <<< "$_raw_line")"
+    dec="$(awk -F'\t' '{print $6}' <<< "$_raw_line")"
+    keeper="$(awk -F'\t' '{print $7}' <<< "$_raw_line")"
+    keeper="${keeper%$'\r'}"  # defend against CRLF-tainted TSV input
     [[ -z "$p" ]] && continue
+
+    # Trim whitespace (TSV has no quoting).
+    dec="${dec// /}"
+    # Default to thumb_confirmed when absent (legacy 5-column TSV).
+    [[ -z "$dec" ]] && dec="thumb_confirmed"
+
+    # Validate against the allowed set.
+    local _valid=false
+    local _allowed
+    for _allowed in $_allowed_decisions; do
+      [[ "$dec" == "$_allowed" ]] && _valid=true && break
+    done
+    if ! $_valid; then
+      echo "[warn] unknown decision value '$dec' for '$p' — skipping row" >&2
+      skipped=$((skipped+1))
+      continue
+    fi
+
     if [[ ! -e "$p" ]]; then
       echo "[missing] $p"; missing=$((missing+1)); continue
     fi
-    if qmove "$p" "$THUMB_DIR" "" "" "thumb_confirmed"; then
+    if qmove "$p" "$THUMB_DIR" "$keeper" "" "$dec"; then
       moved=$((moved+1))
     else
       skipped=$((skipped+1))

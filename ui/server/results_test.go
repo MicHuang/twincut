@@ -1,11 +1,62 @@
 package server
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestBuildResults_L1FromEvents_NoDiskRead(t *testing.T) {
+	tmp := t.TempDir()
+	srcDir := filepath.Join(tmp, "src")
+	runID := "20260521T140000Z-stage85t2"
+
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1700000000,"run_id":"` + runID + `","mode":"thumbnail_detect_preview","source":"` + srcDir + `"}`,
+		`{"type":"thumb_candidate","ts":1700000001,"run_id":"` + runID + `","decision":"thumb_l1_review","path":"` + srcDir + `/orphanA.png","reason":"l1_only_suspect","width":200,"height":200,"size_bytes":1234}`,
+		`{"type":"thumb_candidate","ts":1700000002,"run_id":"` + runID + `","decision":"thumb_l1_review","path":"` + srcDir + `/orphanB.png","reason":"l1_only_maybe","width":300,"height":300,"size_bytes":5678}`,
+		`{"type":"run_end","ts":1700000003,"run_id":"` + runID + `","cancelled":false,"moved":0,"deleted":0,"restored":0}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+
+	var l1 *ResultGroup
+	for i := range view.Groups {
+		if view.Groups[i].StringGroupID == "l1-suspects" {
+			l1 = &view.Groups[i]
+			break
+		}
+	}
+	if l1 == nil {
+		t.Fatalf("no l1-suspects group; groups=%+v", view.Groups)
+	}
+	if len(l1.Members) != 2 {
+		t.Fatalf("expected 2 l1 members, got %d", len(l1.Members))
+	}
+	if l1.Members[0].Path != srcDir+"/orphanA.png" || l1.Members[0].Role != "suspect" {
+		t.Errorf("l1 member 0 unexpected: %+v", l1.Members[0])
+	}
+	if l1.Members[0].Reason != "l1_only_suspect" {
+		t.Errorf("l1 member 0 reason: got %q want %q", l1.Members[0].Reason, "l1_only_suspect")
+	}
+	if l1.Members[0].Decision != "thumb_confirmed" {
+		t.Errorf("l1 member 0 decision: got %q want %q (apply TSV needs allow-listed value)", l1.Members[0].Decision, "thumb_confirmed")
+	}
+	if l1.Members[1].Reason != "l1_only_maybe" {
+		t.Errorf("l1 member 1 reason: got %q want %q", l1.Members[1].Reason, "l1_only_maybe")
+	}
+
+	// srcDir was never created on disk — confirm BuildResults didn't try to read from it.
+	if _, err := os.Stat(filepath.Join(srcDir, "_thumbnails")); err == nil {
+		t.Errorf("BuildResults created/read source _thumbnails dir; should be event-only")
+	}
+}
 
 // Helper: synthesize a Run from a list of canned NDJSON event lines.
 func runFromEvents(t *testing.T, lines []string) *Run {
@@ -339,5 +390,135 @@ func TestBuildResults_StampsGroupModeSelfCheck(t *testing.T) {
 	}
 	if view.ApplyURL != "/api/self-check/apply" {
 		t.Errorf("view ApplyURL = %q, want %q", view.ApplyURL, "/api/self-check/apply")
+	}
+}
+
+func TestBuildResults_ThumbnailMode_L2Cluster(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"/photos"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l2_exif","path":"/photos/small1.jpg","keeper":"/photos/big.jpg","group_id":"sha1abc","width":200,"height":150,"size_bytes":4096}`,
+		`{"type":"thumb_candidate","ts":3,"run_id":"x","decision":"thumb_l2_exif","path":"/photos/small2.jpg","keeper":"/photos/big.jpg","group_id":"sha1abc","width":100,"height":75,"size_bytes":2048}`,
+		`{"type":"run_end","ts":4,"run_id":"x","total":3,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.NumGroups != 1 {
+		t.Fatalf("NumGroups = %d, want 1", view.NumGroups)
+	}
+	g := view.Groups[0]
+	if g.StringGroupID != "sha1abc" {
+		t.Errorf("StringGroupID = %q, want sha1abc", g.StringGroupID)
+	}
+	if len(g.Members) != 3 {
+		t.Fatalf("len(Members) = %d, want 3 (1 keeper + 2 thumbnails)", len(g.Members))
+	}
+	var keepers, thumbs int
+	for _, m := range g.Members {
+		switch m.Role {
+		case "keeper":
+			keepers++
+			if m.Path != "/photos/big.jpg" {
+				t.Errorf("keeper Path = %q, want /photos/big.jpg", m.Path)
+			}
+		case "thumbnail":
+			thumbs++
+			if m.Decision != "thumb_l2_exif" {
+				t.Errorf("thumbnail Decision = %q, want thumb_l2_exif", m.Decision)
+			}
+		}
+	}
+	if keepers != 1 {
+		t.Errorf("keeper count = %d, want 1", keepers)
+	}
+	if thumbs != 2 {
+		t.Errorf("thumbnail count = %d, want 2", thumbs)
+	}
+}
+
+func TestBuildResults_ThumbnailMode_L3Pair(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"/photos"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l3_embed","path":"/photos/embed_small.jpg","keeper":"/photos/big.jpg","group_id":"l3:keepersha1","width":160,"height":120,"size_bytes":1024}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.NumGroups != 1 {
+		t.Fatalf("NumGroups = %d, want 1", view.NumGroups)
+	}
+	g := view.Groups[0]
+	if g.StringGroupID != "l3:keepersha1" {
+		t.Errorf("StringGroupID = %q, want l3:keepersha1", g.StringGroupID)
+	}
+	if len(g.Members) != 2 {
+		t.Fatalf("len(Members) = %d, want 2 (keeper + embed)", len(g.Members))
+	}
+	if g.Members[0].Role != "keeper" {
+		t.Errorf("Members[0].Role = %q, want keeper", g.Members[0].Role)
+	}
+	if g.Members[1].Role != "thumbnail" || g.Members[1].Decision != "thumb_l3_embed" {
+		t.Errorf("Members[1] = %+v, want role=thumbnail decision=thumb_l3_embed", g.Members[1])
+	}
+}
+
+func TestBuildResults_ThumbnailMode_L1Group(t *testing.T) {
+	tmp := t.TempDir()
+	suspect1 := filepath.Join(tmp, "suspect1.jpg")
+	suspect2 := filepath.Join(tmp, "suspect2.jpg")
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"` + tmp + `"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l1_review","path":"` + suspect1 + `","reason":"l1_only_thumb","width":80,"height":60,"size_bytes":1000}`,
+		`{"type":"thumb_candidate","ts":3,"run_id":"x","decision":"thumb_l1_review","path":"` + suspect2 + `","reason":"l1_only_maybe","width":90,"height":70,"size_bytes":2000}`,
+		`{"type":"run_end","ts":4,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.NumGroups != 1 {
+		t.Fatalf("NumGroups = %d, want 1 (l1-suspects group)", view.NumGroups)
+	}
+	g := view.Groups[0]
+	if g.StringGroupID != "l1-suspects" {
+		t.Errorf("StringGroupID = %q, want l1-suspects", g.StringGroupID)
+	}
+	if len(g.Members) != 2 {
+		t.Fatalf("len(Members) = %d, want 2", len(g.Members))
+	}
+	if g.Members[0].Reason != "l1_only_thumb" {
+		t.Errorf("Members[0].Reason = %q, want l1_only_thumb", g.Members[0].Reason)
+	}
+	if g.Members[1].Reason != "l1_only_maybe" {
+		t.Errorf("Members[1].Reason = %q, want l1_only_maybe", g.Members[1].Reason)
+	}
+	for _, m := range g.Members {
+		if m.Role != "suspect" {
+			t.Errorf("L1 member Role = %q, want suspect", m.Role)
+		}
+		if m.Decision != "thumb_confirmed" {
+			t.Errorf("L1 member Decision = %q, want thumb_confirmed", m.Decision)
+		}
+	}
+}
+
+func TestBuildResults_ThumbnailMode_ApplyURL(t *testing.T) {
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"/photos"}`,
+		`{"type":"run_end","ts":2,"run_id":"x","total":0,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	if view.ApplyURL != "/api/thumbnails/apply" {
+		t.Errorf("ApplyURL = %q, want /api/thumbnails/apply", view.ApplyURL)
 	}
 }

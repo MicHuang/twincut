@@ -1,0 +1,22 @@
+<tr class="l1-suspect-row">
+  <td>
+    <img class="thumb-preview" loading="lazy"
+         src="/thumb?path={{.Member.Path}}&size=80"
+         alt="thumbnail preview"
+         width="80" height="80">
+  </td>
+  <td>
+    <code class="result-path">{{.Member.Path}}</code>
+  </td>
+  <td>
+    <span class="badge badge-l1-reason">{{.Member.Reason}}</span>
+  </td>
+  <td class="muted small">
+    {{if and .Member.Width .Member.Height}}{{.Member.Width}}×{{.Member.Height}}{{else}}—{{end}}
+  </td>
+  <td>
+    <input type="checkbox"
+           name="group:{{.GroupID}}.member{{.Index}}"
+           aria-label="quarantine {{.Member.Path}}">
+  </td>
+</tr>

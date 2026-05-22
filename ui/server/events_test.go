@@ -78,3 +78,79 @@ func TestEvent_IsTerminal(t *testing.T) {
 		}
 	}
 }
+
+func TestParseThumbCandidate_L2(t *testing.T) {
+	line := `{"type":"thumb_candidate","ts":1700000010,"run_id":"r1","decision":"thumb_l2_exif","path":"/src/small.jpg","keeper":"/src/big.jpg","group_id":"aabbccdd","width":200,"height":150,"size_bytes":4096}`
+	ev, err := ParseEvent([]byte(line))
+	if err != nil {
+		t.Fatalf("ParseEvent: %v", err)
+	}
+	if ev.Type != EventThumbCandidate {
+		t.Errorf("Type = %q, want %q", ev.Type, EventThumbCandidate)
+	}
+	var tc ThumbCandidate
+	if err := UnmarshalThumbCandidate(ev, &tc); err != nil {
+		t.Fatalf("UnmarshalThumbCandidate: %v", err)
+	}
+	if tc.Decision != "thumb_l2_exif" {
+		t.Errorf("Decision = %q, want thumb_l2_exif", tc.Decision)
+	}
+	if tc.Path != "/src/small.jpg" {
+		t.Errorf("Path = %q, want /src/small.jpg", tc.Path)
+	}
+	if tc.Keeper != "/src/big.jpg" {
+		t.Errorf("Keeper = %q, want /src/big.jpg", tc.Keeper)
+	}
+	if tc.GroupID != "aabbccdd" {
+		t.Errorf("GroupID = %q, want aabbccdd", tc.GroupID)
+	}
+	if tc.Width != 200 || tc.Height != 150 {
+		t.Errorf("Width/Height = %d/%d, want 200/150", tc.Width, tc.Height)
+	}
+	if tc.SizeBytes != 4096 {
+		t.Errorf("SizeBytes = %d, want 4096", tc.SizeBytes)
+	}
+}
+
+func TestParseThumbCandidate_L3(t *testing.T) {
+	line := `{"type":"thumb_candidate","ts":1700000011,"run_id":"r1","decision":"thumb_l3_embed","path":"/src/embed_small.jpg","keeper":"/src/big.jpg","group_id":"l3:deadbeef","width":160,"height":120,"size_bytes":2048}`
+	ev, err := ParseEvent([]byte(line))
+	if err != nil {
+		t.Fatalf("ParseEvent: %v", err)
+	}
+	var tc ThumbCandidate
+	if err := UnmarshalThumbCandidate(ev, &tc); err != nil {
+		t.Fatalf("UnmarshalThumbCandidate: %v", err)
+	}
+	if tc.Decision != "thumb_l3_embed" {
+		t.Errorf("Decision = %q, want thumb_l3_embed", tc.Decision)
+	}
+	if tc.GroupID != "l3:deadbeef" {
+		t.Errorf("GroupID = %q, want l3:deadbeef", tc.GroupID)
+	}
+}
+
+func TestParseThumbCandidate_MissingDecision(t *testing.T) {
+	line := `{"type":"thumb_candidate","ts":1700000012,"run_id":"r1","path":"/src/x.jpg","keeper":"/src/big.jpg","group_id":"g1","width":100,"height":100,"size_bytes":1024}`
+	ev, err := ParseEvent([]byte(line))
+	if err != nil {
+		t.Fatalf("ParseEvent: %v", err)
+	}
+	var tc ThumbCandidate
+	if err := UnmarshalThumbCandidate(ev, &tc); err == nil {
+		t.Fatal("expected error for missing decision field, got nil")
+	} else if !strings.Contains(err.Error(), "missing decision") {
+		t.Errorf("error = %v; want substring 'missing decision'", err)
+	}
+}
+
+func TestParseThumbCandidate_MalformedJSON(t *testing.T) {
+	// ParseEvent itself should fail before we even reach UnmarshalThumbCandidate.
+	_, err := ParseEvent([]byte(`not json at all`))
+	if err == nil {
+		t.Fatal("expected error for malformed JSON, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid JSON") {
+		t.Errorf("error = %v; want substring 'invalid JSON'", err)
+	}
+}

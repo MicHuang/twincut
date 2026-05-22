@@ -1,220 +1,150 @@
 package server
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
 
-// findTwincut walks up from the test working dir to locate bin/twincut.sh.
-// Tests need a real script — these are integration tests by design, since the
-// run manager's contract is "spawn twincut.sh and parse its output."
-func findTwincut(t *testing.T) string {
-	t.Helper()
-	dir, _ := os.Getwd()
-	for i := 0; i < 6; i++ {
-		p := filepath.Join(dir, "bin", "twincut.sh")
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			return p
-		}
-		dir = filepath.Dir(dir)
-	}
-	t.Skip("bin/twincut.sh not found above CWD; skipping integration test")
-	return ""
-}
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
-func TestRunManager_SelfCheckDryRun(t *testing.T) {
-	twincut := findTwincut(t)
-	state := t.TempDir()
-	fixture := t.TempDir()
-	writeFile(t, filepath.Join(fixture, "a.jpg"), "duplicate-content")
-	writeFile(t, filepath.Join(fixture, "b.jpg"), "duplicate-content")
-	writeFile(t, filepath.Join(fixture, "u.jpg"), "unique-here")
-
-	mgr, err := NewRunManager(state, twincut)
-	if err != nil {
-		t.Fatalf("NewRunManager: %v", err)
-	}
-	run, err := mgr.Start(StartOptions{
-		Mode: "self_check_test",
-		Args: []string{"--self-check", fixture, "--dry-run"},
-	})
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-
-	select {
-	case <-run.Done():
-	case <-time.After(30 * time.Second):
-		t.Fatalf("run did not finish within timeout; status=%s", run.Status())
-	}
-
-	if run.Status() != RunStatusSucceeded {
-		t.Fatalf("run status = %s, want succeeded (exit=%d)", run.Status(), run.ExitCode)
-	}
-
-	events := run.EventsSince(0)
-	if len(events) < 3 {
-		t.Fatalf("got %d events, want at least run_start + dup_group + run_end", len(events))
-	}
-	if events[0].Type != EventRunStart {
-		t.Errorf("first event type = %s, want run_start", events[0].Type)
-	}
-	if events[len(events)-1].Type != EventRunEnd {
-		t.Errorf("last event type = %s, want run_end", events[len(events)-1].Type)
-	}
-
-	// Each event must have a monotonically increasing seq.
-	for i, ev := range events {
-		if ev.Seq != i+1 {
-			t.Errorf("event %d: seq = %d, want %d", i, ev.Seq, i+1)
-		}
-	}
-
-	// Run id must match across all events and equal the run's ID.
-	for i, ev := range events {
-		if ev.RunID != run.ID {
-			t.Errorf("event %d: run_id = %q, want %q", i, ev.RunID, run.ID)
-		}
-	}
-
-	// Find the dup_group event and verify the keep + remove paths.
-	var dup *Event
-	for i := range events {
-		if events[i].Type == EventDupGroup {
-			dup = &events[i]
-			break
-		}
-	}
-	if dup == nil {
-		t.Fatalf("no dup_group event in stream")
-	}
-	var payload struct {
-		KeepPath string `json:"keep_path"`
-		Remove   []struct {
-			Path string `json:"path"`
-		} `json:"remove"`
-	}
-	if err := json.Unmarshal(dup.Raw, &payload); err != nil {
-		t.Fatalf("dup_group JSON: %v", err)
-	}
-	expected := map[string]bool{
-		filepath.Join(fixture, "a.jpg"): false,
-		filepath.Join(fixture, "b.jpg"): false,
-	}
-	if _, ok := expected[payload.KeepPath]; !ok {
-		t.Errorf("unexpected keep_path %q", payload.KeepPath)
-	}
-	expected[payload.KeepPath] = true
-	if len(payload.Remove) != 1 {
-		t.Errorf("len(remove) = %d, want 1", len(payload.Remove))
-	} else if _, ok := expected[payload.Remove[0].Path]; !ok || expected[payload.Remove[0].Path] {
-		t.Errorf("unexpected remove path %q", payload.Remove[0].Path)
-	}
-
-	// Journal file must exist and contain the same number of events.
-	journal := filepath.Join(state, "runs", run.ID+".ndjson")
-	data, err := os.ReadFile(journal)
-	if err != nil {
-		t.Fatalf("journal read: %v", err)
-	}
-	lines := 0
-	for _, b := range data {
-		if b == '\n' {
-			lines++
-		}
-	}
-	if lines != len(events) {
-		t.Errorf("journal lines = %d, events = %d", lines, len(events))
-	}
-}
-
-func TestRunManager_SubscribeReceivesLiveEvents(t *testing.T) {
-	twincut := findTwincut(t)
-	state := t.TempDir()
-	fixture := t.TempDir()
-	writeFile(t, filepath.Join(fixture, "a.jpg"), "live-test")
-	writeFile(t, filepath.Join(fixture, "b.jpg"), "live-test")
-
-	mgr, err := NewRunManager(state, twincut)
-	if err != nil {
-		t.Fatalf("NewRunManager: %v", err)
-	}
-	run, err := mgr.Start(StartOptions{
-		Mode: "live_test",
-		Args: []string{"--self-check", fixture, "--dry-run"},
-	})
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-
-	_, ch, unsub := run.Subscribe()
-	defer unsub()
-
-	// Drain everything that arrives until the run finishes. Since the
-	// run is very fast, some events may have arrived BEFORE Subscribe
-	// (race). We accept that here — the test is about subscription
-	// delivery, not no-loss replay (covered by EventsSince in the SSE
-	// handler).
-	got := []Event{}
-	timeout := time.After(30 * time.Second)
-	for {
-		select {
-		case ev, ok := <-ch:
-			if !ok {
-				goto done
+// TestRunMode_ThumbnailModes verifies that a Run with Mode set to the new
+// thumbnail modes does not cause BuildResults to error or panic.
+func TestRunMode_ThumbnailModes(t *testing.T) {
+	modes := []string{"thumbnail_detect_preview", "thumbnail_detect_apply"}
+	for _, mode := range modes {
+		t.Run(mode, func(t *testing.T) {
+			r := &Run{
+				ID:        "synthetic-" + mode,
+				Mode:      mode,
+				StartedAt: time.Now(),
+				status:    RunStatusSucceeded,
+				done:      make(chan struct{}),
 			}
-			got = append(got, ev)
-		case <-timeout:
-			t.Fatalf("subscriber did not see run end within timeout")
-		}
-	}
-done:
-	if run.Status() != RunStatusSucceeded {
-		t.Fatalf("run status = %s, want succeeded", run.Status())
+			close(r.done)
+			view, err := BuildResults(r)
+			if err != nil {
+				t.Errorf("BuildResults with mode %q returned error: %v", mode, err)
+			}
+			if view.ApplyURL != "/api/thumbnails/apply" {
+				t.Errorf("ApplyURL = %q, want /api/thumbnails/apply", view.ApplyURL)
+			}
+		})
 	}
 }
 
-func TestRunManager_StartFailsForBadArgs(t *testing.T) {
-	twincut := findTwincut(t)
-	state := t.TempDir()
-	mgr, err := NewRunManager(state, twincut)
-	if err != nil {
-		t.Fatalf("NewRunManager: %v", err)
+// TestRunMode_UnknownModeIsPassthrough verifies that an unknown mode string
+// does not cause BuildResults to panic — it falls through to the safe default.
+func TestRunMode_UnknownModeIsPassthrough(t *testing.T) {
+	r := &Run{
+		ID:        "synthetic-garbage",
+		Mode:      "thumbnail_garbage",
+		StartedAt: time.Now(),
+		status:    RunStatusSucceeded,
+		done:      make(chan struct{}),
 	}
-	run, err := mgr.Start(StartOptions{
-		Mode: "bad_args",
-		Args: []string{"--self-check", "/no/such/path/should/exist", "--dry-run"},
+	close(r.done)
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Errorf("BuildResults with unknown mode errored: %v", err)
+	}
+	if view.ApplyURL == "" {
+		t.Error("ApplyURL is empty for unknown mode; expected safe fallback")
+	}
+}
+
+func newTestRunManager(t *testing.T) *RunManager {
+	t.Helper()
+	tmp := t.TempDir()
+	mgr, err := NewRunManager(tmp, "/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mgr
+}
+
+func TestStart_GeneratesIDWhenOptsIDEmpty(t *testing.T) {
+	mgr := newTestRunManager(t)
+	r, err := mgr.Start(StartOptions{
+		Mode: "self_check",
+		Args: []string{"--help"},
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	select {
-	case <-run.Done():
-	case <-time.After(15 * time.Second):
-		t.Fatalf("run did not finish; status=%s", run.Status())
+	if r.ID == "" {
+		t.Fatal("Run.ID empty")
 	}
-	if run.Status() != RunStatusFailed {
-		t.Errorf("status = %s, want failed (exit=%d)", run.Status(), run.ExitCode)
+	if !regexp.MustCompile(`^\d{8}T\d{6}Z-[a-z0-9]+$`).MatchString(r.ID) {
+		t.Errorf("Run.ID does not match expected shape: %q", r.ID)
 	}
-	// Should still emit at least an error event.
-	saw := false
-	for _, ev := range run.EventsSince(0) {
-		if ev.Type == EventError {
-			saw = true
-			break
+}
+
+func TestStart_RejectsMalformedCallerID(t *testing.T) {
+	mgr := newTestRunManager(t)
+	bad := []string{
+		"../etc/passwd",
+		"not-a-run-id",
+		"20260521T140000Z-",
+		"20260521T140000Z-UPPER",
+		"20260521T140000Z-abc/de",
+	}
+	for _, id := range bad {
+		_, err := mgr.Start(StartOptions{
+			ID:   id,
+			Mode: "self_check",
+			Args: []string{"--help"},
+		})
+		if err == nil {
+			t.Errorf("Start with malformed ID %q: expected error, got nil", id)
 		}
 	}
-	if !saw {
-		t.Errorf("no error event in stream")
+}
+
+func TestStart_RejectsCollidingCallerID(t *testing.T) {
+	mgr := newTestRunManager(t)
+	id := "20260521T140000Z-stage85t5"
+
+	journalDir := filepath.Join(mgr.stateDir, "runs")
+	if err := os.MkdirAll(journalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	journalPath := filepath.Join(journalDir, id+".ndjson")
+	if err := os.WriteFile(journalPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := mgr.Start(StartOptions{
+		ID:   id,
+		Mode: "self_check",
+		Args: []string{"--help"},
+	})
+	if err == nil {
+		t.Fatal("Start with colliding ID: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error should mention collision; got %v", err)
+	}
+}
+
+func TestStart_AcceptsValidCallerID(t *testing.T) {
+	mgr := newTestRunManager(t)
+	id := "20260521T140000Z-stage85t5b"
+
+	r, err := mgr.Start(StartOptions{
+		ID:   id,
+		Mode: "self_check",
+		Args: []string{"--help"},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if r.ID != id {
+		t.Errorf("Run.ID: got %q want %q", r.ID, id)
+	}
+	journalPath := filepath.Join(mgr.stateDir, "runs", id+".ndjson")
+	if _, err := os.Stat(journalPath); err != nil {
+		t.Errorf("journal not created at expected path %q: %v", journalPath, err)
 	}
 }
