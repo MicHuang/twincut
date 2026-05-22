@@ -70,6 +70,156 @@ else
   ok "section 1: skipped (no pHash deps)"
 fi
 
+# ---------------------------------------------------------------------
+# Section 1.5: Pillow fixture generator (used by sections 2-9)
+# ---------------------------------------------------------------------
+gen_fixtures(){
+  $HAVE_PHASH_DEPS || return 0
+  python3 - "$SRC" <<'PY'
+import sys, os
+from PIL import Image, ImageDraw
+src = sys.argv[1]
+def grad(path, w, h, color_a, color_b):
+    im = Image.new("RGB", (w, h), color_a)
+    d = ImageDraw.Draw(im)
+    for x in range(w):
+        t = x / max(w-1, 1)
+        c = tuple(int(color_a[i]*(1-t)+color_b[i]*t) for i in range(3))
+        d.line([(x, 0), (x, h)], fill=c)
+    im.save(path, "JPEG", quality=88)
+# Scene A: blue→red gradient
+grad(os.path.join(src, "photo_a_big.jpg"),   2000, 1500, (10, 30, 200), (220, 30, 10))
+grad(os.path.join(src, "photo_a_small.jpg"),  200,  150, (10, 30, 200), (220, 30, 10))
+# Scene B: green→yellow gradient
+grad(os.path.join(src, "photo_b_big.jpg"),   2000, 1500, (10, 200, 30), (240, 240, 10))
+grad(os.path.join(src, "photo_b_thumb1.jpg"), 300,  225, (10, 200, 30), (240, 240, 10))
+grad(os.path.join(src, "photo_b_thumb2.jpg"), 150,  113, (10, 200, 30), (240, 240, 10))
+# Orphan: purple solid (no matching big image)
+Image.new("RGB", (100, 100), (120, 30, 180)).save(os.path.join(src, "orphan_small.png"), "PNG")
+# Unrelated big: monochrome gradient
+im = Image.new("RGB", (2000, 1500), (40, 40, 40))
+d = ImageDraw.Draw(im)
+for y in range(1500):
+    t = y / 1499
+    c = (int(40+t*100), int(40+t*100), int(40+t*100))
+    d.line([(0, y), (1999, y)], fill=c)
+im.save(os.path.join(src, "unrelated_big.jpg"), "JPEG", quality=88)
+PY
+}
+
+# ---------------------------------------------------------------------
+# Section 2: matched pair emits keeper + group_id + phash_distance
+# ---------------------------------------------------------------------
+note "2. matched pair: small downscale gets keeper + group_id"
+if $HAVE_PHASH_DEPS; then
+  rm -rf "$SRC"; mkdir -p "$SRC"; gen_fixtures
+  LOG2="$TMP/run2.log"
+  "$TWINCUT" --thumbnail-detect --dry-run --json-events \
+    --source "$SRC" --assume-yes >"$LOG2" 2>&1 || true
+  EV=$(grep '"path":"'"$SRC"'/photo_a_small.jpg"' "$LOG2" | head -1)
+  if echo "$EV" | grep -q '"keeper":"'"$SRC"'/photo_a_big.jpg"'; then
+    ok "section 2: photo_a_small.jpg → keeper=photo_a_big.jpg"
+  else
+    bad "section 2: missing/wrong keeper on photo_a_small.jpg event: $EV"
+  fi
+  echo "$EV" | grep -qE '"group_id":"l1ph:[0-9a-f]{16}"' \
+    && ok "section 2: group_id has l1ph: prefix and 16 hex chars" \
+    || bad "section 2: group_id missing or malformed: $EV"
+  echo "$EV" | grep -q '"reason":"l1_phash_match"' \
+    && ok "section 2: reason=l1_phash_match" \
+    || bad "section 2: reason not l1_phash_match: $EV"
+  echo "$EV" | grep -qE '"phash_distance":[0-9]+' \
+    && ok "section 2: phash_distance present" \
+    || bad "section 2: phash_distance missing: $EV"
+else
+  ok "section 2: skipped (no pHash deps)"
+fi
+
+# ---------------------------------------------------------------------
+# Section 5: index file created with meta header
+# ---------------------------------------------------------------------
+note "5. .thumb_phash_index.tsv exists with # meta: header"
+if $HAVE_PHASH_DEPS; then
+  IDX="$SRC/.thumb_phash_index.tsv"
+  assert_file "$IDX"
+  HEAD1="$(head -n1 "$IDX")"
+  [[ "$HEAD1" =~ ^\#\ meta:.*algo=dhash.*hash_size=8 ]] \
+    && ok "section 5: meta header has algo=dhash hash_size=8" \
+    || bad "section 5: meta header malformed: '$HEAD1'"
+else
+  ok "section 5: skipped (no pHash deps)"
+fi
+
+# ---------------------------------------------------------------------
+# Section 6: second run uses cache (recomputed=0)
+# ---------------------------------------------------------------------
+note "6. warm re-run reports recomputed=0"
+if $HAVE_PHASH_DEPS; then
+  LOG6="$TMP/run6.log"
+  "$TWINCUT" --thumbnail-detect --dry-run --json-events \
+    --source "$SRC" --assume-yes >"$LOG6" 2>&1 || true
+  if grep -E '(recomputed 0|cache hits [1-9])' "$LOG6" >/dev/null; then
+    ok "section 6: warm re-run reused cache"
+  else
+    bad "section 6: no cache-hit log line found"
+    grep -i phash "$LOG6" || true
+  fi
+else
+  ok "section 6: skipped (no pHash deps)"
+fi
+
+# ---------------------------------------------------------------------
+# Section 7: mtime invalidation re-hashes one row
+# ---------------------------------------------------------------------
+note "7. touching one file re-hashes exactly that row"
+if $HAVE_PHASH_DEPS; then
+  touch -t 203012310000.00 "$SRC/photo_a_big.jpg"
+  LOG7="$TMP/run7.log"
+  "$TWINCUT" --thumbnail-detect --dry-run --json-events \
+    --source "$SRC" --assume-yes >"$LOG7" 2>&1 || true
+  grep -E 'recomputed [1-9][0-9]* \(cold or modified\)' "$LOG7" >/dev/null \
+    && ok "section 7: at least one row re-hashed after touch" \
+    || bad "section 7: did not detect re-hash after touch"
+else
+  ok "section 7: skipped (no pHash deps)"
+fi
+
+# ---------------------------------------------------------------------
+# Section 8: delete invalidation prunes index row
+# ---------------------------------------------------------------------
+note "8. deleting a file prunes its row on next run"
+if $HAVE_PHASH_DEPS; then
+  rm -f "$SRC/unrelated_big.jpg"
+  "$TWINCUT" --thumbnail-detect --dry-run --json-events \
+    --source "$SRC" --assume-yes >/dev/null 2>&1 || true
+  grep -q "unrelated_big.jpg" "$SRC/.thumb_phash_index.tsv" \
+    && bad "section 8: deleted file still in index" \
+    || ok "section 8: deleted file pruned from index"
+else
+  ok "section 8: skipped (no pHash deps)"
+fi
+
+# ---------------------------------------------------------------------
+# Section 9: meta drift triggers full rebuild
+# ---------------------------------------------------------------------
+note "9. editing meta header forces rebuild"
+if $HAVE_PHASH_DEPS; then
+  sed -i.bak 's/algo=dhash/algo=phash/' "$SRC/.thumb_phash_index.tsv"
+  rm -f "$SRC/.thumb_phash_index.tsv.bak"
+  LOG9="$TMP/run9.log"
+  "$TWINCUT" --thumbnail-detect --dry-run --json-events \
+    --source "$SRC" --assume-yes >"$LOG9" 2>&1 || true
+  grep -q 'pHash index rebuild (meta drift)' "$LOG9" \
+    && ok "section 9: meta drift triggered rebuild" \
+    || bad "section 9: no rebuild log line for meta drift"
+  HEAD9="$(head -n1 "$SRC/.thumb_phash_index.tsv")"
+  [[ "$HEAD9" =~ algo=dhash ]] \
+    && ok "section 9: header restored to algo=dhash" \
+    || bad "section 9: header not rebuilt: '$HEAD9'"
+else
+  ok "section 9: skipped (no pHash deps)"
+fi
+
 printf '\n=========================================\n'
 printf 'PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))
