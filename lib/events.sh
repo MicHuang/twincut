@@ -168,6 +168,57 @@ emit_error(){
   _emit_write "$out"
 }
 
+# emit_thumb_candidate — one event per thumbnail candidate file.
+#   --decision VAL        required; one of: thumb_l1_review | thumb_l2_exif | thumb_l3_embed | thumb_confirmed | keep_user_override
+#   --path VAL            required; absolute path of the candidate thumbnail
+#   --keeper VAL          optional; absolute path of the file being kept
+#   --group-id VAL        optional; group identifier (EXIF SHA1, "l3:<sha1>", "l1ph:<sha1>")
+#   --width INT           optional; pixel width
+#   --height INT          optional; pixel height
+#   --size-bytes INT      optional; file size in bytes
+#   --phash-distance INT  optional; Hamming distance (L1 matched only)
+#   --reason VAL          optional; free-text reason code
+#   --run-id VAL          optional; explicit run_id override
+emit_thumb_candidate(){
+  $JSON_EVENTS || return 0
+  local decision="" path="" keeper="" group_id="" width="" height="" size_bytes="" phash_distance="" reason="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --decision)        decision="$2"; shift 2 ;;
+      --path)            path="$2"; shift 2 ;;
+      --keeper)          keeper="$2"; shift 2 ;;
+      --group-id)        group_id="$2"; shift 2 ;;
+      --width)           width="$2"; shift 2 ;;
+      --height)          height="$2"; shift 2 ;;
+      --size-bytes)      size_bytes="$2"; shift 2 ;;
+      --phash-distance)  phash_distance="$2"; shift 2 ;;
+      --reason)          reason="$2"; shift 2 ;;
+      --run-id)          run_id="$2"; shift 2 ;;
+      *) echo "emit_thumb_candidate: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  # Validate decision (warn only — do not abort).
+  case "$decision" in
+    thumb_l1_review|thumb_l2_exif|thumb_l3_embed|thumb_confirmed|keep_user_override) ;;
+    *) echo "emit_thumb_candidate: unexpected decision value '$decision'" >&2 ;;
+  esac
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"thumb_candidate","ts":'"$ts"
+  [[ -n "$run_id" ]]        && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"decision":"'"$(json_escape "$decision")"'"'
+  out+=',"path":"'"$(json_escape "$path")"'"'
+  [[ -n "$keeper" ]]        && out+=',"keeper":"'"$(json_escape "$keeper")"'"'
+  [[ -n "$group_id" ]]      && out+=',"group_id":"'"$(json_escape "$group_id")"'"'
+  [[ -n "$width" ]]         && out+=',"width":'"$(_emit_num width "$width")"
+  [[ -n "$height" ]]        && out+=',"height":'"$(_emit_num height "$height")"
+  [[ -n "$size_bytes" ]]    && out+=',"size_bytes":'"$(_emit_num size_bytes "$size_bytes")"
+  [[ -n "$phash_distance" ]] && out+=',"phash_distance":'"$(_emit_num phash_distance "$phash_distance")"
+  [[ -n "$reason" ]]        && out+=',"reason":"'"$(json_escape "$reason")"'"'
+  out+='}'
+  _emit_write "$out"
+}
+
 # emit_progress — progress beacon during a long phase.
 #   --phase VAL          enum (scan | hash | phash | apply | restore)
 #   --done INT           count of items processed so far

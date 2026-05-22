@@ -56,6 +56,26 @@ run_case "error usage" "error__usage.ndjson" \
 run_case "progress scan" "progress__scan.ndjson" \
   emit_progress --phase scan --done 10 --total 100 --current-path /img/IMG.JPG
 
+# === thumb_candidate ===
+run_case "thumb_candidate l2_exif" "thumb_candidate__l2_exif.ndjson" \
+  emit_thumb_candidate --decision thumb_l2_exif \
+    --path /img/IMG_0010.JPG --keeper /img/IMG_0010.HEIC \
+    --group-id "2025-04-01T12:00:00_3024x4032" \
+    --width 320 --height 240 --size-bytes 18432
+
+run_case "thumb_candidate l3_embed" "thumb_candidate__l3_embed.ndjson" \
+  emit_thumb_candidate --decision thumb_l3_embed \
+    --path /img/IMG_0011.JPG --keeper /img/IMG_0011.HEIC \
+    --group-id "l3:abc123" \
+    --width 160 --height 120 --size-bytes 9216
+
+run_case "thumb_candidate l1_phash" "thumb_candidate__l1_phash.ndjson" \
+  emit_thumb_candidate --decision thumb_l1_review \
+    --path /img/IMG_0012.JPG --keeper /img/IMG_0012.HEIC \
+    --group-id "l1ph:abcd1234deadbeef" \
+    --width 320 --height 240 --size-bytes 18432 \
+    --phash-distance 3 --reason l1_phash_match
+
 echo
 echo "=========================================="
 echo "PASS=$PASS FAIL=$FAIL"

@@ -131,15 +131,16 @@ type Progress struct {
 // ThumbCandidate is the parsed payload of a "thumb_candidate" event emitted
 // by lib/thumb.sh during --dry-run --json-events. One event per candidate file.
 type ThumbCandidate struct {
-	Decision      string `json:"decision"`        // thumb_l2_exif | thumb_l3_embed | thumb_l1_review
-	Path          string `json:"path"`            // absolute path of the candidate thumbnail
-	Keeper        string `json:"keeper"`          // absolute path of the file being kept (L2/L3 always; L1 only when pHash matched)
-	GroupID       string `json:"group_id"`        // L2: EXIF SHA1; L3: "l3:<sha1>"; L1 matched: "l1ph:<sha1>"; absent for L1 unmatched
-	Reason        string `json:"reason"`          // L1 unmatched: "l1_only_thumb"|"l1_only_maybe"; L1 matched: "l1_phash_match"; empty for L2/L3
-	Width         int    `json:"width"`
-	Height        int    `json:"height"`
-	SizeBytes     int64  `json:"size_bytes"`
+	EventEnvelope
+	Decision      string `json:"decision"`                 // thumb_l2_exif | thumb_l3_embed | thumb_l1_review
+	Path          string `json:"path"`                     // absolute path of the candidate thumbnail
+	Keeper        string `json:"keeper,omitempty"`         // absolute path of the file being kept (L2/L3 always; L1 only when pHash matched)
+	GroupID       string `json:"group_id,omitempty"`       // L2: EXIF SHA1; L3: "l3:<sha1>"; L1 matched: "l1ph:<sha1>"; absent for L1 unmatched
+	Width         int    `json:"width,omitempty"`
+	Height        int    `json:"height,omitempty"`
+	SizeBytes     int64  `json:"size_bytes,omitempty"`
 	PhashDistance int    `json:"phash_distance,omitempty"` // L1 matched only: Hamming distance to keeper (0..64 for hash_size=8)
+	Reason        string `json:"reason,omitempty"`         // L1 unmatched: "l1_only_thumb"|"l1_only_maybe"; L1 matched: "l1_phash_match"; empty for L2/L3
 }
 
 // UnmarshalThumbCandidate decodes the raw payload of a thumb_candidate event

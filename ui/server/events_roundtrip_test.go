@@ -75,6 +75,50 @@ func roundtripFixtures() []fixtureCase {
 				CurrentPath:   "/img/IMG.JPG",
 			},
 		},
+		{
+			file:     "thumb_candidate__l2_exif.ndjson",
+			wantType: EventThumbCandidate,
+			want: ThumbCandidate{
+				EventEnvelope: EventEnvelope{Type: EventThumbCandidate, TS: 1747934400, RunID: "r_test"},
+				Decision:      "thumb_l2_exif",
+				Path:          "/img/IMG_0010.JPG",
+				Keeper:        "/img/IMG_0010.HEIC",
+				GroupID:       "2025-04-01T12:00:00_3024x4032",
+				Width:         320,
+				Height:        240,
+				SizeBytes:     18432,
+			},
+		},
+		{
+			file:     "thumb_candidate__l3_embed.ndjson",
+			wantType: EventThumbCandidate,
+			want: ThumbCandidate{
+				EventEnvelope: EventEnvelope{Type: EventThumbCandidate, TS: 1747934400, RunID: "r_test"},
+				Decision:      "thumb_l3_embed",
+				Path:          "/img/IMG_0011.JPG",
+				Keeper:        "/img/IMG_0011.HEIC",
+				GroupID:       "l3:abc123",
+				Width:         160,
+				Height:        120,
+				SizeBytes:     9216,
+			},
+		},
+		{
+			file:     "thumb_candidate__l1_phash.ndjson",
+			wantType: EventThumbCandidate,
+			want: ThumbCandidate{
+				EventEnvelope: EventEnvelope{Type: EventThumbCandidate, TS: 1747934400, RunID: "r_test"},
+				Decision:      "thumb_l1_review",
+				Path:          "/img/IMG_0012.JPG",
+				Keeper:        "/img/IMG_0012.HEIC",
+				GroupID:       "l1ph:abcd1234deadbeef",
+				Width:         320,
+				Height:        240,
+				SizeBytes:     18432,
+				PhashDistance: 3,
+				Reason:        "l1_phash_match",
+			},
+		},
 	}
 }
 
