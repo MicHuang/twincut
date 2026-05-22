@@ -476,9 +476,7 @@ thumb_run_l1_phash(){
   # Expose the live index for T3's pairing pass.
   THUMB_PHASH_LIVE_INDEX="$live_index_file"
 
-  # --- Step F: pairing pass ---
-  # For each L1=thumb|maybe suspect, find nearest L1=ok keeper within
-  # Hamming threshold. Lex-smallest keeper path wins ties.
+  # --- Step F: pairing pass (delegated to phash.py --pair) ---
   local hamming_max="$THUMB_PHASH_HAMMING"
   if ! [[ "$hamming_max" =~ ^[0-9]+$ ]]; then hamming_max=5; fi
   if (( hamming_max > 64 )); then
@@ -486,68 +484,62 @@ thumb_run_l1_phash(){
     hamming_max=64
   fi
 
-  # popcount(a XOR b) for 16-hex-char hashes (64 bits = 2 × 32-bit halves).
-  _phash_hamming_hex(){
-    local a="$1" b="$2"
-    a="${a:0:16}"; b="${b:0:16}"
-    local a_hi=$((16#${a:0:8})) a_lo=$((16#${a:8:8}))
-    local b_hi=$((16#${b:0:8})) b_lo=$((16#${b:8:8}))
-    local x_hi=$(( a_hi ^ b_hi )) x_lo=$(( a_lo ^ b_lo ))
-    local n=0 v
-    for v in "$x_hi" "$x_lo"; do
-      while (( v )); do n=$(( n + (v & 1) )); v=$(( v >> 1 )); done
-    done
-    echo "$n"
-  }
-
-  # Build keepers_file = L1=ok rows with their hash from live_index_file.
-  local keepers_file; keepers_file="$(mktemp)"
-  local _kf _kw _kh _kc _khash
-  while IFS=$'\t' read -r _kf _kw _kh _kc; do
-    [[ "$_kc" == "ok" ]] || continue
-    _khash="$(P="$_kf" awk -F'\t' '$1==ENVIRON["P"]{print $4; exit}' "$live_index_file")"
-    [[ -z "$_khash" ]] && continue
-    printf '%s\t%s\n' "$_kf" "$_khash" >> "$keepers_file"
-  done < "$THUMB_INDEX_FILE"
+  # Build the pair_input TSV: path<TAB>hash<TAB>role, one row per (suspect or keeper).
+  local pair_input pair_output phash_err
+  pair_input="$(mktemp)"
+  pair_output="$(mktemp)"
+  phash_err="$(mktemp)"
 
   # Output TSV temp files for T4 to read (lookup by suspect path via awk).
   THUMB_PHASH_KEEPER_FILE="$(mktemp)"
   THUMB_PHASH_GROUP_FILE="$(mktemp)"
   THUMB_PHASH_DIST_FILE="$(mktemp)"
 
-  # Walk suspects, find best keeper.
-  local _sf _sw _sh _sc _shash
-  local paired=0 total_suspects=0
-  while IFS=$'\t' read -r _sf _sw _sh _sc; do
-    [[ "$_sc" == "ok" ]] && continue
-    [[ -e "$_sf" ]] || continue
-    total_suspects=$(( total_suspects + 1 ))
-    _shash="$(P="$_sf" awk -F'\t' '$1==ENVIRON["P"]{print $4; exit}' "$live_index_file")"
-    [[ -z "$_shash" ]] && continue
-    local best_keeper="" best_dist=999
-    local kp kh d
-    while IFS=$'\t' read -r kp kh; do
-      [[ -z "$kp" || -z "$kh" ]] && continue
-      d=$(_phash_hamming_hex "$_shash" "$kh")
-      if (( d <= hamming_max )); then
-        if (( d < best_dist )) \
-           || { (( d == best_dist )) && [[ -z "$best_keeper" || "$kp" < "$best_keeper" ]]; }; then
-          best_dist=$d
-          best_keeper="$kp"
-        fi
-      fi
-    done < "$keepers_file"
-    if [[ -n "$best_keeper" ]]; then
-      local kpath_sha
-      kpath_sha="$(printf '%s' "$best_keeper" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
-      printf '%s\t%s\n' "$_sf" "$best_keeper"          >> "$THUMB_PHASH_KEEPER_FILE"
-      printf '%s\tl1ph:%s\n' "$_sf" "${kpath_sha:0:16}" >> "$THUMB_PHASH_GROUP_FILE"
-      printf '%s\t%s\n' "$_sf" "$best_dist"            >> "$THUMB_PHASH_DIST_FILE"
-      paired=$(( paired + 1 ))
+  local total_suspects=0
+  local _f _w _h _cls _h_hex
+  while IFS=$'\t' read -r _f _w _h _cls; do
+    [[ -e "$_f" ]] || continue
+    _h_hex="$(P="$_f" awk -F'\t' '$1==ENVIRON["P"]{print $4; exit}' "$live_index_file")"
+    [[ -z "$_h_hex" ]] && continue
+    if [[ "$_cls" == "ok" ]]; then
+      printf '%s\t%s\tkeeper\n' "$_f" "$_h_hex" >> "$pair_input"
+    else
+      printf '%s\t%s\tsuspect\n' "$_f" "$_h_hex" >> "$pair_input"
+      total_suspects=$(( total_suspects + 1 ))
     fi
   done < "$THUMB_INDEX_FILE"
 
-  rm -f "$keepers_file" "$live_index_file"
+  # Run pairing in Python (single fork; O(N×M) bin-popcount inside Python).
+  set +e
+  python3 "$phash_bin" --pair --hamming "$hamming_max" \
+    < "$pair_input" > "$pair_output" 2>"$phash_err"
+  local rc=$?
+  set -e
+  if [[ $rc -ne 0 ]]; then
+    echo "[!] L1 pHash pairing skipped: bin/phash.py --pair exited $rc" >&2
+    cat "$phash_err" >&2 || true
+    rm -f "$pair_input" "$pair_output" "$phash_err" "$live_index_file"
+    THUMB_PHASH_LIVE_INDEX=""
+    return 0
+  fi
+  local _err_lines; _err_lines="$(wc -l < "$phash_err" 2>/dev/null | tr -d ' ')" || _err_lines=0
+  if [[ "${_err_lines:-0}" -gt 0 ]]; then
+    cat "$phash_err" >&2 || true
+  fi
+
+  # Ingest pair_output → three TSV output files.
+  local paired=0
+  local _sp _kp _dist _kpath_sha
+  while IFS=$'\t' read -r _sp _kp _dist; do
+    [[ -z "$_sp" || -z "$_kp" || -z "$_dist" ]] && continue
+    _kpath_sha="$(printf '%s' "$_kp" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
+    printf '%s\t%s\n'      "$_sp" "$_kp"                       >> "$THUMB_PHASH_KEEPER_FILE"
+    printf '%s\tl1ph:%s\n' "$_sp" "${_kpath_sha:0:16}"         >> "$THUMB_PHASH_GROUP_FILE"
+    printf '%s\t%s\n'      "$_sp" "$_dist"                     >> "$THUMB_PHASH_DIST_FILE"
+    paired=$(( paired + 1 ))
+  done < "$pair_output"
+
+  rm -f "$pair_input" "$pair_output" "$phash_err" "$live_index_file"
   THUMB_PHASH_LIVE_INDEX=""
 
   echo "[*] thumbnail-detect L1-pHash: $paired/$total_suspects suspects paired with keeper (Hamming ≤ $hamming_max)" >&2
