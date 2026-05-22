@@ -564,19 +564,52 @@ thumb_write_review(){
 
   if $JSON_EVENTS; then
     local f w h cls _sz
+    local keeper group_id distance
     while IFS=$'\t' read -r f w h cls; do
       [[ "$cls" == "ok" ]] && continue
       [[ ! -e "$f" ]] && continue
       _sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || _sz=0
-      emit_event "thumb_candidate" \
-        "decision=thumb_l1_review" \
-        "path=$f" \
-        "reason=l1_only_${cls}" \
-        "width=@${w:-0}" \
-        "height=@${h:-0}" \
-        "size_bytes=@${_sz:-0}"
+
+      keeper=""
+      group_id=""
+      distance=""
+      if [[ -n "${THUMB_PHASH_KEEPER_FILE:-}" && -s "$THUMB_PHASH_KEEPER_FILE" ]]; then
+        keeper="$(awk -F'\t' -v p="$f" '$1==p{print $2; exit}' "$THUMB_PHASH_KEEPER_FILE")"
+      fi
+      if [[ -n "$keeper" ]]; then
+        if [[ -s "${THUMB_PHASH_GROUP_FILE:-}" ]]; then
+          group_id="$(awk -F'\t' -v p="$f" '$1==p{print $2; exit}' "$THUMB_PHASH_GROUP_FILE")"
+        fi
+        if [[ -s "${THUMB_PHASH_DIST_FILE:-}" ]]; then
+          distance="$(awk -F'\t' -v p="$f" '$1==p{print $2; exit}' "$THUMB_PHASH_DIST_FILE")"
+        fi
+        emit_event "thumb_candidate" \
+          "decision=thumb_l1_review" \
+          "path=$f" \
+          "keeper=$keeper" \
+          "group_id=$group_id" \
+          "reason=l1_phash_match" \
+          "width=@${w:-0}" \
+          "height=@${h:-0}" \
+          "size_bytes=@${_sz:-0}" \
+          "phash_distance=@${distance:-0}"
+      else
+        emit_event "thumb_candidate" \
+          "decision=thumb_l1_review" \
+          "path=$f" \
+          "reason=l1_only_${cls}" \
+          "width=@${w:-0}" \
+          "height=@${h:-0}" \
+          "size_bytes=@${_sz:-0}"
+      fi
       THUMB_REVIEW_CNT=$((THUMB_REVIEW_CNT+1))
     done < "$THUMB_INDEX_FILE"
+
+    # Clean up T3's pairing temp files (no longer needed).
+    rm -f "${THUMB_PHASH_KEEPER_FILE:-}" "${THUMB_PHASH_GROUP_FILE:-}" "${THUMB_PHASH_DIST_FILE:-}" 2>/dev/null || true
+    THUMB_PHASH_KEEPER_FILE=""
+    THUMB_PHASH_GROUP_FILE=""
+    THUMB_PHASH_DIST_FILE=""
 
     if (( THUMB_REVIEW_CNT > 0 )); then
       echo "[*] L1-only suspects emitted as events: $THUMB_REVIEW_CNT"

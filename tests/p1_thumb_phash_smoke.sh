@@ -96,13 +96,13 @@ grad(os.path.join(src, "photo_b_thumb1.jpg"), 300,  225, (10, 200, 30), (240, 24
 grad(os.path.join(src, "photo_b_thumb2.jpg"), 150,  113, (10, 200, 30), (240, 240, 10))
 # Orphan: purple solid (no matching big image)
 Image.new("RGB", (100, 100), (120, 30, 180)).save(os.path.join(src, "orphan_small.png"), "PNG")
-# Unrelated big: monochrome gradient
-im = Image.new("RGB", (2000, 1500), (40, 40, 40))
+# Unrelated big: horizontal gradient (left-to-right) so dhash != orphan's all-zero hash
+im = Image.new("RGB", (2000, 1500))
 d = ImageDraw.Draw(im)
-for y in range(1500):
-    t = y / 1499
-    c = (int(40+t*100), int(40+t*100), int(40+t*100))
-    d.line([(0, y), (1999, y)], fill=c)
+for x in range(2000):
+    t = x / 1999
+    c = (int(40+t*180), int(40+t*40), int(220-t*180))
+    d.line([(x, 0), (x, 1499)], fill=c)
 im.save(os.path.join(src, "unrelated_big.jpg"), "JPEG", quality=88)
 PY
 }
