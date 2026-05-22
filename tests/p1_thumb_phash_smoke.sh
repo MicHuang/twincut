@@ -220,6 +220,47 @@ else
   ok "section 9: skipped (no pHash deps)"
 fi
 
+# ---------------------------------------------------------------------
+# Section 3: multiple suspects on same keeper share one group_id
+# ---------------------------------------------------------------------
+note "3. photo_b_thumb1 and photo_b_thumb2 share group_id"
+if $HAVE_PHASH_DEPS; then
+  rm -rf "$SRC"; mkdir -p "$SRC"; gen_fixtures
+  LOG3="$TMP/run3.log"
+  "$TWINCUT" --thumbnail-detect --dry-run --json-events \
+    --source "$SRC" --assume-yes >"$LOG3" 2>&1 || true
+  G1=$(grep '"path":"'"$SRC"'/photo_b_thumb1.jpg"' "$LOG3" | head -1 \
+       | sed -n 's/.*"group_id":"\([^"]*\)".*/\1/p')
+  G2=$(grep '"path":"'"$SRC"'/photo_b_thumb2.jpg"' "$LOG3" | head -1 \
+       | sed -n 's/.*"group_id":"\([^"]*\)".*/\1/p')
+  if [[ -n "$G1" && "$G1" == "$G2" ]]; then
+    ok "section 3: thumb1 and thumb2 share group_id ($G1)"
+  else
+    bad "section 3: group_ids differ or missing — thumb1=$G1 thumb2=$G2"
+  fi
+fi
+
+# ---------------------------------------------------------------------
+# Section 4: orphan suspect stays unmatched (no keeper, no group_id)
+# ---------------------------------------------------------------------
+note "4. orphan_small.png has empty keeper and group_id"
+if $HAVE_PHASH_DEPS; then
+  EV4=$(grep '"path":"'"$SRC"'/orphan_small.png"' "$LOG3" | head -1)
+  if [[ -z "$EV4" ]]; then
+    bad "section 4: no event for orphan_small.png"
+  else
+    echo "$EV4" | grep -q '"keeper":' \
+      && bad "section 4: orphan event unexpectedly has keeper field: $EV4" \
+      || ok "section 4: orphan event has no keeper field"
+    echo "$EV4" | grep -q '"group_id":' \
+      && bad "section 4: orphan event unexpectedly has group_id field: $EV4" \
+      || ok "section 4: orphan event has no group_id field"
+    echo "$EV4" | grep -qE '"reason":"l1_only_(thumb|maybe)"' \
+      && ok "section 4: orphan reason is l1_only_*" \
+      || bad "section 4: orphan reason wrong: $EV4"
+  fi
+fi
+
 printf '\n=========================================\n'
 printf 'PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))
