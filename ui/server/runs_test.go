@@ -1,6 +1,10 @@
 package server
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,5 +51,100 @@ func TestRunMode_UnknownModeIsPassthrough(t *testing.T) {
 	}
 	if view.ApplyURL == "" {
 		t.Error("ApplyURL is empty for unknown mode; expected safe fallback")
+	}
+}
+
+func newTestRunManager(t *testing.T) *RunManager {
+	t.Helper()
+	tmp := t.TempDir()
+	mgr, err := NewRunManager(tmp, "/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mgr
+}
+
+func TestStart_GeneratesIDWhenOptsIDEmpty(t *testing.T) {
+	mgr := newTestRunManager(t)
+	r, err := mgr.Start(StartOptions{
+		Mode: "self_check",
+		Args: []string{"--help"},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if r.ID == "" {
+		t.Fatal("Run.ID empty")
+	}
+	if !regexp.MustCompile(`^\d{8}T\d{6}Z-[a-z0-9]+$`).MatchString(r.ID) {
+		t.Errorf("Run.ID does not match expected shape: %q", r.ID)
+	}
+}
+
+func TestStart_RejectsMalformedCallerID(t *testing.T) {
+	mgr := newTestRunManager(t)
+	bad := []string{
+		"../etc/passwd",
+		"not-a-run-id",
+		"20260521T140000Z-",
+		"20260521T140000Z-UPPER",
+		"20260521T140000Z-abc/de",
+	}
+	for _, id := range bad {
+		_, err := mgr.Start(StartOptions{
+			ID:   id,
+			Mode: "self_check",
+			Args: []string{"--help"},
+		})
+		if err == nil {
+			t.Errorf("Start with malformed ID %q: expected error, got nil", id)
+		}
+	}
+}
+
+func TestStart_RejectsCollidingCallerID(t *testing.T) {
+	mgr := newTestRunManager(t)
+	id := "20260521T140000Z-stage85t5"
+
+	journalDir := filepath.Join(mgr.stateDir, "runs")
+	if err := os.MkdirAll(journalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	journalPath := filepath.Join(journalDir, id+".ndjson")
+	if err := os.WriteFile(journalPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := mgr.Start(StartOptions{
+		ID:   id,
+		Mode: "self_check",
+		Args: []string{"--help"},
+	})
+	if err == nil {
+		t.Fatal("Start with colliding ID: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error should mention collision; got %v", err)
+	}
+}
+
+func TestStart_AcceptsValidCallerID(t *testing.T) {
+	mgr := newTestRunManager(t)
+	id := "20260521T140000Z-stage85t5b"
+
+	r, err := mgr.Start(StartOptions{
+		ID:   id,
+		Mode: "self_check",
+		Args: []string{"--help"},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if r.ID != id {
+		t.Errorf("Run.ID: got %q want %q", r.ID, id)
+	}
+	journalPath := filepath.Join(mgr.stateDir, "runs", id+".ndjson")
+	if _, err := os.Stat(journalPath); err != nil {
+		t.Errorf("journal not created at expected path %q: %v", journalPath, err)
 	}
 }
