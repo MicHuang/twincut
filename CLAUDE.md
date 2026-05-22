@@ -11,7 +11,7 @@ The repo is tiny:
 - `bin/vid_eq.sh` — helper invoked by twincut for video equivalence checks (uses `ffprobe`).
 - `installers/install.sh` / `uninstall.sh` — symlink `bin/twincut.sh` → `~/.local/bin/twincut` and `bin/vid_eq.sh` → `~/.local/bin/vid_eq`.
 
-External runtime deps: `bash`, `ffprobe`/`ffmpeg`, standard coreutils, `md5`/`sha1` tooling.
+External runtime deps: `bash`, `ffprobe`/`ffmpeg`, standard coreutils, `md5`/`sha1` tooling. Optional for L1 perceptual-hash pairing (P1 wave 2): `python3 ≥ 3.8`, `Pillow ≥ 9.0`, `imagehash ≥ 4.3` — install via `pip3 install --user pillow imagehash`. Without them, L1 falls back to flat suspect-list behavior.
 
 ## Common commands
 
