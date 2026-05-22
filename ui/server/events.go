@@ -74,6 +74,23 @@ func ParseEvent(line []byte) (Event, error) {
 	}, nil
 }
 
+// EventEnvelope holds the common fields present on every NDJSON event.
+// Typed payload structs (RunStart, etc.) embed this so strict JSON decoding
+// succeeds on a full event line without "unknown field" errors.
+type EventEnvelope struct {
+	Type  EventType `json:"type"`
+	TS    int64     `json:"ts"`
+	RunID string    `json:"run_id"`
+}
+
+// RunStart is the typed payload of a "run_start" event. Twincut emits exactly
+// one per run, before any other event.
+type RunStart struct {
+	EventEnvelope
+	Mode   string `json:"mode"`
+	Source string `json:"source"`
+}
+
 // ThumbCandidate is the parsed payload of a "thumb_candidate" event emitted
 // by lib/thumb.sh during --dry-run --json-events. One event per candidate file.
 type ThumbCandidate struct {

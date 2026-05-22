@@ -84,6 +84,10 @@ LIB_DIR=""
 if   [[ -d "$SELF_DIR/../lib" ]]; then LIB_DIR="$(cd -- "$SELF_DIR/../lib" && pwd -P)"
 elif [[ -d "$SELF_DIR/lib"     ]]; then LIB_DIR="$(cd -- "$SELF_DIR/lib"     && pwd -P)"
 fi
+if [[ -n "$LIB_DIR" && -f "$LIB_DIR/events.sh" ]]; then
+  # shellcheck source=../lib/events.sh
+  source "$LIB_DIR/events.sh"
+fi
 THUMB_LIB_LOADED=false
 if [[ -n "$LIB_DIR" && -f "$LIB_DIR/thumb.sh" ]]; then
   # shellcheck source=../lib/thumb.sh
@@ -173,18 +177,6 @@ APPLY_LIST=""
 # JSON string escaper. Handles backslash, quote, control chars, newline, tab,
 # carriage return. Output is bare (no surrounding quotes) so callers can
 # compose object literals.
-json_escape(){
-  local s="${1-}"
-  s="${s//\\/\\\\}"
-  s="${s//\"/\\\"}"
-  s="${s//$'\n'/\\n}"
-  s="${s//$'\r'/\\r}"
-  s="${s//$'\t'/\\t}"
-  s="${s//$'\b'/\\b}"
-  s="${s//$'\f'/\\f}"
-  printf '%s' "$s"
-}
-
 # Emit a single NDJSON event line on stdout if --json-events is enabled.
 # Usage: emit_event TYPE [k=v ...]
 #   v starts with @ → raw JSON value (numbers, bools, nested literals)
