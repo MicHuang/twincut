@@ -67,6 +67,22 @@ Things that are non-obvious from skimming a single function:
 
 - **Similar-video output** lives under per-side subdirs: `_similar_video`, `_similar_video_backup`, `_similar_video_source`, with a CSV map `_similar_video_map.csv`.
 
+- **Stage 9 (`thumbnail_detect` only): Go-owned contract.** The web-UI
+  `--json-events` channel uses a single typed schema rooted in Go structs
+  (`ui/server/events.go`). bash emits via per-type helpers in
+  `lib/events.sh` (e.g. `emit_thumb_candidate`, `emit_action_move`);
+  7 legacy `emit_event` call sites remain in `bin/twincut.sh` for
+  cross-check / restore / similar-video flows (out of Stage 9 scope —
+  those workflows will migrate in a future stage). Apply input flows
+  from Go to bash as stdin JSON-lines (`ApplyCommand` records via
+  `--json-in`); no more `.thumb-confirm.tsv` round-trip. Drift between
+  Go and bash is caught by `ui/server/events_roundtrip_test.go`, which
+  decodes every fixture in `tests/fixtures/events/` with
+  `json.Decoder.DisallowUnknownFields`. New runtime dep: `jq` (used by
+  `--json-in` apply mode for stdin parsing). New smoke:
+  `tests/p1_stage9_smoke.sh` exercises the end-to-end scan→apply
+  pipeline via the typed contract.
+
 ## Agent operational notes
 
 These rules emerged from real session failures on this codebase. Follow them when working here.

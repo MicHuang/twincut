@@ -28,6 +28,8 @@ The Stage 8 design assumed L1 → review.csv was fine because it predated L2/L3 
 
 Recommended: **A**. Smallest blast radius, fixes the replay invariant.
 
+**Resolved in Stage 9** (feature/stage-9-go-owned-contract): web-UI path no longer writes any review/confirm artifact. Legacy CLI preview still writes `_review.csv` for backward compatibility.
+
 ### 2. Confirm TSV still drops `keeper`
 
 **Source**: codex BLOCKER #2 (corroborates gemini P1).
@@ -38,6 +40,8 @@ Recommended: **A**. Smallest blast radius, fixes the replay invariant.
 **Fix**: add a 7th column `keeper` to the TSV. `composeThumbnailConfirmTSV` reads `m.Keeper` (or looks up via `g.Members[0]` when role==keeper). `thumb_confirm_review` passes it to `qmove` as `matched`. Smoke test sections 9/9b/9c need an extra `\t<keeper>` column; 9b (legacy 5-column) is unaffected since it never had keeper.
 
 This pairs naturally with fix #1 — once L1 flows through NDJSON, the apply path can build the TSV directly from journaled events with keeper attached, instead of round-tripping through `_review.csv`.
+
+**Resolved in Stage 8.5 PR #7 (keeper plumbed) + Stage 9 (TSV path deleted entirely).**
 
 ### 3. TOCTOU race between Go's CSV write+rename and bash child opening the file
 
@@ -52,6 +56,8 @@ If the rename completes before bash opens the file under its original path, bash
 - **C (band-aid)**: file-lock the TSV during write, retry rename. Doesn't fix the root issue and adds complexity.
 
 Recommended: **A**.
+
+**Resolved in Stage 8.5 (caller-provided run ID) + Stage 9 (no TSV write at all — applied via stdin pipe).**
 
 ### 4. Trust boundary uses preview_run_id as a capability without a token
 
@@ -76,6 +82,8 @@ Subsumed by fix option 1.A — if L1 flows through NDJSON in dry-run, the file i
 
 These are real but not blockers. Fix when convenient.
 
+**Resolved in Stage 9** — `.thumb-confirm.tsv` no longer written by web-UI apply path.
+
 ## Strategic question: Go-owned or bash-owned?
 
 Codex's deepest observation was that the current architecture has Go reading mutable bash-side state while bash reads structured Go-written files. "Worst of both."
@@ -89,6 +97,8 @@ Two ways out, neither is in scope for this branch:
 The current hybrid will keep producing this class of bug (CSV-parser drift, flag-name drift, file-format drift) every time a new workflow is added. P1 wave 2 (perceptual hash) and Stage 9 (multi-pass sweeps) will both want new event kinds + new apply formats. Without a typed shared schema, the drift keeps compounding.
 
 **Recommended next step (separate plan)**: write a Stage 8.5 design spec that picks one side, defines a typed contract for the apply operation (single record per move with path, keeper, decision, evidence, dims, run_id), and migrates `thumbnail_detect` to it as the proving ground. If it sticks, retrofit self-check and cross-check. If it doesn't, we learn cheaply.
+
+**Resolved in Stage 9**: chose Go-owned per option A. `thumbnail_detect` migrated as proving ground; other workflows pending.
 
 ## Decision
 
