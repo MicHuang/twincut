@@ -58,14 +58,15 @@ type ResultGroup struct {
 
 // ResultMember is one file in a thumbnail-detect cluster.
 type ResultMember struct {
-	Path      string // absolute path
-	Role      string // "keeper" | "thumbnail" | "suspect"
-	Decision  string // "thumb_l2_exif" | "thumb_l3_embed" | "thumb_confirmed"
-	Reason    string // "l1_only_thumb" | "l1_only_maybe" (L1 suspects only)
-	Width     int
-	Height    int
-	SizeBytes int64
-	Keeper    string // absolute path of the kept original (L2/L3); empty for L1 (no paired keeper)
+	Path          string // absolute path
+	Role          string // "keeper" | "thumbnail" | "suspect"
+	Decision      string // "thumb_l2_exif" | "thumb_l3_embed" | "thumb_confirmed"
+	Reason        string // "l1_only_thumb" | "l1_only_maybe" (L1 suspects only); "l1_phash_match" (L1 matched)
+	Width         int
+	Height        int
+	SizeBytes     int64
+	Keeper        string // absolute path of the kept original (L2/L3 always; L1 matched: P1 wave 2); empty for L1 unmatched
+	PhashDistance int    // L1 matched only: Hamming distance to keeper
 }
 
 // ResultFile is a single file inside a group (either the keeper or a
@@ -200,7 +201,7 @@ func BuildResults(run *Run) (ResultsView, error) {
 			// Stage 8.5 Fix 1: L1 suspects are flat (no paired keeper). They aggregate
 			// into a single synthetic "l1-suspects" group; the apply path emits them
 			// with decision=thumb_confirmed (the apply-TSV allow-listed value).
-			if tc.Decision == "thumb_l1_review" {
+			if tc.Decision == "thumb_l1_review" && tc.GroupID == "" {
 				l1Idx := -1
 				for gi := range view.Groups {
 					if view.Groups[gi].StringGroupID == "l1-suspects" {
@@ -256,13 +257,15 @@ func BuildResults(run *Run) (ResultsView, error) {
 				}
 			}
 			view.Groups[groupIdx].Members = append(view.Groups[groupIdx].Members, ResultMember{
-				Path:      tc.Path,
-				Role:      "thumbnail",
-				Decision:  tc.Decision,
-				Keeper:    tc.Keeper,
-				Width:     tc.Width,
-				Height:    tc.Height,
-				SizeBytes: tc.SizeBytes,
+				Path:          tc.Path,
+				Role:          "thumbnail",
+				Decision:      tc.Decision,
+				Reason:        tc.Reason,
+				Keeper:        tc.Keeper,
+				Width:         tc.Width,
+				Height:        tc.Height,
+				SizeBytes:     tc.SizeBytes,
+				PhashDistance: tc.PhashDistance,
 			})
 		case EventRunEnd:
 			var p struct {
