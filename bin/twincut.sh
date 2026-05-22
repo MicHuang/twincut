@@ -163,9 +163,11 @@ THUMB_PHASH_HASH_SIZE="${THUMB_PHASH_HASH_SIZE:-8}"
 
 # Mode flag
 DO_THUMB=false
+THUMB_DETECT_APPLY=false   # --thumbnail-detect-apply: apply mode (no scan)
 
 # Web UI integration: NDJSON event stream + per-file exclusion
 JSON_EVENTS=false
+JSON_IN=false              # --json-in: read ApplyCommand JSON-lines from stdin
 EXCLUDE_PATHS=()
 
 # Apply-list mode: when set, twincut skips scan/match and just executes
@@ -354,6 +356,58 @@ process_apply_list(){
     fi
   done < "$APPLY_LIST"
   TOTAL=$_row
+}
+
+# process_apply_list_jsonin — apply mode via --json-in.
+# Reads ApplyCommand JSON-lines from stdin via jq, validates each command,
+# and dispatches to qmove. Emits emit_run_end when done.
+# Allowed ApplyCommand types: apply_move, apply_skip.
+# Allowed decisions for apply_move: thumb_l1_review, thumb_l2_exif,
+#   thumb_l3_embed, thumb_confirmed, keep_user_override.
+process_apply_list_jsonin(){
+  if ! command -v jq >/dev/null 2>&1; then
+    emit_error --code usage_error --detail "jq required for --json-in mode"
+    die "jq required for --json-in mode"
+  fi
+  local total=0 moved=0 skipped=0
+  local _type src dst_dir keeper decision
+  while IFS=$'\t' read -r _type src dst_dir keeper decision; do
+    total=$((total+1))
+    case "$_type" in
+      apply_move)
+        case "$decision" in
+          thumb_l1_review|thumb_l2_exif|thumb_l3_embed|thumb_confirmed|keep_user_override) ;;
+          *)
+            emit_error --code apply_failed --path "$src" \
+              --detail "unknown decision '$decision'"
+            skipped=$((skipped+1)); continue ;;
+        esac
+        if [[ ! -e "$src" ]]; then
+          emit_warn --code missing_file --path "$src" \
+            --detail "apply src not on disk"
+          skipped=$((skipped+1)); continue
+        fi
+        mkdir -p "$dst_dir" || { emit_warn --code io_error --path "$dst_dir" \
+          --detail "mkdir failed"; skipped=$((skipped+1)); continue; }
+        if qmove "$src" "$dst_dir" "$keeper" "" "$decision"; then
+          moved=$((moved+1))
+        else
+          skipped=$((skipped+1))
+        fi
+        ;;
+      apply_skip)
+        emit_action_skip --src "$src" --decision "$decision" --reason user_override
+        skipped=$((skipped+1))
+        ;;
+      *)
+        emit_error --code apply_failed --path "$src" \
+          --detail "unknown ApplyCommand type '$_type'"
+        skipped=$((skipped+1))
+        ;;
+    esac
+  done < <(jq -rc 'select(.type == "apply_move" or .type == "apply_skip") |
+                   [.type, (.src // ""), (.dst_dir // ""), (.keeper // ""), (.decision // "")] | @tsv')
+  emit_run_end --status succeeded --total "$total" --applied "$moved" --skipped "$skipped"
 }
 
 # qmove SRC DEST_DIR MATCHED HASH DECISION
@@ -872,8 +926,11 @@ while [[ $# -gt 0 ]]; do
     --exit-code-on-dupes) EXIT_CODE_ON_DUPES=true; shift;;
 
     --json-events) JSON_EVENTS=true; shift;;
+    --json-in)     JSON_IN=true; shift;;
     --exclude-path) EXCLUDE_PATHS+=("${2:-}"); shift 2;;
     --apply-list)  APPLY_LIST="${2:-}"; shift 2;;
+
+    --thumbnail-detect-apply) THUMB_DETECT_APPLY=true; shift;;
 
     --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
     --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
@@ -902,6 +959,16 @@ if $JSON_EVENTS; then
   RUN_ID="${TWINCUT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 fi
 
+# --json-in validation: only valid with --thumbnail-detect-apply and --json-events.
+if $JSON_IN; then
+  if ! $THUMB_DETECT_APPLY; then
+    die "--json-in only valid with --thumbnail-detect-apply"
+  fi
+  if ! $JSON_EVENTS; then
+    die "--json-in requires --json-events"
+  fi
+fi
+
 # Apply symlink policy
 if $FOLLOW_SYMLINKS; then FIND_FOLLOW="-L"; else FIND_FOLLOW=""; fi
 
@@ -909,6 +976,14 @@ if $FOLLOW_SYMLINKS; then FIND_FOLLOW="-L"; else FIND_FOLLOW=""; fi
 if $RESTORE_MODE; then
   [[ -n "$RESTORE_MANIFEST" ]] || die "--restore requires a manifest path"
   do_restore "$RESTORE_MANIFEST"
+fi
+
+# --thumbnail-detect-apply --json-in: read ApplyCommand JSON-lines from stdin.
+if $THUMB_DETECT_APPLY && $JSON_IN; then
+  emit_run_start --mode thumbnail_detect_apply --source "${SOURCE_DIR:-}"
+  init_manifest
+  process_apply_list_jsonin
+  exit 0
 fi
 
 # --thumb-confirm short-circuits as well (read review.csv → qmove rows).
