@@ -7,8 +7,8 @@
 package server
 
 import (
+	"bytes"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -139,32 +139,23 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tsvData, err := composeThumbnailConfirmTSV(view.Groups, r.Form)
-	if err != nil {
-		http.Error(w, "compose confirm TSV: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
+	dstDir := filepath.Join(source, "_QUARANTINE", "_thumbs")
+	cmds := composeApplyCommands(view.Groups, dstDir)
 
-	// Pre-generate the run ID so we can write the TSV at a stable path and
-	// pass that same ID to RunManager.Start. This avoids the TOCTOU race
-	// the previous (Start-generates-ID-then-rename) approach exposed.
 	applyRunID := newRunID()
-	runsDir := filepath.Join(s.opts.StateDir, "runs")
-	if err := os.MkdirAll(runsDir, 0o755); err != nil {
-		http.Error(w, "mkdir runs: "+err.Error(), http.StatusInternalServerError)
-		return
+	args := []string{
+		"--thumbnail-detect-apply",
+		"--json-events",
+		"--json-in",
+		"--source", source,
 	}
-	tsvPath := filepath.Join(runsDir, applyRunID+".thumb-confirm.tsv")
-	if err := os.WriteFile(tsvPath, tsvData, 0o644); err != nil {
-		http.Error(w, "write confirm TSV: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	thumbDir := filepath.Join(source, "_thumbnails")
-	args := []string{"--thumb-confirm", tsvPath, "--assume-yes", "--json-events", "--thumb-dir", thumbDir, "--source", source}
-	run, err := s.runs.Start(StartOptions{ID: applyRunID, Mode: "thumbnail_detect_apply", Args: args})
+	run, err := s.runs.Start(StartOptions{
+		ID:    applyRunID,
+		Mode:  "thumbnail_detect_apply",
+		Args:  args,
+		Stdin: bytes.NewReader(cmds),
+	})
 	if err != nil {
-		_ = os.Remove(tsvPath)  // best-effort cleanup; TSV is orphaned if Start fails
 		http.Error(w, "start run: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

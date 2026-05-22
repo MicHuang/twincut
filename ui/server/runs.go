@@ -196,6 +196,11 @@ type RunManager struct {
 
 	mu   sync.RWMutex
 	runs map[string]*Run
+
+	// SpawnHook, if non-nil, is invoked with each StartOptions before exec.
+	// Used by tests to assert argv/stdin without spawning a real process.
+	// When set, Start() returns a synthetic *Run without running the command.
+	SpawnHook func(StartOptions)
 }
 
 // NewRunManager constructs a manager rooted at stateDir. twincutPath is the
@@ -255,6 +260,9 @@ type StartOptions struct {
 	Args []string
 	// Env are extra environment variables appended to the inherited env.
 	Env []string
+	// Stdin is an optional reader piped to the spawned process's stdin.
+	// Used by Stage 9's apply mode to stream ApplyCommand JSON-lines.
+	Stdin io.Reader
 }
 
 // Start spawns a new twincut.sh run and returns the Run. The returned Run is
@@ -281,6 +289,26 @@ func (m *RunManager) Start(opts StartOptions) (*Run, error) {
 		return nil, fmt.Errorf("open journal %s: %w", journalPath, err)
 	}
 
+	// SpawnHook seam: tests can intercept before any process is spawned.
+	if m.SpawnHook != nil {
+		m.SpawnHook(opts)
+		r := &Run{
+			ID:        id,
+			Mode:      opts.Mode,
+			Args:      append([]string(nil), opts.Args...),
+			StartedAt: time.Now(),
+			status:    RunStatusSucceeded,
+			done:      make(chan struct{}),
+			journal:   journal,
+		}
+		close(r.done)
+		_ = journal.Close()
+		m.mu.Lock()
+		m.runs[id] = r
+		m.mu.Unlock()
+		return r, nil
+	}
+
 	args := append([]string{"--json-events"}, opts.Args...)
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "bash", append([]string{m.twincutPath}, args...)...)
@@ -288,6 +316,9 @@ func (m *RunManager) Start(opts StartOptions) (*Run, error) {
 	// Put the child in its own process group so Cancel can SIGTERM the
 	// whole tree (twincut.sh + ffprobe etc.).
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if opts.Stdin != nil {
+		cmd.Stdin = opts.Stdin
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

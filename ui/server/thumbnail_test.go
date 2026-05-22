@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -160,7 +161,7 @@ func TestHandleThumbnailsResults_BuildsView(t *testing.T) {
 	}
 }
 
-func TestHandleThumbnailsApply_WritesTSV(t *testing.T) {
+func TestHandleThumbnailsApply_UsesJsonIn(t *testing.T) {
 	srv := newThumbTestServer(t)
 	// srcPath must be under HOME so the allowlist check in Apply passes.
 	srcPath := os.Getenv("HOME")
@@ -173,6 +174,10 @@ func TestHandleThumbnailsApply_WritesTSV(t *testing.T) {
 	// Set Args so extractArgValue("--source") finds the path.
 	r.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run", "--json-events"}
 	storeRun(srv.runs, "prev-apply", r)
+
+	// Intercept the spawn to capture opts without running a real process.
+	var capturedOpts StartOptions
+	srv.runs.SpawnHook = func(opts StartOptions) { capturedOpts = opts }
 
 	form := url.Values{
 		"preview_run_id":       {"prev-apply"},
@@ -187,30 +192,51 @@ func TestHandleThumbnailsApply_WritesTSV(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", resp.StatusCode, w.Body.String())
 	}
+
+	// Assert new argv shape: --json-in present, --thumb-confirm and --thumb-dir absent.
+	argsStr := strings.Join(capturedOpts.Args, " ")
+	if !strings.Contains(argsStr, "--json-in") {
+		t.Errorf("args missing --json-in; full args: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, "--thumbnail-detect-apply") {
+		t.Errorf("args missing --thumbnail-detect-apply; full args: %s", argsStr)
+	}
+	if strings.Contains(argsStr, "--thumb-confirm") {
+		t.Errorf("args still contain --thumb-confirm (should be removed); full args: %s", argsStr)
+	}
+	if strings.Contains(argsStr, "--thumb-dir") {
+		t.Errorf("args still contain --thumb-dir (should be removed); full args: %s", argsStr)
+	}
+
+	// Assert stdin carries the expected JSON-lines for the one thumbnail member.
+	if capturedOpts.Stdin == nil {
+		t.Fatal("Stdin is nil; expected JSON-lines stream")
+	}
+	stdinBytes, err := io.ReadAll(capturedOpts.Stdin)
+	if err != nil {
+		t.Fatalf("read Stdin: %v", err)
+	}
+	stdinStr := string(stdinBytes)
+	if !strings.Contains(stdinStr, "apply_move") {
+		t.Errorf("stdin missing apply_move; got: %s", stdinStr)
+	}
+	if !strings.Contains(stdinStr, "small.jpg") {
+		t.Errorf("stdin missing small.jpg; got: %s", stdinStr)
+	}
+	if !strings.Contains(stdinStr, "thumb_l2_exif") {
+		t.Errorf("stdin missing thumb_l2_exif; got: %s", stdinStr)
+	}
+
+	// No .thumb-confirm.tsv should be written.
 	runsDir := filepath.Join(srv.opts.StateDir, "runs")
 	entries, err := os.ReadDir(runsDir)
 	if err != nil {
 		t.Fatalf("ReadDir %s: %v", runsDir, err)
 	}
-	var tsvPath string
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), ".thumb-confirm.tsv") {
-			tsvPath = filepath.Join(runsDir, e.Name())
-			break
+			t.Errorf("unexpected .thumb-confirm.tsv file found: %s", e.Name())
 		}
-	}
-	if tsvPath == "" {
-		t.Fatal("no .thumb-confirm.tsv file found under StateDir/runs/")
-	}
-	data, err := os.ReadFile(tsvPath)
-	if err != nil {
-		t.Fatalf("read tsv: %v", err)
-	}
-	if !strings.Contains(string(data), "small.jpg") {
-		t.Errorf("TSV does not contain small.jpg:\n%s", data)
-	}
-	if !strings.Contains(string(data), "thumb_l2_exif") {
-		t.Errorf("TSV does not contain thumb_l2_exif decision:\n%s", data)
 	}
 }
 
@@ -415,7 +441,7 @@ func TestHandleThumbnailsPreview_PassesThumbPrefixedFlags(t *testing.T) {
 	}
 }
 
-func TestHandleThumbnailsApply_PassesThumbDirAndSource(t *testing.T) {
+func TestHandleThumbnailsApply_PassesJsonInAndSource(t *testing.T) {
 	srv := newThumbTestServer(t)
 	srcPath := os.Getenv("HOME")
 	r := runFromEvents(t, []string{
@@ -426,6 +452,9 @@ func TestHandleThumbnailsApply_PassesThumbDirAndSource(t *testing.T) {
 	r.Mode = "thumbnail_detect_preview"
 	r.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run", "--json-events"}
 	storeRun(srv.runs, "prev-apply2", r)
+
+	var capturedOpts StartOptions
+	srv.runs.SpawnHook = func(opts StartOptions) { capturedOpts = opts }
 
 	form := url.Values{
 		"preview_run_id":        {"prev-apply2"},
@@ -440,49 +469,37 @@ func TestHandleThumbnailsApply_PassesThumbDirAndSource(t *testing.T) {
 		t.Fatalf("status = %d; body: %s", w.Result().StatusCode, w.Body.String())
 	}
 
-	body := w.Body.String()
-	if !strings.Contains(body, "data-run-id") {
-		t.Fatal("body missing data-run-id")
+	argsStr := strings.Join(capturedOpts.Args, " ")
+
+	// New shape: --json-in replaces --thumb-dir / --thumb-confirm.
+	if !strings.Contains(argsStr, "--json-in") {
+		t.Errorf("args missing --json-in; full args: %s", argsStr)
+	}
+	if strings.Contains(argsStr, "--thumb-dir") {
+		t.Errorf("args still contain --thumb-dir (should be removed); full args: %s", argsStr)
+	}
+	if strings.Contains(argsStr, "--thumb-confirm") {
+		t.Errorf("args still contain --thumb-confirm (should be removed); full args: %s", argsStr)
 	}
 
-	// Extract the apply run ID
-	var applyRunID string
-	for _, line := range strings.Split(body, "\n") {
-		if idx := strings.Index(line, "data-run-id="); idx >= 0 {
-			start := idx + len("data-run-id=\"")
-			end := strings.Index(line[start:], "\"")
-			if end > 0 {
-				applyRunID = line[start : start+end]
-				break
-			}
-		}
-	}
-	if applyRunID == "" {
-		t.Fatal("could not extract apply run ID")
-	}
-
-	applyRun := srv.runs.Get(applyRunID)
-	if applyRun == nil {
-		t.Fatalf("apply run not found: %s", applyRunID)
-	}
-
-	snap := applyRun.Snapshot()
-	argsStr := strings.Join(snap.Args, " ")
-
-	// Check for --thumb-dir with _thumbnails in path
-	if !strings.Contains(argsStr, "--thumb-dir") {
-		t.Errorf("args missing --thumb-dir; full args: %s", argsStr)
-	}
-	if !strings.Contains(argsStr, "/_thumbnails") {
-		t.Errorf("args missing /_thumbnails path; full args: %s", argsStr)
-	}
-
-	// Check for --source
+	// --source must still be present.
 	if !strings.Contains(argsStr, "--source") {
 		t.Errorf("args missing --source; full args: %s", argsStr)
 	}
 	if !strings.Contains(argsStr, srcPath) {
 		t.Errorf("args missing source path %q; full args: %s", srcPath, argsStr)
+	}
+
+	// dstDir in stdin should reference _QUARANTINE/_thumbs, not _thumbnails.
+	if capturedOpts.Stdin == nil {
+		t.Fatal("Stdin is nil; expected JSON-lines stream")
+	}
+	stdinBytes, err := io.ReadAll(capturedOpts.Stdin)
+	if err != nil {
+		t.Fatalf("read Stdin: %v", err)
+	}
+	if !strings.Contains(string(stdinBytes), "_QUARANTINE/_thumbs") {
+		t.Errorf("stdin dst_dir missing _QUARANTINE/_thumbs; got: %s", string(stdinBytes))
 	}
 }
 
@@ -583,7 +600,9 @@ func TestHandleThumbnailsApply_RejectsFailedRun(t *testing.T) {
 	}
 }
 
-func TestHandleThumbnailsApply_NoRenameRunIDMatchesAppliedID(t *testing.T) {
+func TestHandleThumbnailsApply_NoTSVWritten(t *testing.T) {
+	// Stage 9 T8: apply no longer writes a .thumb-confirm.tsv. Commands are
+	// streamed via stdin (--json-in). Verify zero TSV files are written.
 	srv := newThumbTestServer(t)
 	srcPath := os.Getenv("HOME")
 
@@ -598,6 +617,8 @@ func TestHandleThumbnailsApply_NoRenameRunIDMatchesAppliedID(t *testing.T) {
 	previewRun.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run", "--json-events"}
 	storeRun(srv.runs, previewID, previewRun)
 
+	srv.runs.SpawnHook = func(opts StartOptions) {} // intercept so no real bash is spawned
+
 	form := url.Values{}
 	form.Set("preview_run_id", previewID)
 	form.Set("group:l2:fake.member1", "on")
@@ -611,41 +632,15 @@ func TestHandleThumbnailsApply_NoRenameRunIDMatchesAppliedID(t *testing.T) {
 		t.Fatalf("apply handler: status %d, body %s", rec.Code, rec.Body.String())
 	}
 
-	// Find the apply run by checking run snapshots for the new apply run.
-	var applyRunID string
-	for _, snap := range srv.runs.List() {
-		if snap.ID != previewID && snap.Mode == "thumbnail_detect_apply" {
-			applyRunID = snap.ID
-			break
-		}
-	}
-	if applyRunID == "" {
-		t.Fatal("apply run not found in run manager")
-	}
-
-	// The critical assertion: TSV must exist at <stateDir>/runs/<applyRunID>.thumb-confirm.tsv
-	// Pre-fix: applyRunID is generated, TSV written there, then Start() generates a *different* ID,
-	// and the rename block moves the TSV. So TSV ends up at run.ID.thumb-confirm.tsv, not applyRunID.
-	// Post-fix: we pass ID: applyRunID to Start, guaranteeing run.ID == applyRunID (no rename).
-	// The rename block is deleted, so TSV stays at the original path.
-	tsvPath := filepath.Join(srv.opts.StateDir, "runs", applyRunID+".thumb-confirm.tsv")
-	if _, err := os.Stat(tsvPath); err != nil {
-		t.Errorf("TSV not at expected path %q: %v", tsvPath, err)
-	}
-
-	// Also verify no other .thumb-confirm.tsv exists (i.e., no rename happened).
+	// Verify no .thumb-confirm.tsv files exist under stateDir/runs/.
 	runsDir := filepath.Join(srv.opts.StateDir, "runs")
 	entries, err := os.ReadDir(runsDir)
 	if err != nil {
 		t.Fatalf("ReadDir runs: %v", err)
 	}
-	var tsvCount int
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), ".thumb-confirm.tsv") {
-			tsvCount++
+			t.Errorf("unexpected .thumb-confirm.tsv written: %s (Stage 9 T8: TSV replaced by --json-in stdin)", e.Name())
 		}
-	}
-	if tsvCount != 1 {
-		t.Errorf("expected exactly 1 .thumb-confirm.tsv file, found %d (rename may have occurred)", tsvCount)
 	}
 }
