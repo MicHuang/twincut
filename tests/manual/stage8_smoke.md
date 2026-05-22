@@ -89,3 +89,54 @@ ls tests/fixtures/thumbnails/*.jpg | wc -l   # should be 10 again
 - L3 requires exiftool to embed a byte-compatible thumbnail in `l3_big.jpg`. If the embedded thumbnail hash does not match `l3_small.jpg` (JPEG re-encoding artifact), no L3 cluster appears. Not a bug.
 - L2 cluster requires exiftool for EXIF stamping. If exiftool is absent, the fixture produces no L2 cluster.
 - The `--maybe-max-edge` and `--require-exif-match` CLI flags may not yet be implemented in `bin/twincut.sh`; if unrecognized, the preview run fails with a usage error. Implement or remove the flags from the form accordingly.
+
+## Stage 8.5 regression cases
+
+### Replay regression (BLOCKER #1)
+
+This test catches the source-scoped `_review.csv` re-emerging or any
+similar leak that lets the apply view drift from the preview snapshot.
+
+1. In a scratch source dir, drop ~6 small images (some look like
+   thumbnails — under 512px on the long edge — others look like
+   half-size dupes between 512 and 1024px).
+2. Open the Web UI, hit **Thumbnails**, pick the scratch source dir,
+   leave thresholds at default, **Preview**. Note the L1 suspect set.
+   Copy the `preview_run_id` from the URL (or page footer if shown).
+3. Without leaving the preview page, change `--thumb-max-edge` to a
+   much smaller value (e.g. 64) and **Preview again**. The L1 set
+   should now be empty or very different (fewer files qualify as
+   "thumbnail-sized").
+4. Navigate back to the FIRST preview by URL (`/runs/<preview_run_id>`
+   or via the History tab). Confirm L1 group shows the **original**
+   suspect set.
+5. Check the L1 boxes you want to quarantine, **Apply**.
+6. After apply completes, open the manifest TSV and the quarantine
+   dir. Confirm the moved files match what you selected in the FIRST
+   preview, NOT the second preview's (smaller) set.
+
+If files from the SECOND preview's threshold show up in the
+quarantine, the source-of-truth has drifted again — re-investigate
+whether `_review.csv` is being written under `--json-events` or a
+similar source-disk state has crept back into BuildResults.
+
+### Manifest keeper validation (BLOCKER #2)
+
+This test catches a regression where the apply TSV's keeper column
+loses its hydration (Go side) or bash's `qmove` stops receiving it.
+
+1. Set up a scratch source dir with at least one L2 hit (full-size
+   image + EXIF-stripped thumbnail-size sibling — typically what
+   `iPhoto` exports + a generated `convert -strip` thumbnail).
+2. Preview, confirm L2 group shows up with both the keeper and the
+   thumbnail.
+3. Check the thumbnail in the L2 group, **Apply**.
+4. Open the manifest TSV at the path shown in the apply result page.
+5. Locate the row for the moved thumbnail. Verify the **matched**
+   column contains the absolute path to the L2 keeper file. If empty,
+   the keeper-hydration chain broke — check that:
+   - `thumb_candidate` events in the preview run journal contain
+     `keeper=<path>`,
+   - `ResultMember.Keeper` is populated when BuildResults runs,
+   - `composeThumbnailConfirmTSV` writes the 7th column,
+   - `thumb_confirm_review` reads `$7` and passes it to `qmove`.
