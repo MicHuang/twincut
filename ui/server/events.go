@@ -183,6 +183,22 @@ func UnmarshalThumbCandidate(ev Event, tc *ThumbCandidate) error {
 	return nil
 }
 
+// ApplyCommand is one NDJSON line emitted by composeApplyCommands and consumed
+// by twincut.sh --thumbnail-detect-apply --json-in. Each line tells bash to
+// move one file to a quarantine subdir (apply_move) or leave it in place
+// (apply_skip).
+//
+// Field declaration order matches the desired JSON output order (Go's
+// encoding/json emits fields in declaration order). DstDir and Keeper use
+// omitempty so apply_skip lines are compact.
+type ApplyCommand struct {
+	Type     string `json:"type"`
+	Src      string `json:"src"`
+	DstDir   string `json:"dst_dir,omitempty"`
+	Keeper   string `json:"keeper,omitempty"`
+	Decision string `json:"decision"`
+}
+
 // IsTerminal reports whether the event type ends a run.
 func (e Event) IsTerminal() bool {
 	return e.Type == EventRunEnd || e.Type == EventError

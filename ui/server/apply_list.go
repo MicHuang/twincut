@@ -14,6 +14,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -139,6 +140,45 @@ func writeApplyList(stateDir string, rows [][]string) (string, error) {
 		}
 	}
 	return f.Name(), nil
+}
+
+// composeApplyCommands converts thumbnail-detect ResultGroups into an NDJSON
+// byte stream consumed by twincut.sh --thumbnail-detect-apply --json-in.
+// One ApplyCommand line is emitted per non-keeper member:
+//   - Decision has prefix "keep_" → apply_skip (file stays in place).
+//   - Otherwise → apply_move (file is moved to dstDir, keeper recorded).
+//
+// Role=="keeper" members are always skipped — they represent the original file
+// being kept and are not acted on by the apply step.
+func composeApplyCommands(groups []ResultGroup, dstDir string) []byte {
+	var buf bytes.Buffer
+	for _, g := range groups {
+		for _, m := range g.Members {
+			if m.Role == "keeper" {
+				continue
+			}
+			var cmd ApplyCommand
+			if strings.HasPrefix(m.Decision, "keep_") {
+				cmd = ApplyCommand{
+					Type:     "apply_skip",
+					Src:      m.Path,
+					Decision: m.Decision,
+				}
+			} else {
+				cmd = ApplyCommand{
+					Type:     "apply_move",
+					Src:      m.Path,
+					DstDir:   dstDir,
+					Keeper:   m.Keeper,
+					Decision: m.Decision,
+				}
+			}
+			line, _ := json.Marshal(cmd)
+			buf.Write(line)
+			buf.WriteByte('\n')
+		}
+	}
+	return buf.Bytes()
 }
 
 // composeThumbnailConfirmTSV walks thumbnail ResultGroups and the apply form

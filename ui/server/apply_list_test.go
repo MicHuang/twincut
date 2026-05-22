@@ -445,3 +445,29 @@ func TestComposeThumbnailConfirmTSV_RejectsTabInKeeper(t *testing.T) {
 		t.Fatal("expected error for tab-in-keeper, got nil")
 	}
 }
+
+func TestComposeApplyCommands_ThumbnailDetect(t *testing.T) {
+	// Build a ResultGroup with three members: two to move, one to skip.
+	// ResultMember has no Action field — skip is indicated by Decision having
+	// prefix "keep_". Role "keeper" members are excluded from the apply stream.
+	groups := []ResultGroup{
+		{
+			StringGroupID: "exifsha1",
+			Members: []ResultMember{
+				{Path: "/img/a.heic", Role: "keeper", Decision: ""},
+				{Path: "/img/a.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Keeper: "/img/a.heic"},
+				{Path: "/img/b.jpg", Role: "thumbnail", Decision: "thumb_l1_review", Keeper: "/img/b.heic", PhashDistance: 3},
+				{Path: "/img/c.jpg", Role: "suspect", Decision: "keep_user_override"},
+			},
+		},
+	}
+	dstDir := "/img/_QUARANTINE/_thumbs"
+	got := composeApplyCommands(groups, dstDir)
+	want := "" +
+		`{"type":"apply_move","src":"/img/a.jpg","dst_dir":"/img/_QUARANTINE/_thumbs","keeper":"/img/a.heic","decision":"thumb_l2_exif"}` + "\n" +
+		`{"type":"apply_move","src":"/img/b.jpg","dst_dir":"/img/_QUARANTINE/_thumbs","keeper":"/img/b.heic","decision":"thumb_l1_review"}` + "\n" +
+		`{"type":"apply_skip","src":"/img/c.jpg","decision":"keep_user_override"}` + "\n"
+	if string(got) != want {
+		t.Errorf("mismatch\n got=%q\nwant=%q", got, want)
+	}
+}
