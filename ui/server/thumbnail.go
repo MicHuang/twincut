@@ -163,19 +163,10 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 
 	thumbDir := filepath.Join(source, "_thumbnails")
 	args := []string{"--thumb-confirm", tsvPath, "--assume-yes", "--json-events", "--thumb-dir", thumbDir, "--source", source}
-	run, err := s.runs.Start(StartOptions{Mode: "thumbnail_detect_apply", Args: args})
+	run, err := s.runs.Start(StartOptions{ID: applyRunID, Mode: "thumbnail_detect_apply", Args: args})
 	if err != nil {
 		http.Error(w, "start run: "+err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	// If the run manager assigned a different ID, rename the TSV to match.
-	if run.ID != applyRunID {
-		newTSVPath := filepath.Join(runsDir, run.ID+".thumb-confirm.tsv")
-		if renameErr := os.Rename(tsvPath, newTSVPath); renameErr != nil {
-			// Non-fatal: log but continue — TSV still exists under applyRunID name.
-			_ = renameErr
-		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

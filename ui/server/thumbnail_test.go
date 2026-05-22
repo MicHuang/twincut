@@ -582,3 +582,70 @@ func TestHandleThumbnailsApply_RejectsFailedRun(t *testing.T) {
 		t.Errorf("body missing 'did not succeed'; got: %s", body)
 	}
 }
+
+func TestHandleThumbnailsApply_NoRenameRunIDMatchesAppliedID(t *testing.T) {
+	srv := newThumbTestServer(t)
+	srcPath := os.Getenv("HOME")
+
+	previewID := "20260521T140000Z-stage85t6prev"
+	previewRun := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"` + previewID + `","mode":"thumbnail_detect_preview","source":"` + srcPath + `"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"` + previewID + `","decision":"thumb_l2_exif","path":"` + srcPath + `/keeper.jpg","keeper":"` + srcPath + `/keeper.jpg","group_id":"l2:fake","width":400,"height":300,"size_bytes":8192}`,
+		`{"type":"thumb_candidate","ts":3,"run_id":"` + previewID + `","decision":"thumb_l2_exif","path":"` + srcPath + `/thumb.jpg","keeper":"` + srcPath + `/keeper.jpg","group_id":"l2:fake","width":200,"height":150,"size_bytes":4096}`,
+		`{"type":"run_end","ts":4,"run_id":"` + previewID + `","total":2,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	previewRun.Mode = "thumbnail_detect_preview"
+	previewRun.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run", "--json-events"}
+	storeRun(srv.runs, previewID, previewRun)
+
+	form := url.Values{}
+	form.Set("preview_run_id", previewID)
+	form.Set("group:l2:fake.member1", "on")
+
+	req := httptest.NewRequest("POST", "/api/thumbnails/apply", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.handleThumbnailsApply(rec, req)
+
+	if rec.Code/100 != 2 && rec.Code/100 != 3 {
+		t.Fatalf("apply handler: status %d, body %s", rec.Code, rec.Body.String())
+	}
+
+	// Find the apply run by checking run snapshots for the new apply run.
+	var applyRunID string
+	for _, snap := range srv.runs.List() {
+		if snap.ID != previewID && snap.Mode == "thumbnail_detect_apply" {
+			applyRunID = snap.ID
+			break
+		}
+	}
+	if applyRunID == "" {
+		t.Fatal("apply run not found in run manager")
+	}
+
+	// The critical assertion: TSV must exist at <stateDir>/runs/<applyRunID>.thumb-confirm.tsv
+	// Pre-fix: applyRunID is generated, TSV written there, then Start() generates a *different* ID,
+	// and the rename block moves the TSV. So TSV ends up at run.ID.thumb-confirm.tsv, not applyRunID.
+	// Post-fix: we pass ID: applyRunID to Start, guaranteeing run.ID == applyRunID (no rename).
+	// The rename block is deleted, so TSV stays at the original path.
+	tsvPath := filepath.Join(srv.opts.StateDir, "runs", applyRunID+".thumb-confirm.tsv")
+	if _, err := os.Stat(tsvPath); err != nil {
+		t.Errorf("TSV not at expected path %q: %v", tsvPath, err)
+	}
+
+	// Also verify no other .thumb-confirm.tsv exists (i.e., no rename happened).
+	runsDir := filepath.Join(srv.opts.StateDir, "runs")
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		t.Fatalf("ReadDir runs: %v", err)
+	}
+	var tsvCount int
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".thumb-confirm.tsv") {
+			tsvCount++
+		}
+	}
+	if tsvCount != 1 {
+		t.Errorf("expected exactly 1 .thumb-confirm.tsv file, found %d (rename may have occurred)", tsvCount)
+	}
+}
