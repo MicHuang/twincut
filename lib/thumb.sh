@@ -386,7 +386,7 @@ thumb_run_l1_phash(){
     _cached_mt=""; _cached_sz=""; _cached_h=""
     if [[ -s "$live_index_file" ]]; then
       IFS=$'\t' read -r _ _cached_mt _cached_sz _cached_h < <(
-        awk -F'\t' -v p="$_f" '$1==p{print; exit}' "$live_index_file"
+        P="$_f" awk -F'\t' '$1==ENVIRON["P"]{print; exit}' "$live_index_file"
       ) 2>/dev/null || true
     fi
     if [[ -n "$_cached_h" \
@@ -505,7 +505,7 @@ thumb_run_l1_phash(){
   local _kf _kw _kh _kc _khash
   while IFS=$'\t' read -r _kf _kw _kh _kc; do
     [[ "$_kc" == "ok" ]] || continue
-    _khash="$(awk -F'\t' -v p="$_kf" '$1==p{print $4; exit}' "$live_index_file")"
+    _khash="$(P="$_kf" awk -F'\t' '$1==ENVIRON["P"]{print $4; exit}' "$live_index_file")"
     [[ -z "$_khash" ]] && continue
     printf '%s\t%s\n' "$_kf" "$_khash" >> "$keepers_file"
   done < "$THUMB_INDEX_FILE"
@@ -522,7 +522,7 @@ thumb_run_l1_phash(){
     [[ "$_sc" == "ok" ]] && continue
     [[ -e "$_sf" ]] || continue
     total_suspects=$(( total_suspects + 1 ))
-    _shash="$(awk -F'\t' -v p="$_sf" '$1==p{print $4; exit}' "$live_index_file")"
+    _shash="$(P="$_sf" awk -F'\t' '$1==ENVIRON["P"]{print $4; exit}' "$live_index_file")"
     [[ -z "$_shash" ]] && continue
     local best_keeper="" best_dist=999
     local kp kh d
@@ -574,14 +574,14 @@ thumb_write_review(){
       group_id=""
       distance=""
       if [[ -n "${THUMB_PHASH_KEEPER_FILE:-}" && -s "$THUMB_PHASH_KEEPER_FILE" ]]; then
-        keeper="$(awk -F'\t' -v p="$f" '$1==p{print $2; exit}' "$THUMB_PHASH_KEEPER_FILE")"
+        keeper="$(P="$f" awk -F'\t' '$1==ENVIRON["P"]{print $2; exit}' "$THUMB_PHASH_KEEPER_FILE")"
       fi
       if [[ -n "$keeper" ]]; then
         if [[ -s "${THUMB_PHASH_GROUP_FILE:-}" ]]; then
-          group_id="$(awk -F'\t' -v p="$f" '$1==p{print $2; exit}' "$THUMB_PHASH_GROUP_FILE")"
+          group_id="$(P="$f" awk -F'\t' '$1==ENVIRON["P"]{print $2; exit}' "$THUMB_PHASH_GROUP_FILE")"
         fi
         if [[ -s "${THUMB_PHASH_DIST_FILE:-}" ]]; then
-          distance="$(awk -F'\t' -v p="$f" '$1==p{print $2; exit}' "$THUMB_PHASH_DIST_FILE")"
+          distance="$(P="$f" awk -F'\t' '$1==ENVIRON["P"]{print $2; exit}' "$THUMB_PHASH_DIST_FILE")"
         fi
         emit_event "thumb_candidate" \
           "decision=thumb_l1_review" \
