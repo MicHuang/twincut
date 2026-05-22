@@ -404,9 +404,10 @@ thumb_confirm_review(){
   while IFS= read -r _raw_line; do
     if $first; then first=false; continue; fi
     # Extract fields with awk to avoid bash IFS tab-collapse.
-    local p dec
+    local p dec keeper
     p="$(awk -F'\t' '{print $1}' <<< "$_raw_line")"
     dec="$(awk -F'\t' '{print $6}' <<< "$_raw_line")"
+    keeper="$(awk -F'\t' '{print $7}' <<< "$_raw_line")"
     [[ -z "$p" ]] && continue
 
     # Trim whitespace (TSV has no quoting).
@@ -429,7 +430,7 @@ thumb_confirm_review(){
     if [[ ! -e "$p" ]]; then
       echo "[missing] $p"; missing=$((missing+1)); continue
     fi
-    if qmove "$p" "$THUMB_DIR" "" "" "$dec"; then
+    if qmove "$p" "$THUMB_DIR" "$keeper" "" "$dec"; then
       moved=$((moved+1))
     else
       skipped=$((skipped+1))

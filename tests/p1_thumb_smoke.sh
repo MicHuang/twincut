@@ -224,7 +224,7 @@ fi
 
 # ----------------------------------------------------------------------------
 # Section 9: --thumb-confirm decision column
-note "9. --thumb-confirm: 6-column TSV uses decision column verbatim"
+note "9. --thumb-confirm: 7-column TSV uses decision and keeper columns"
 rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/thumbA.png" >/dev/null
 sips -z 300 300 "$SEED" --out "$SRC/thumbB.png" >/dev/null
@@ -232,11 +232,11 @@ sips -z 400 400 "$SEED" --out "$SRC/thumbC.png" >/dev/null
 
 THUMB_DIR9="$TMP/td9"; mkdir -p "$THUMB_DIR9"
 CSV9="$THUMB_DIR9/_review9.tsv"
-# 6-column TSV: path\treason\twidth\theight\tnote\tdecision (no quoting)
-printf 'path\treason\twidth\theight\tnote\tdecision\n' > "$CSV9"
-printf '%s\tl1_only_thumb\t200\t200\t\tthumb_l2_exif\n' "$SRC/thumbA.png" >> "$CSV9"
-printf '%s\tl1_only_thumb\t300\t300\t\tthumb_l3_embed\n' "$SRC/thumbB.png" >> "$CSV9"
-printf '%s\tl1_only_thumb\t400\t400\t\tthumb_confirmed\n' "$SRC/thumbC.png" >> "$CSV9"
+# 7-column TSV: path\treason\twidth\theight\tnote\tdecision\tkeeper (no quoting)
+printf 'path\treason\twidth\theight\tnote\tdecision\tkeeper\n' > "$CSV9"
+printf '%s\tl1_only_thumb\t200\t200\t\tthumb_l2_exif\t%s\n' "$SRC/thumbA.png" "$SRC/keeperA.png" >> "$CSV9"
+printf '%s\tl1_only_thumb\t300\t300\t\tthumb_l3_embed\t%s\n' "$SRC/thumbB.png" "$SRC/keeperB.png" >> "$CSV9"
+printf '%s\tl1_only_thumb\t400\t400\t\tthumb_confirmed\t\n' "$SRC/thumbC.png" >> "$CSV9"
 
 "$TWINCUT" --thumb-confirm "$CSV9" --thumb-dir "$THUMB_DIR9" --assume-yes \
   >/tmp/twincut_confirm9.log 2>&1
@@ -247,6 +247,8 @@ MF9=$(ls -t "$THUMB_DIR9"/_manifest-*.tsv 2>/dev/null | head -n1 || true)
 grep -q "thumb_l2_exif"   "$MF9" && ok "manifest has thumb_l2_exif row"   || bad "manifest missing thumb_l2_exif"
 grep -q "thumb_l3_embed"  "$MF9" && ok "manifest has thumb_l3_embed row"  || bad "manifest missing thumb_l3_embed"
 grep -q "thumb_confirmed" "$MF9" && ok "manifest has thumb_confirmed row"  || bad "manifest missing thumb_confirmed"
+grep -q "$SRC/keeperA.png" "$MF9" && ok "9: manifest records L2 keeper path"   || bad "9: L2 keeper missing from manifest"
+grep -q "$SRC/keeperB.png" "$MF9" && ok "9: manifest records L3 keeper path"   || bad "9: L3 keeper missing from manifest"
 
 # ----------------------------------------------------------------------------
 note "9b. --thumb-confirm: legacy 5-column TSV falls back to thumb_confirmed"
@@ -273,8 +275,8 @@ sips -z 200 200 "$SEED" --out "$SRC/thumbE.png" >/dev/null
 
 THUMB_DIR9C="$TMP/td9c"; mkdir -p "$THUMB_DIR9C"
 CSV9C="$THUMB_DIR9C/_review9c.tsv"
-printf 'path\treason\twidth\theight\tnote\tdecision\n' > "$CSV9C"
-printf '%s\tl1_only_thumb\t200\t200\t\tinvalid_value\n' "$SRC/thumbE.png" >> "$CSV9C"
+printf 'path\treason\twidth\theight\tnote\tdecision\tkeeper\n' > "$CSV9C"
+printf '%s\tl1_only_thumb\t200\t200\t\tinvalid_value\t\n' "$SRC/thumbE.png" >> "$CSV9C"
 
 "$TWINCUT" --thumb-confirm "$CSV9C" --thumb-dir "$THUMB_DIR9C" --assume-yes \
   >/tmp/twincut_confirm9c.log 2>&1 || true
