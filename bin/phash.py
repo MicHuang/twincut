@@ -40,10 +40,14 @@ def read_paths(null_in):
 
 
 def pair_mode(threshold):
+    # surrogateescape on both ends so non-UTF-8 paths (legacy macOS
+    # filenames, NFD/NFC mixups) don't crash the entire pairing pass.
+    sys.stdout.reconfigure(errors="surrogateescape")
+    sys.stderr.reconfigure(errors="surrogateescape")
     suspects = []
     keepers = []
-    for lineno, line in enumerate(sys.stdin, 1):
-        line = line.rstrip("\n")
+    for lineno, raw in enumerate(sys.stdin.buffer, 1):
+        line = raw.decode("utf-8", "surrogateescape").rstrip("\n")
         if not line:
             continue
         parts = line.split("\t")

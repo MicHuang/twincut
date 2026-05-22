@@ -518,8 +518,12 @@ thumb_run_l1_phash(){
   if [[ $rc -ne 0 ]]; then
     echo "[!] L1 pHash pairing skipped: bin/phash.py --pair exited $rc" >&2
     cat "$phash_err" >&2 || true
-    rm -f "$pair_input" "$pair_output" "$phash_err" "$live_index_file"
+    rm -f "$pair_input" "$pair_output" "$phash_err" "$live_index_file" \
+          "$THUMB_PHASH_KEEPER_FILE" "$THUMB_PHASH_GROUP_FILE" "$THUMB_PHASH_DIST_FILE"
     THUMB_PHASH_LIVE_INDEX=""
+    THUMB_PHASH_KEEPER_FILE=""
+    THUMB_PHASH_GROUP_FILE=""
+    THUMB_PHASH_DIST_FILE=""
     return 0
   fi
   local _err_lines; _err_lines="$(wc -l < "$phash_err" 2>/dev/null | tr -d ' ')" || _err_lines=0
