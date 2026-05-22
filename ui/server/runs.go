@@ -276,7 +276,7 @@ func (m *RunManager) Start(opts StartOptions) (*Run, error) {
 	}
 
 	journalPath := filepath.Join(m.stateDir, "runs", id+".ndjson")
-	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	journal, err := os.OpenFile(journalPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_EXCL, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open journal %s: %w", journalPath, err)
 	}

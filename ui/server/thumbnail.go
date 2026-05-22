@@ -145,10 +145,9 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write TSV before starting the run so we have a stable file path.
-	// Generate an ID, write the TSV, then start the run. If the run gets
-	// a different ID, rename the TSV to match run.ID so the name stays
-	// consistent for downstream tooling.
+	// Pre-generate the run ID so we can write the TSV at a stable path and
+	// pass that same ID to RunManager.Start. This avoids the TOCTOU race
+	// the previous (Start-generates-ID-then-rename) approach exposed.
 	applyRunID := newRunID()
 	runsDir := filepath.Join(s.opts.StateDir, "runs")
 	if err := os.MkdirAll(runsDir, 0o755); err != nil {
@@ -165,6 +164,7 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 	args := []string{"--thumb-confirm", tsvPath, "--assume-yes", "--json-events", "--thumb-dir", thumbDir, "--source", source}
 	run, err := s.runs.Start(StartOptions{ID: applyRunID, Mode: "thumbnail_detect_apply", Args: args})
 	if err != nil {
+		_ = os.Remove(tsvPath)  // best-effort cleanup; TSV is orphaned if Start fails
 		http.Error(w, "start run: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -408,6 +408,7 @@ thumb_confirm_review(){
     p="$(awk -F'\t' '{print $1}' <<< "$_raw_line")"
     dec="$(awk -F'\t' '{print $6}' <<< "$_raw_line")"
     keeper="$(awk -F'\t' '{print $7}' <<< "$_raw_line")"
+    keeper="${keeper%$'\r'}"  # defend against CRLF-tainted TSV input
     [[ -z "$p" ]] && continue
 
     # Trim whitespace (TSV has no quoting).
