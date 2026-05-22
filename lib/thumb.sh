@@ -314,6 +314,12 @@ thumb_run_l1_phash(){
   : "${THUMB_PHASH_HASH_SIZE:=8}"
   : "${THUMB_PHASH_INDEX:="$SOURCE_DIR/.thumb_phash_index.tsv"}"
 
+  # Pairing output files — set by Step F when pairing runs; empty on any early
+  # return so T4 (thumb_write_review) can safely test for them.
+  THUMB_PHASH_KEEPER_FILE=""
+  THUMB_PHASH_GROUP_FILE=""
+  THUMB_PHASH_DIST_FILE=""
+
   if [[ "$THUMB_PHASH_ENABLED" != "true" ]]; then
     echo "[*] L1 pHash disabled by env" >&2
     return 0
