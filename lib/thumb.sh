@@ -194,7 +194,7 @@ thumb_run_l2(){
             read -r _ _w _h _ < <(awk -F'\t' -v pp="$p" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
             [[ -z "$_w" ]] && { local _dims; _dims="$(thumb_dimensions "$p")" && read -r _w _h <<<"$_dims" || true; }
             _sz="$(wc -c < "$p" 2>/dev/null | tr -d ' ')" || _sz=0
-            emit_event "thumb_candidate" "decision=thumb_l2_exif" "path=$p" "keeper=$keep" "group_id=$fp" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
+            emit_thumb_candidate --decision thumb_l2_exif --path "$p" --keeper "$keep" --group-id "$fp" --width "${_w:-0}" --height "${_h:-0}" --size-bytes "${_sz:-0}"
             THUMB_L2_HITS=$((THUMB_L2_HITS+1))
           else
             if qmove "$p" "$THUMB_DIR" "$keep" "" "thumb_l2_exif"; then
@@ -273,7 +273,7 @@ thumb_run_l3(){
             # group_id for L3 = sha1 of the big (keeper) path
             local _gid
             _gid="$(printf '%s' "$matched" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
-            emit_event "thumb_candidate" "decision=thumb_l3_embed" "path=$f" "keeper=$matched" "group_id=l3:$_gid" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
+            emit_thumb_candidate --decision thumb_l3_embed --path "$f" --keeper "$matched" --group-id "l3:$_gid" --width "${_w:-0}" --height "${_h:-0}" --size-bytes "${_sz:-0}"
             THUMB_L3_HITS=$((THUMB_L3_HITS+1))
           else
             if qmove "$f" "$THUMB_DIR" "$matched" "$small_md5" "thumb_l3_embed"; then
@@ -579,24 +579,24 @@ thumb_write_review(){
         if [[ -s "${THUMB_PHASH_DIST_FILE:-}" ]]; then
           distance="$(P="$f" awk -F'\t' '$1==ENVIRON["P"]{print $2; exit}' "$THUMB_PHASH_DIST_FILE")"
         fi
-        emit_event "thumb_candidate" \
-          "decision=thumb_l1_review" \
-          "path=$f" \
-          "keeper=$keeper" \
-          "group_id=$group_id" \
-          "reason=l1_phash_match" \
-          "width=@${w:-0}" \
-          "height=@${h:-0}" \
-          "size_bytes=@${_sz:-0}" \
-          "phash_distance=@${distance:-0}"
+        emit_thumb_candidate \
+          --decision thumb_l1_review \
+          --path "$f" \
+          --keeper "$keeper" \
+          --group-id "$group_id" \
+          --reason l1_phash_match \
+          --width "${w:-0}" \
+          --height "${h:-0}" \
+          --size-bytes "${_sz:-0}" \
+          --phash-distance "${distance:-0}"
       else
-        emit_event "thumb_candidate" \
-          "decision=thumb_l1_review" \
-          "path=$f" \
-          "reason=l1_only_${cls}" \
-          "width=@${w:-0}" \
-          "height=@${h:-0}" \
-          "size_bytes=@${_sz:-0}"
+        emit_thumb_candidate \
+          --decision thumb_l1_review \
+          --path "$f" \
+          --reason "l1_only_${cls}" \
+          --width "${w:-0}" \
+          --height "${h:-0}" \
+          --size-bytes "${_sz:-0}"
       fi
       THUMB_REVIEW_CNT=$((THUMB_REVIEW_CNT+1))
     done < "$THUMB_INDEX_FILE"

@@ -264,11 +264,11 @@ is_excluded(){
 }
 
 die(){
-  emit_event error code=usage_error detail="$*"
+  emit_error --code usage_error --detail "$*"
   echo "ERROR: $*" >&2; exit 2;
 }
 die3(){
-  emit_event error code=runtime_error detail="$*"
+  emit_error --code runtime_error --detail "$*"
   echo "ERROR: $*" >&2; exit 3;
 }
 mtime(){ stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
@@ -335,7 +335,7 @@ process_apply_list(){
     case "$_move" in '#'*) continue ;; esac
     _row=$((_row+1))
     if [[ ! -e "$_move" ]]; then
-      emit_event warn code=missing_file path="$_move" detail="apply-list source not found"
+      emit_warn --code missing_file --path "$_move" --detail "apply-list source not found"
       continue
     fi
     case "$_reason" in
@@ -362,18 +362,18 @@ process_apply_list(){
 qmove(){
   local src="$1" dir="$2" matched="$3" hh="$4" dec="$5"
   if is_excluded "$src"; then
-    emit_event action kind=skip src="$src" reason=excluded decision="$dec"
+    emit_action_skip --src "$src" --reason excluded --decision "$dec"
     return 1
   fi
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
-    emit_event action kind=skip src="$src" matched="$matched" reason=hardlink decision="$dec"
+    emit_action_skip --src "$src" --matched "$matched" --reason hardlink --decision "$dec"
     return 1
   fi
   mkdir -p "$dir" || {
     echo "ERROR: mkdir $dir failed" >&2
-    emit_event warn code=io_error path="$dir" detail="mkdir failed"
+    emit_warn --code io_error --path "$dir" --detail "mkdir failed"
     return 2
   }
   local base dest i=1
@@ -386,14 +386,14 @@ qmove(){
   done
   if $DRY_RUN; then
     echo "[DRY] mv \"$src\" \"$dest\""
-    emit_event action kind=move src="$src" dst="$dest" dry_run=@true matched="$matched" decision="$dec"
+    emit_action_move --src "$src" --dst "$dest" --dry-run true --matched "$matched" --decision "$dec"
   else
     mv -- "$src" "$dest" || {
       echo "ERROR: mv failed: $src -> $dest" >&2
-      emit_event warn code=io_error path="$src" detail="mv failed -> $dest"
+      emit_warn --code io_error --path "$src" --detail "mv failed -> $dest"
       return 2
     }
-    emit_event action kind=move src="$src" dst="$dest" dry_run=@false matched="$matched" decision="$dec"
+    emit_action_move --src "$src" --dst "$dest" --dry-run false --matched "$matched" --decision "$dec"
   fi
   manifest_append "$src" "$dest" "$matched" "$hh" "$dec"
   return 0
@@ -403,25 +403,25 @@ qmove(){
 qdelete(){
   local src="$1" matched="$2" hh="$3" dec="$4"
   if is_excluded "$src"; then
-    emit_event action kind=skip src="$src" reason=excluded decision="$dec"
+    emit_action_skip --src "$src" --reason excluded --decision "$dec"
     return 1
   fi
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
-    emit_event action kind=skip src="$src" matched="$matched" reason=hardlink decision="$dec"
+    emit_action_skip --src "$src" --matched "$matched" --reason hardlink --decision "$dec"
     return 1
   fi
   if $DRY_RUN; then
     echo "[DRY] rm \"$src\""
-    emit_event action kind=delete src="$src" dry_run=@true matched="$matched" decision="$dec"
+    emit_action_delete --src "$src" --dry-run true --matched "$matched" --decision "$dec"
   else
     rm -f -- "$src" || {
       echo "ERROR: rm failed: $src" >&2
-      emit_event warn code=io_error path="$src" detail="rm failed"
+      emit_warn --code io_error --path "$src" --detail "rm failed"
       return 2
     }
-    emit_event action kind=delete src="$src" dry_run=@false matched="$matched" decision="$dec"
+    emit_action_delete --src "$src" --dry-run false --matched "$matched" --decision "$dec"
   fi
   manifest_append "$src" "" "$matched" "$hh" "${dec}:deleted"
   return 0
@@ -580,7 +580,7 @@ ensure_video_meta_index(){
 # One place to interpret BAD_VIDEO action
 handle_bad_video(){
   local f="$1"
-  emit_event warn code=bad_video path="$f" detail="ffprobe failed or zero metadata"
+  emit_warn --code bad_video --path "$f" --detail "ffprobe failed or zero metadata"
   case "$BAD_VIDEO_ACTION" in
     list)   echo "[BAD-VIDEO] $f" ;;
     delete) qdelete "$f" "" "" "bad_video" ;;
@@ -592,7 +592,7 @@ handle_bad_video(){
 # AppleDouble dispatcher (centralized so we can manifest it)
 handle_appledouble(){
   local f="$1"
-  emit_event warn code=appledouble path="$f" detail="AppleDouble sidecar"
+  emit_warn --code appledouble --path "$f" --detail "AppleDouble sidecar"
   case "$APPLEDOUBLE_ACTION" in
     list)   echo "[APPLEDOUBLE] $f" ;;
     delete) qdelete "$f" "" "" "appledouble" ;;
@@ -744,11 +744,11 @@ do_restore(){
     fi
 
     seen=$((seen+1))
-    emit_event progress phase=restore done=@"$seen" total=@"$total" current_path="$orig"
+    emit_progress --phase restore --done "$seen" --total "$total" --current-path "$orig"
 
     if [[ "$dec" == *":deleted" ]]; then
       echo "[unrecoverable] deleted: $orig"
-      emit_event action kind=restore_unrecoverable src="$orig" dst="" dry_run=@"$RESTORE_DRY_RUN"
+      emit_action_restore --kind restore_unrecoverable --src "$orig" --dst "" --dry-run "$RESTORE_DRY_RUN"
       unrecoverable=$((unrecoverable+1))
       continue
     fi
@@ -759,33 +759,33 @@ do_restore(){
       else
         echo "[missing] quarantine file gone: $quar"
       fi
-      emit_event action kind=restore_missing src="$quar" dst="$orig" dry_run=@"$RESTORE_DRY_RUN"
+      emit_action_restore --kind restore_missing --src "$quar" --dst "$orig" --dry-run "$RESTORE_DRY_RUN"
       missing=$((missing+1))
       continue
     fi
 
     if [[ -e "$orig" ]]; then
       echo "[conflict] original exists, skipping: $orig"
-      emit_event action kind=restore_conflict src="$quar" dst="$orig" dry_run=@"$RESTORE_DRY_RUN"
+      emit_action_restore --kind restore_conflict --src "$quar" --dst "$orig" --dry-run "$RESTORE_DRY_RUN"
       skipped_exists=$((skipped_exists+1))
       continue
     fi
 
     if $RESTORE_DRY_RUN; then
       echo "[DRY] mv \"$quar\" \"$orig\""
-      emit_event action kind=restore src="$quar" dst="$orig" dry_run=@true
+      emit_action_restore --kind restore --src "$quar" --dst "$orig" --dry-run true
       restored=$((restored+1))
       continue
     fi
 
     mkdir -p "$(dirname -- "$orig")" || { errors=$((errors+1)); continue; }
     if mv -- "$quar" "$orig"; then
-      emit_event action kind=restore src="$quar" dst="$orig" dry_run=@false
+      emit_action_restore --kind restore --src "$quar" --dst "$orig" --dry-run false
       restored=$((restored+1))
       printf '%s\n' "$orig" >> "$done_marker"
     else
       echo "ERROR: mv failed: $quar -> $orig" >&2
-      emit_event error code=mv_failed detail="$quar -> $orig"
+      emit_error --code mv_failed --detail "$quar -> $orig"
       errors=$((errors+1))
     fi
   done < "$mf"
@@ -1461,7 +1461,7 @@ while IFS= read -r -d '' f; do
 
   if (( TOTAL % PROG_STEP == 0 )); then
     printf "\r[*] Scanned %-7d / %s | dupes: %-7d" "$TOTAL" "$TOTAL_SRC" "$DUPES"
-    emit_event progress phase=scan done=@"$TOTAL" total=@"${TOTAL_SRC:-0}" current_path="$f"
+    emit_progress --phase scan --done "$TOTAL" --total "${TOTAL_SRC:-0}" --current-path "$f"
   fi
 done < <(find $FIND_FOLLOW "$SOURCE_DIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
 echo
