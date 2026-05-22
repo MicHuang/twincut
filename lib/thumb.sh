@@ -398,11 +398,14 @@ thumb_run_l1_phash(){
     echo "[*] thumbnail-detect L1-pHash: hashing $cold images …" >&2
     local hash_out; hash_out="$(mktemp)"
     local phash_err; phash_err="$(mktemp)"
-    if ! python3 "$phash_bin" \
+    set +e
+    python3 "$phash_bin" \
         --algo "$THUMB_PHASH_ALGO" \
         --hash-size "$THUMB_PHASH_HASH_SIZE" \
-        < "$to_hash_file" > "$hash_out" 2>"$phash_err"; then
-      local rc=$?
+        < "$to_hash_file" > "$hash_out" 2>"$phash_err"
+    local rc=$?
+    set -e
+    if [[ $rc -ne 0 ]]; then
       if [[ $rc -eq 3 ]]; then
         echo "[!] L1 pHash skipped: install pillow imagehash" >&2
         cat "$phash_err" >&2 || true
