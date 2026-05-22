@@ -1,0 +1,1 @@
+{"type":"action","ts":1747934400,"run_id":"r_test","kind":"skip","src":"/img/a.jpg","matched":"/img/a.heic","reason":"hardlink","decision":"thumb_l2_exif"}

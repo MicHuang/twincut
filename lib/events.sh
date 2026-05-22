@@ -219,6 +219,178 @@ emit_thumb_candidate(){
   _emit_write "$out"
 }
 
+# emit_action_move — file was moved to quarantine (or would be, dry-run).
+#   --src VAL       required; source path
+#   --dst VAL       required; destination path (quarantine location)
+#   --matched VAL   optional; the backup/keeper file that triggered the match
+#   --decision VAL  optional; decision label (e.g. thumb_l2_exif)
+#   --dry-run BOOL  optional; true|false literal
+emit_action_move(){
+  $JSON_EVENTS || return 0
+  local src="" dst="" matched="" decision="" dry_run="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --src)      src="$2";      shift 2 ;;
+      --dst)      dst="$2";      shift 2 ;;
+      --matched)  matched="$2";  shift 2 ;;
+      --decision) decision="$2"; shift 2 ;;
+      --dry-run)  dry_run="$2";  shift 2 ;;
+      --run-id)   run_id="$2";   shift 2 ;;
+      *) echo "emit_action_move: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"action","ts":'"$ts"
+  [[ -n "$run_id" ]]  && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"kind":"move"'
+  out+=',"src":"'"$(json_escape "$src")"'"'
+  out+=',"dst":"'"$(json_escape "$dst")"'"'
+  [[ -n "$matched" ]]  && out+=',"matched":"'"$(json_escape "$matched")"'"'
+  [[ -n "$decision" ]] && out+=',"decision":"'"$(json_escape "$decision")"'"'
+  case "$dry_run" in
+    true|false) out+=',"dry_run":'"$dry_run" ;;
+    "") ;;
+    *) echo "emit_action_move: --dry-run must be true|false" >&2 ;;
+  esac
+  out+='}'
+  _emit_write "$out"
+}
+
+# emit_action_skip — file was skipped (hardlink, user override, etc.).
+#   --src VAL       required; source path
+#   --matched VAL   optional; the backup/keeper file that triggered the match
+#   --reason VAL    optional; reason code (e.g. hardlink)
+#   --decision VAL  optional; decision label
+emit_action_skip(){
+  $JSON_EVENTS || return 0
+  local src="" matched="" reason="" decision="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --src)      src="$2";      shift 2 ;;
+      --matched)  matched="$2";  shift 2 ;;
+      --reason)   reason="$2";   shift 2 ;;
+      --decision) decision="$2"; shift 2 ;;
+      --run-id)   run_id="$2";   shift 2 ;;
+      *) echo "emit_action_skip: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"action","ts":'"$ts"
+  [[ -n "$run_id" ]]  && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"kind":"skip"'
+  out+=',"src":"'"$(json_escape "$src")"'"'
+  [[ -n "$matched" ]]  && out+=',"matched":"'"$(json_escape "$matched")"'"'
+  [[ -n "$reason" ]]   && out+=',"reason":"'"$(json_escape "$reason")"'"'
+  [[ -n "$decision" ]] && out+=',"decision":"'"$(json_escape "$decision")"'"'
+  out+='}'
+  _emit_write "$out"
+}
+
+# emit_action_delete — file was deleted (or would be, dry-run).
+#   --src VAL       required; source path
+#   --matched VAL   optional; the backup/keeper file that triggered the match
+#   --decision VAL  optional; decision label
+#   --dry-run BOOL  optional; true|false literal
+emit_action_delete(){
+  $JSON_EVENTS || return 0
+  local src="" matched="" decision="" dry_run="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --src)      src="$2";      shift 2 ;;
+      --matched)  matched="$2";  shift 2 ;;
+      --decision) decision="$2"; shift 2 ;;
+      --dry-run)  dry_run="$2";  shift 2 ;;
+      --run-id)   run_id="$2";   shift 2 ;;
+      *) echo "emit_action_delete: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"action","ts":'"$ts"
+  [[ -n "$run_id" ]]  && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"kind":"delete"'
+  out+=',"src":"'"$(json_escape "$src")"'"'
+  [[ -n "$matched" ]]  && out+=',"matched":"'"$(json_escape "$matched")"'"'
+  [[ -n "$decision" ]] && out+=',"decision":"'"$(json_escape "$decision")"'"'
+  case "$dry_run" in
+    true|false) out+=',"dry_run":'"$dry_run" ;;
+    "") ;;
+    *) echo "emit_action_delete: --dry-run must be true|false" >&2 ;;
+  esac
+  out+='}'
+  _emit_write "$out"
+}
+
+# emit_action_restore — file was restored from quarantine (or would be, dry-run).
+#   --kind VAL      required; one of: restore | restore_missing | restore_unrecoverable | restore_conflict
+#   --src VAL       required; quarantine source path
+#   --dst VAL       required; restore destination path
+#   --dry-run BOOL  optional; true|false literal
+emit_action_restore(){
+  $JSON_EVENTS || return 0
+  local kind="" src="" dst="" dry_run="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --kind)     kind="$2";    shift 2 ;;
+      --src)      src="$2";     shift 2 ;;
+      --dst)      dst="$2";     shift 2 ;;
+      --dry-run)  dry_run="$2"; shift 2 ;;
+      --run-id)   run_id="$2";  shift 2 ;;
+      *) echo "emit_action_restore: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  case "$kind" in
+    restore|restore_missing|restore_unrecoverable|restore_conflict) ;;
+    *) echo "emit_action_restore: invalid kind '$kind'" >&2; return 2 ;;
+  esac
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"action","ts":'"$ts"
+  [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"kind":"'"$(json_escape "$kind")"'"'
+  out+=',"src":"'"$(json_escape "$src")"'"'
+  out+=',"dst":"'"$(json_escape "$dst")"'"'
+  case "$dry_run" in
+    true|false) out+=',"dry_run":'"$dry_run" ;;
+    "") ;;
+    *) echo "emit_action_restore: --dry-run must be true|false" >&2 ;;
+  esac
+  out+='}'
+  _emit_write "$out"
+}
+
+# emit_dup_group — a duplicate pair/group was identified.
+#   --group-id INT        required; numeric group identifier
+#   --match-reason VAL    required; reason code (e.g. md5)
+#   --keep-path VAL       required; the file being kept
+#   --remove-path VAL     required; the file to be removed (one per event)
+emit_dup_group(){
+  $JSON_EVENTS || return 0
+  local group_id="" match_reason="" keep_path="" remove_path="" run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --group-id)      group_id="$2";      shift 2 ;;
+      --match-reason)  match_reason="$2";  shift 2 ;;
+      --keep-path)     keep_path="$2";     shift 2 ;;
+      --remove-path)   remove_path="$2";   shift 2 ;;
+      --run-id)        run_id="$2";        shift 2 ;;
+      *) echo "emit_dup_group: unknown arg $1" >&2; return 2 ;;
+    esac
+  done
+  [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"dup_group","ts":'"$ts"
+  [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
+  out+=',"group_id":'"$(_emit_num group_id "$group_id")"
+  out+=',"match_reason":"'"$(json_escape "$match_reason")"'"'
+  out+=',"keep_path":"'"$(json_escape "$keep_path")"'"'
+  out+=',"remove":[{"path":"'"$(json_escape "$remove_path")"'"}]'
+  out+='}'
+  _emit_write "$out"
+}
+
 # emit_progress — progress beacon during a long phase.
 #   --phase VAL          enum (scan | hash | phash | apply | restore)
 #   --done INT           count of items processed so far

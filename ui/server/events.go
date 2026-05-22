@@ -143,6 +143,34 @@ type ThumbCandidate struct {
 	Reason        string `json:"reason,omitempty"`         // L1 unmatched: "l1_only_thumb"|"l1_only_maybe"; L1 matched: "l1_phash_match"; empty for L2/L3
 }
 
+// Action is the typed payload of an "action" event emitted when twincut
+// moves, skips, deletes, or restores a file. Kind discriminates the variant.
+type Action struct {
+	EventEnvelope
+	Kind     string `json:"kind"`
+	Src      string `json:"src"`
+	Dst      string `json:"dst,omitempty"`
+	Matched  string `json:"matched,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Decision string `json:"decision,omitempty"`
+	DryRun   *bool  `json:"dry_run,omitempty"`
+}
+
+// DupRemoveEntry is one element of the DupGroup.Remove list.
+type DupRemoveEntry struct {
+	Path string `json:"path"`
+}
+
+// DupGroup is the typed payload of a "dup_group" event emitted when a pair
+// of duplicates is identified during cross-check or self-check.
+type DupGroup struct {
+	EventEnvelope
+	GroupID     int64            `json:"group_id"`
+	MatchReason string           `json:"match_reason"`
+	KeepPath    string           `json:"keep_path"`
+	Remove      []DupRemoveEntry `json:"remove"`
+}
+
 // UnmarshalThumbCandidate decodes the raw payload of a thumb_candidate event
 // into tc. Returns an error if Decision is empty (malformed event).
 func UnmarshalThumbCandidate(ev Event, tc *ThumbCandidate) error {

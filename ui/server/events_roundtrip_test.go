@@ -23,6 +23,8 @@ type fixtureCase struct {
 // roundtripFixtures lists every (lib/events.sh helper, case) pair.
 // Add an entry whenever a new helper or case is introduced.
 func roundtripFixtures() []fixtureCase {
+	trueBool := true
+	falseBool := false
 	return []fixtureCase{
 		{
 			file:     "run_start__basic.ndjson",
@@ -117,6 +119,65 @@ func roundtripFixtures() []fixtureCase {
 				SizeBytes:     18432,
 				PhashDistance: 3,
 				Reason:        "l1_phash_match",
+			},
+		},
+		{
+			file:     "action_move__dry.ndjson",
+			wantType: EventAction,
+			want: Action{
+				EventEnvelope: EventEnvelope{Type: EventAction, TS: 1747934400, RunID: "r_test"},
+				Kind:          "move",
+				Src:           "/img/a.jpg",
+				Dst:           "/img/_Q/a.jpg",
+				Matched:       "/img/a.heic",
+				Decision:      "thumb_l2_exif",
+				DryRun:        &trueBool,
+			},
+		},
+		{
+			file:     "action_skip__hardlink.ndjson",
+			wantType: EventAction,
+			want: Action{
+				EventEnvelope: EventEnvelope{Type: EventAction, TS: 1747934400, RunID: "r_test"},
+				Kind:          "skip",
+				Src:           "/img/a.jpg",
+				Matched:       "/img/a.heic",
+				Reason:        "hardlink",
+				Decision:      "thumb_l2_exif",
+			},
+		},
+		{
+			file:     "action_delete__wet.ndjson",
+			wantType: EventAction,
+			want: Action{
+				EventEnvelope: EventEnvelope{Type: EventAction, TS: 1747934400, RunID: "r_test"},
+				Kind:          "delete",
+				Src:           "/img/b.jpg",
+				Matched:       "/img/b.heic",
+				Decision:      "thumb_confirmed",
+				DryRun:        &falseBool,
+			},
+		},
+		{
+			file:     "action_restore__ok.ndjson",
+			wantType: EventAction,
+			want: Action{
+				EventEnvelope: EventEnvelope{Type: EventAction, TS: 1747934400, RunID: "r_test"},
+				Kind:          "restore",
+				Src:           "/q/a.jpg",
+				Dst:           "/img/a.jpg",
+				DryRun:        &falseBool,
+			},
+		},
+		{
+			file:     "dup_group__cross_hash.ndjson",
+			wantType: EventDupGroup,
+			want: DupGroup{
+				EventEnvelope: EventEnvelope{Type: EventDupGroup, TS: 1747934400, RunID: "r_test"},
+				GroupID:       7,
+				MatchReason:   "md5",
+				KeepPath:      "/img/a.jpg",
+				Remove:        []DupRemoveEntry{{Path: "/img/b.jpg"}},
 			},
 		},
 	}

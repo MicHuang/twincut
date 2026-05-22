@@ -76,6 +76,27 @@ run_case "thumb_candidate l1_phash" "thumb_candidate__l1_phash.ndjson" \
     --width 320 --height 240 --size-bytes 18432 \
     --phash-distance 3 --reason l1_phash_match
 
+# === action ===
+run_case "action_move dry" "action_move__dry.ndjson" \
+  emit_action_move --src /img/a.jpg --dst /img/_Q/a.jpg \
+    --matched /img/a.heic --decision thumb_l2_exif --dry-run true
+
+run_case "action_skip hardlink" "action_skip__hardlink.ndjson" \
+  emit_action_skip --src /img/a.jpg \
+    --matched /img/a.heic --reason hardlink --decision thumb_l2_exif
+
+run_case "action_delete wet" "action_delete__wet.ndjson" \
+  emit_action_delete --src /img/b.jpg \
+    --matched /img/b.heic --decision thumb_confirmed --dry-run false
+
+run_case "action_restore ok" "action_restore__ok.ndjson" \
+  emit_action_restore --kind restore --src /q/a.jpg --dst /img/a.jpg --dry-run false
+
+# === dup_group ===
+run_case "dup_group cross_hash" "dup_group__cross_hash.ndjson" \
+  emit_dup_group --group-id 7 --match-reason md5 \
+    --keep-path /img/a.jpg --remove-path /img/b.jpg
+
 echo
 echo "=========================================="
 echo "PASS=$PASS FAIL=$FAIL"
