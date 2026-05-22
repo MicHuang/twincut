@@ -154,3 +154,33 @@ func TestParseThumbCandidate_MalformedJSON(t *testing.T) {
 		t.Errorf("error = %v; want substring 'invalid JSON'", err)
 	}
 }
+
+func TestUnmarshalThumbCandidate_L1WithPhashFields(t *testing.T) {
+	line := `{"type":"thumb_candidate","ts":1700000020,"run_id":"r1","decision":"thumb_l1_review","path":"/src/small.jpg","keeper":"/src/big.jpg","group_id":"l1ph:abcdef0123456789","reason":"l1_phash_match","width":200,"height":150,"size_bytes":4096,"phash_distance":3}`
+	ev, err := ParseEvent([]byte(line))
+	if err != nil {
+		t.Fatalf("ParseEvent: %v", err)
+	}
+	if ev.Type != EventThumbCandidate {
+		t.Fatalf("Type = %q, want %q", ev.Type, EventThumbCandidate)
+	}
+	var tc ThumbCandidate
+	if err := UnmarshalThumbCandidate(ev, &tc); err != nil {
+		t.Fatalf("UnmarshalThumbCandidate: %v", err)
+	}
+	if tc.Decision != "thumb_l1_review" {
+		t.Errorf("Decision = %q, want thumb_l1_review", tc.Decision)
+	}
+	if tc.Keeper != "/src/big.jpg" {
+		t.Errorf("Keeper = %q, want /src/big.jpg", tc.Keeper)
+	}
+	if tc.GroupID != "l1ph:abcdef0123456789" {
+		t.Errorf("GroupID = %q, want l1ph:abcdef0123456789", tc.GroupID)
+	}
+	if tc.Reason != "l1_phash_match" {
+		t.Errorf("Reason = %q, want l1_phash_match", tc.Reason)
+	}
+	if tc.PhashDistance != 3 {
+		t.Errorf("PhashDistance = %d, want 3", tc.PhashDistance)
+	}
+}

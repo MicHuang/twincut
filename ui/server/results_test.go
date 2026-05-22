@@ -522,3 +522,106 @@ func TestBuildResults_ThumbnailMode_ApplyURL(t *testing.T) {
 		t.Errorf("ApplyURL = %q, want /api/thumbnails/apply", view.ApplyURL)
 	}
 }
+
+func TestBuildResults_L1Phash_MatchedGoesToOwnGroup(t *testing.T) {
+	tmp := t.TempDir()
+	small := filepath.Join(tmp, "small.jpg")
+	big := filepath.Join(tmp, "big.jpg")
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"` + tmp + `"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l1_review","path":"` + small + `","keeper":"` + big + `","group_id":"l1ph:deadbeefcafef00d","reason":"l1_phash_match","width":200,"height":150,"size_bytes":4096,"phash_distance":2}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":1,"dupes":1,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	var matched *ResultGroup
+	for i := range view.Groups {
+		if view.Groups[i].StringGroupID == "l1ph:deadbeefcafef00d" {
+			matched = &view.Groups[i]
+			break
+		}
+	}
+	if matched == nil {
+		t.Fatalf("expected group l1ph:deadbeefcafef00d, groups=%+v", view.Groups)
+	}
+	if len(matched.Members) < 2 {
+		t.Fatalf("len(Members) = %d, want >= 2 (keeper + thumb)", len(matched.Members))
+	}
+	var thumbMember *ResultMember
+	for i := range matched.Members {
+		if matched.Members[i].Path == small {
+			thumbMember = &matched.Members[i]
+		}
+	}
+	if thumbMember == nil {
+		t.Fatalf("no member with path=%s", small)
+	}
+	if thumbMember.PhashDistance != 2 {
+		t.Errorf("PhashDistance = %d, want 2", thumbMember.PhashDistance)
+	}
+	for _, g := range view.Groups {
+		if g.StringGroupID == "l1-suspects" {
+			t.Errorf("matched L1 unexpectedly created l1-suspects group: %+v", g)
+		}
+	}
+}
+
+func TestBuildResults_L1Phash_UnmatchedStaysInSyntheticGroup(t *testing.T) {
+	tmp := t.TempDir()
+	orphan := filepath.Join(tmp, "orphan.png")
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"` + tmp + `"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l1_review","path":"` + orphan + `","reason":"l1_only_thumb","width":100,"height":100,"size_bytes":2048}`,
+		`{"type":"run_end","ts":3,"run_id":"x","total":1,"dupes":0,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	var synthetic *ResultGroup
+	for i := range view.Groups {
+		if view.Groups[i].StringGroupID == "l1-suspects" {
+			synthetic = &view.Groups[i]
+		}
+	}
+	if synthetic == nil {
+		t.Fatalf("expected synthetic l1-suspects group; groups=%+v", view.Groups)
+	}
+	if len(synthetic.Members) != 1 || synthetic.Members[0].Path != orphan {
+		t.Errorf("synthetic Members = %+v, want one orphan path=%s", synthetic.Members, orphan)
+	}
+}
+
+func TestBuildResults_L1Phash_MultipleSuspectsShareKeeper(t *testing.T) {
+	tmp := t.TempDir()
+	thumb1 := filepath.Join(tmp, "thumb1.jpg")
+	thumb2 := filepath.Join(tmp, "thumb2.jpg")
+	big := filepath.Join(tmp, "big.jpg")
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"x","mode":"thumbnail_detect_preview","source":"` + tmp + `"}`,
+		`{"type":"thumb_candidate","ts":2,"run_id":"x","decision":"thumb_l1_review","path":"` + thumb1 + `","keeper":"` + big + `","group_id":"l1ph:aaaa1111bbbb2222","reason":"l1_phash_match","width":300,"height":225,"size_bytes":3000,"phash_distance":1}`,
+		`{"type":"thumb_candidate","ts":3,"run_id":"x","decision":"thumb_l1_review","path":"` + thumb2 + `","keeper":"` + big + `","group_id":"l1ph:aaaa1111bbbb2222","reason":"l1_phash_match","width":150,"height":113,"size_bytes":1500,"phash_distance":2}`,
+		`{"type":"run_end","ts":4,"run_id":"x","total":2,"dupes":2,"moved":0,"cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview"
+	view, err := BuildResults(r)
+	if err != nil {
+		t.Fatalf("BuildResults: %v", err)
+	}
+	var g *ResultGroup
+	for i := range view.Groups {
+		if view.Groups[i].StringGroupID == "l1ph:aaaa1111bbbb2222" {
+			g = &view.Groups[i]
+		}
+	}
+	if g == nil {
+		t.Fatalf("expected merged l1ph group; groups=%+v", view.Groups)
+	}
+	if len(g.Members) != 3 {
+		t.Fatalf("len(Members) = %d, want 3 (keeper + 2 thumbs)", len(g.Members))
+	}
+}

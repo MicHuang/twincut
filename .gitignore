@@ -8,3 +8,7 @@ _QUARANTINE/
 # Fixture artifacts (images are generated; only build.sh is committed)
 tests/fixtures/thumbnails/*.jpg
 tests/fixtures/thumbnails/*.jpeg
+
+# P1 wave 2: per-source pHash cache
+.thumb_phash_index.tsv
+.thumb_phash_index.tsv.tmp
