@@ -356,6 +356,27 @@ process_apply_list(){
   TOTAL=$_row
 }
 
+# _resolve_abs PATH — resolve to canonical absolute path via python3.
+# Returns empty string on failure (path non-existent or python3 absent).
+# python3 is used because macOS `realpath` semantics vary across versions.
+_resolve_abs(){
+  local p="$1"
+  [[ -z "$p" ]] && { printf ''; return; }
+  python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$p" 2>/dev/null || printf ''
+}
+
+# _is_under CHILD PARENT — return 0 if CHILD is strictly under PARENT.
+# Both arguments must be absolute paths (no trailing slash required).
+# Returns 1 for empty arguments or paths outside the parent tree.
+_is_under(){
+  local child="$1" parent="$2"
+  [[ -z "$child" || -z "$parent" ]] && return 1
+  parent="${parent%/}"
+  [[ "$child" == "$parent" ]] && return 0
+  [[ "$child" == "$parent"/* ]] && return 0
+  return 1
+}
+
 # process_apply_list_jsonin — apply mode via --json-in.
 # Reads ApplyCommand JSON-lines from stdin via jq, validates each command,
 # and dispatches to qmove. Emits emit_run_end when done.
@@ -367,12 +388,30 @@ process_apply_list_jsonin(){
     emit_error --code usage_error --detail "jq required for --json-in mode"
     die "jq required for --json-in mode"
   fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    emit_error --code usage_error --detail "python3 required for path validation in --json-in mode"
+    die "python3 required for path validation in --json-in mode"
+  fi
   local total=0 moved=0 skipped=0
   local _type src dst_dir keeper decision
+  local src_root abs_src abs_dst
+  src_root="$(_resolve_abs "$SOURCE_DIR")"
   while IFS=$'\t' read -r _type src dst_dir keeper decision; do
     total=$((total+1))
+    abs_src="$(_resolve_abs "$src")"
+    abs_dst="$(_resolve_abs "$dst_dir")"
     case "$_type" in
       apply_move)
+        if ! _is_under "$abs_src" "$src_root"; then
+          emit_error --code apply_failed --path "$src" \
+            --detail "src not under \$SOURCE_DIR ($src_root)"
+          skipped=$((skipped+1)); continue
+        fi
+        if ! _is_under "$abs_dst" "$src_root"; then
+          emit_error --code apply_failed --path "$src" \
+            --detail "dst_dir not under \$SOURCE_DIR ($src_root): $dst_dir"
+          skipped=$((skipped+1)); continue
+        fi
         case "$decision" in
           thumb_l1_review|thumb_l2_exif|thumb_l3_embed|thumb_confirmed|keep_user_override) ;;
           *)
@@ -394,6 +433,11 @@ process_apply_list_jsonin(){
         fi
         ;;
       apply_skip)
+        if ! _is_under "$abs_src" "$src_root"; then
+          emit_error --code apply_failed --path "$src" \
+            --detail "src not under \$SOURCE_DIR ($src_root)"
+          skipped=$((skipped+1)); continue
+        fi
         emit_action_skip --src "$src" --decision "$decision" --reason user_override
         skipped=$((skipped+1))
         ;;

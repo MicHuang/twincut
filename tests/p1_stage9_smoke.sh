@@ -103,6 +103,26 @@ assert "bad-decision emitted error event" \
 assert "bad-decision left source file intact" \
   '[[ -e "$SRC/unrelated_big.jpg" ]]'
 
+# === 6. traversal attempt — dst_dir outside SOURCE_DIR must be rejected ===
+ESCAPE_TARGET="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$ESCAPE_TARGET"' EXIT
+APPLY_ESCAPE="$TMP/apply_escape.ndjson"
+cat > "$APPLY_ESCAPE" <<EOF
+{"type":"apply_move","src":"$SRC/unrelated_big.jpg","dst_dir":"$ESCAPE_TARGET","keeper":"","decision":"thumb_l2_exif"}
+EOF
+APPLY_ESCAPE_NDJSON="$TMP/apply_escape_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SRC" \
+  >"$APPLY_ESCAPE_NDJSON" 2>/dev/null < "$APPLY_ESCAPE" || true
+
+assert "traversal attempt emitted apply_failed error" \
+  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$APPLY_ESCAPE_NDJSON"'
+
+assert "traversal attempt: source file still at original location" \
+  '[[ -e "$SRC/unrelated_big.jpg" ]]'
+
+assert "traversal attempt: escape target dir is empty" \
+  '[[ -z "$(ls -A "$ESCAPE_TARGET" 2>/dev/null)" ]]'
+
 echo "========================================="
 echo "PASS=$PASS FAIL=$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))

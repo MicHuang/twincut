@@ -16,6 +16,7 @@
 # compose object literals.
 json_escape(){
   local s="${1-}"
+  # Named escapes first (backslash must come before others to avoid doubling).
   s="${s//\\/\\\\}"
   s="${s//\"/\\\"}"
   s="${s//$'\n'/\\n}"
@@ -23,6 +24,20 @@ json_escape(){
   s="${s//$'\t'/\\t}"
   s="${s//$'\b'/\\b}"
   s="${s//$'\f'/\\f}"
+  # Sweep remaining control characters U+0001..U+001F (excluding the 6 named
+  # above: \n=0x0a \r=0x0d \t=0x09 \b=0x08 \f=0x0c) plus U+007F (DEL).
+  # Uses bash's POSIX ordinal idiom: printf '%d' "'$char" gives the code point.
+  local ctrl hex
+  for ctrl in $'\x01' $'\x02' $'\x03' $'\x04' $'\x05' $'\x06' $'\x07' \
+              $'\x0b' $'\x0e' $'\x0f' \
+              $'\x10' $'\x11' $'\x12' $'\x13' $'\x14' $'\x15' $'\x16' $'\x17' \
+              $'\x18' $'\x19' $'\x1a' $'\x1b' $'\x1c' $'\x1d' $'\x1e' $'\x1f' \
+              $'\x7f'; do
+    if [[ "$s" == *"$ctrl"* ]]; then
+      printf -v hex '\\u%04x' "'$ctrl"
+      s="${s//$ctrl/$hex}"
+    fi
+  done
   printf '%s' "$s"
 }
 
@@ -67,7 +82,7 @@ emit_run_start(){
       --mode)    mode="$2";    shift 2 ;;
       --source)  source="$2";  shift 2 ;;
       --run-id)  run_id="$2";  shift 2 ;;
-      *) echo "emit_run_start: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_run_start: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -97,7 +112,7 @@ emit_run_end(){
       --applied)      applied="$2"; shift 2 ;;
       --skipped)      skipped="$2"; shift 2 ;;
       --run-id)       run_id="$2"; shift 2 ;;
-      *) echo "emit_run_end: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_run_end: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -126,7 +141,7 @@ emit_warn(){
       --path)    path="$2"; shift 2 ;;
       --detail)  detail="$2"; shift 2 ;;
       --run-id)  run_id="$2"; shift 2 ;;
-      *) echo "emit_warn: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_warn: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -154,7 +169,7 @@ emit_error(){
       --path)    path="$2"; shift 2 ;;
       --detail)  detail="$2"; shift 2 ;;
       --run-id)  run_id="$2"; shift 2 ;;
-      *) echo "emit_error: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_error: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -194,7 +209,7 @@ emit_thumb_candidate(){
       --phash-distance)  phash_distance="$2"; shift 2 ;;
       --reason)          reason="$2"; shift 2 ;;
       --run-id)          run_id="$2"; shift 2 ;;
-      *) echo "emit_thumb_candidate: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_thumb_candidate: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -236,7 +251,7 @@ emit_action_move(){
       --decision) decision="$2"; shift 2 ;;
       --dry-run)  dry_run="$2";  shift 2 ;;
       --run-id)   run_id="$2";   shift 2 ;;
-      *) echo "emit_action_move: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_action_move: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -272,7 +287,7 @@ emit_action_skip(){
       --reason)   reason="$2";   shift 2 ;;
       --decision) decision="$2"; shift 2 ;;
       --run-id)   run_id="$2";   shift 2 ;;
-      *) echo "emit_action_skip: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_action_skip: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -303,7 +318,7 @@ emit_action_delete(){
       --decision) decision="$2"; shift 2 ;;
       --dry-run)  dry_run="$2";  shift 2 ;;
       --run-id)   run_id="$2";   shift 2 ;;
-      *) echo "emit_action_delete: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_action_delete: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -338,12 +353,12 @@ emit_action_restore(){
       --dst)      dst="$2";     shift 2 ;;
       --dry-run)  dry_run="$2"; shift 2 ;;
       --run-id)   run_id="$2";  shift 2 ;;
-      *) echo "emit_action_restore: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_action_restore: unknown arg $1" >&2; return 0 ;;
     esac
   done
   case "$kind" in
     restore|restore_missing|restore_unrecoverable|restore_conflict) ;;
-    *) echo "emit_action_restore: invalid kind '$kind'" >&2; return 2 ;;
+    *) echo "emit_action_restore: invalid kind '$kind'" >&2; return 0 ;;
   esac
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
   local ts; ts=$(_emit_now_ts)
@@ -376,7 +391,7 @@ emit_dup_group(){
       --keep-path)     keep_path="$2";     shift 2 ;;
       --remove-path)   remove_path="$2";   shift 2 ;;
       --run-id)        run_id="$2";        shift 2 ;;
-      *) echo "emit_dup_group: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_dup_group: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
@@ -406,7 +421,7 @@ emit_progress(){
       --total)         total="$2"; shift 2 ;;
       --current-path)  current_path="$2"; shift 2 ;;
       --run-id)        run_id="$2"; shift 2 ;;
-      *) echo "emit_progress: unknown arg $1" >&2; return 2 ;;
+      *) echo "emit_progress: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"

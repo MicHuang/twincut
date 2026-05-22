@@ -97,6 +97,12 @@ run_case "dup_group cross_hash" "dup_group__cross_hash.ndjson" \
   emit_dup_group --group-id 7 --match-reason md5 \
     --keep-path /img/a.jpg --remove-path /img/b.jpg
 
+# === json_escape control chars ===
+ESC=$'\x1b'
+VT=$'\x0b'
+run_case "warn ctrl_chars" "warn__ctrl_chars.ndjson" \
+  emit_warn --code io_error --path "/img/IMG.JPG" --detail "esc=${ESC}vt=${VT}end"
+
 echo
 echo "=========================================="
 echo "PASS=$PASS FAIL=$FAIL"
