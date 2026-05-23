@@ -1,0 +1,1 @@
+{"type":"action","ts":1747934400,"run_id":"r_test","kind":"move","src":"/img/a.jpg","dst":"/img/_Q/a.jpg","matched":"/img/a.heic","decision":"thumb_l2_exif","dry_run":true}

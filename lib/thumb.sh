@@ -194,7 +194,7 @@ thumb_run_l2(){
             read -r _ _w _h _ < <(awk -F'\t' -v pp="$p" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
             [[ -z "$_w" ]] && { local _dims; _dims="$(thumb_dimensions "$p")" && read -r _w _h <<<"$_dims" || true; }
             _sz="$(wc -c < "$p" 2>/dev/null | tr -d ' ')" || _sz=0
-            emit_event "thumb_candidate" "decision=thumb_l2_exif" "path=$p" "keeper=$keep" "group_id=$fp" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
+            emit_thumb_candidate --decision thumb_l2_exif --path "$p" --keeper "$keep" --group-id "$fp" --width "${_w:-0}" --height "${_h:-0}" --size-bytes "${_sz:-0}"
             THUMB_L2_HITS=$((THUMB_L2_HITS+1))
           else
             if qmove "$p" "$THUMB_DIR" "$keep" "" "thumb_l2_exif"; then
@@ -273,7 +273,7 @@ thumb_run_l3(){
             # group_id for L3 = sha1 of the big (keeper) path
             local _gid
             _gid="$(printf '%s' "$matched" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
-            emit_event "thumb_candidate" "decision=thumb_l3_embed" "path=$f" "keeper=$matched" "group_id=l3:$_gid" "width=@${_w:-0}" "height=@${_h:-0}" "size_bytes=@${_sz:-0}"
+            emit_thumb_candidate --decision thumb_l3_embed --path "$f" --keeper "$matched" --group-id "l3:$_gid" --width "${_w:-0}" --height "${_h:-0}" --size-bytes "${_sz:-0}"
             THUMB_L3_HITS=$((THUMB_L3_HITS+1))
           else
             if qmove "$f" "$THUMB_DIR" "$matched" "$small_md5" "thumb_l3_embed"; then
@@ -579,24 +579,24 @@ thumb_write_review(){
         if [[ -s "${THUMB_PHASH_DIST_FILE:-}" ]]; then
           distance="$(P="$f" awk -F'\t' '$1==ENVIRON["P"]{print $2; exit}' "$THUMB_PHASH_DIST_FILE")"
         fi
-        emit_event "thumb_candidate" \
-          "decision=thumb_l1_review" \
-          "path=$f" \
-          "keeper=$keeper" \
-          "group_id=$group_id" \
-          "reason=l1_phash_match" \
-          "width=@${w:-0}" \
-          "height=@${h:-0}" \
-          "size_bytes=@${_sz:-0}" \
-          "phash_distance=@${distance:-0}"
+        emit_thumb_candidate \
+          --decision thumb_l1_review \
+          --path "$f" \
+          --keeper "$keeper" \
+          --group-id "$group_id" \
+          --reason l1_phash_match \
+          --width "${w:-0}" \
+          --height "${h:-0}" \
+          --size-bytes "${_sz:-0}" \
+          --phash-distance "${distance:-0}"
       else
-        emit_event "thumb_candidate" \
-          "decision=thumb_l1_review" \
-          "path=$f" \
-          "reason=l1_only_${cls}" \
-          "width=@${w:-0}" \
-          "height=@${h:-0}" \
-          "size_bytes=@${_sz:-0}"
+        emit_thumb_candidate \
+          --decision thumb_l1_review \
+          --path "$f" \
+          --reason "l1_only_${cls}" \
+          --width "${w:-0}" \
+          --height "${h:-0}" \
+          --size-bytes "${_sz:-0}"
       fi
       THUMB_REVIEW_CNT=$((THUMB_REVIEW_CNT+1))
     done < "$THUMB_INDEX_FILE"
@@ -673,69 +673,3 @@ thumb_print_summary(){
   echo "-----------------------------"
 }
 
-# --thumb-confirm <review.csv>: take rows from a (possibly user-edited) review CSV
-# and process each path with qmove. The user is expected to delete rows they don't
-# want to act on. We do not enforce ordering.
-thumb_confirm_review(){
-  local csv="$1"
-  [[ -f "$csv" ]] || die "review csv not found: $csv"
-  : "${THUMB_DIR:="$(dirname -- "$csv")"}"
-  mkdir -p "$THUMB_DIR" || die3 "cannot create $THUMB_DIR"
-  # Manifest lives next to the thumbnails (not in ./_QUARANTINE).
-  QUAR_DIR="$THUMB_DIR"
-  MANIFEST_INITED=false
-
-  local moved=0 skipped=0 missing=0
-  echo "[*] confirming review: $csv → $THUMB_DIR"
-
-  # Allowed decision values for the optional 6th column.
-  # Any other non-empty value → reject the row with a warning.
-  local _allowed_decisions="thumb_l2_exif thumb_l3_embed thumb_confirmed"
-
-  # Skip header row. Parse each TSV row with awk to handle empty fields
-  # correctly — bash IFS=$'\t' read collapses consecutive tabs, losing
-  # empty fields. awk -F'\t' does not collapse, matching TSV contract.
-  local first=true
-  while IFS= read -r _raw_line; do
-    if $first; then first=false; continue; fi
-    # Extract fields with awk to avoid bash IFS tab-collapse.
-    local p dec keeper
-    p="$(awk -F'\t' '{print $1}' <<< "$_raw_line")"
-    dec="$(awk -F'\t' '{print $6}' <<< "$_raw_line")"
-    keeper="$(awk -F'\t' '{print $7}' <<< "$_raw_line")"
-    keeper="${keeper%$'\r'}"  # defend against CRLF-tainted TSV input
-    [[ -z "$p" ]] && continue
-
-    # Trim whitespace (TSV has no quoting).
-    dec="${dec// /}"
-    # Default to thumb_confirmed when absent (legacy 5-column TSV).
-    [[ -z "$dec" ]] && dec="thumb_confirmed"
-
-    # Validate against the allowed set.
-    local _valid=false
-    local _allowed
-    for _allowed in $_allowed_decisions; do
-      [[ "$dec" == "$_allowed" ]] && _valid=true && break
-    done
-    if ! $_valid; then
-      echo "[warn] unknown decision value '$dec' for '$p' — skipping row" >&2
-      skipped=$((skipped+1))
-      continue
-    fi
-
-    if [[ ! -e "$p" ]]; then
-      echo "[missing] $p"; missing=$((missing+1)); continue
-    fi
-    if qmove "$p" "$THUMB_DIR" "$keeper" "" "$dec"; then
-      moved=$((moved+1))
-    else
-      skipped=$((skipped+1))
-    fi
-  done < "$csv"
-
-  echo "===== CONFIRM SUMMARY ====="
-  echo "Moved:    $moved"
-  echo "Skipped:  $skipped"
-  echo "Missing:  $missing"
-  echo "==========================="
-}

@@ -4,7 +4,6 @@ import (
 	"net/url"
 	"os"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -211,237 +210,28 @@ func TestMapReason(t *testing.T) {
 	}
 }
 
-// thumbnailGroups returns synthetic ResultGroups for composeThumbnailConfirmTSV tests.
-func thumbnailGroups() []ResultGroup {
-	return []ResultGroup{
-		{
-			StringGroupID: "exifsha1abc",
-			Members: []ResultMember{
-				{Path: "/src/big.jpg", Role: "keeper", Decision: ""},
-				{Path: "/src/small1.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Width: 200, Height: 150, SizeBytes: 4096},
-				{Path: "/src/small2.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 75, SizeBytes: 2048},
-			},
-		},
-		{
-			StringGroupID: "l3:keepersha1",
-			Members: []ResultMember{
-				{Path: "/src/bigvid.jpg", Role: "keeper", Decision: ""},
-				{Path: "/src/embed.jpg", Role: "thumbnail", Decision: "thumb_l3_embed", Width: 160, Height: 120, SizeBytes: 1024},
-			},
-		},
-		{
-			StringGroupID: "l1-suspects",
-			Members: []ResultMember{
-				{Path: "/src/suspect1.jpg", Role: "suspect", Decision: "thumb_confirmed", Reason: "l1_only_thumb", Width: 80, Height: 60, SizeBytes: 512},
-				{Path: "/src/suspect2.jpg", Role: "suspect", Decision: "thumb_confirmed", Reason: "l1_only_maybe", Width: 90, Height: 70, SizeBytes: 640},
-			},
-		},
-	}
-}
-
-func TestComposeThumbnailConfirmTSV_ChecksFiltered(t *testing.T) {
-	form := url.Values{
-		"group:exifsha1abc.member1": {"on"},
-	}
-	data, err := composeThumbnailConfirmTSV(thumbnailGroups(), form)
-	if err != nil {
-		t.Fatalf("composeThumbnailConfirmTSV: %v", err)
-	}
-	body := string(data)
-	if !strings.Contains(body, "/src/small1.jpg") {
-		t.Errorf("small1.jpg not in TSV output:\n%s", body)
-	}
-	if strings.Contains(body, "/src/small2.jpg") {
-		t.Errorf("small2.jpg unexpectedly in TSV output:\n%s", body)
-	}
-	if strings.Contains(body, "/src/big.jpg") {
-		t.Errorf("keeper big.jpg unexpectedly in TSV output:\n%s", body)
-	}
-}
-
-func TestComposeThumbnailConfirmTSV_DecisionPropagation(t *testing.T) {
-	form := url.Values{
-		"group:exifsha1abc.member1":   {"on"},
-		"group:l3:keepersha1.member1": {"on"},
-		"group:l1-suspects.member0":   {"on"},
-	}
-	data, err := composeThumbnailConfirmTSV(thumbnailGroups(), form)
-	if err != nil {
-		t.Fatalf("composeThumbnailConfirmTSV: %v", err)
-	}
-	body := string(data)
-	if !strings.Contains(body, "thumb_l2_exif") {
-		t.Errorf("thumb_l2_exif not in TSV:\n%s", body)
-	}
-	if !strings.Contains(body, "thumb_l3_embed") {
-		t.Errorf("thumb_l3_embed not in TSV:\n%s", body)
-	}
-	if !strings.Contains(body, "thumb_confirmed") {
-		t.Errorf("thumb_confirmed not in TSV:\n%s", body)
-	}
-}
-
-func TestComposeThumbnailConfirmTSV_AllowsCommasAndQuotesUnescaped(t *testing.T) {
-	// TSV does not quote — paths with commas and double-quotes must appear verbatim.
-	path := `/src/file with "quotes" and,comma.jpg`
+func TestComposeApplyCommands_ThumbnailDetect(t *testing.T) {
+	// Build a ResultGroup with three members: two to move, one to skip.
+	// ResultMember has no Action field — skip is indicated by Decision having
+	// prefix "keep_". Role "keeper" members are excluded from the apply stream.
 	groups := []ResultGroup{
 		{
-			StringGroupID: "g1",
+			StringGroupID: "exifsha1",
 			Members: []ResultMember{
-				{Path: path, Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 80, SizeBytes: 512},
+				{Path: "/img/a.heic", Role: "keeper", Decision: ""},
+				{Path: "/img/a.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Keeper: "/img/a.heic"},
+				{Path: "/img/b.jpg", Role: "thumbnail", Decision: "thumb_l1_review", Keeper: "/img/b.heic", PhashDistance: 3},
+				{Path: "/img/c.jpg", Role: "suspect", Decision: "keep_user_override"},
 			},
 		},
 	}
-	form := url.Values{"group:g1.member0": {"on"}}
-	data, err := composeThumbnailConfirmTSV(groups, form)
-	if err != nil {
-		t.Fatalf("composeThumbnailConfirmTSV: %v", err)
-	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	// lines[0] = header, lines[1] = data row
-	if len(lines) < 2 {
-		t.Fatalf("expected at least 2 lines, got %d:\n%s", len(lines), data)
-	}
-	fields := strings.Split(lines[1], "\t")
-	if fields[0] != path {
-		t.Errorf("path field = %q, want %q (no escaping expected in TSV)", fields[0], path)
-	}
-	if fields[5] != "thumb_l2_exif" {
-		t.Errorf("decision col = %q, want thumb_l2_exif", fields[5])
-	}
-	if len(fields) != 7 {
-		t.Errorf("expected 7 columns, got %d: %q", len(fields), lines[1])
-	}
-}
-
-func TestComposeThumbnailConfirmTSV_UnicodePaths(t *testing.T) {
-	path := `/src/照片/小缩略图.jpg`
-	groups := []ResultGroup{
-		{
-			StringGroupID: "g2",
-			Members: []ResultMember{
-				{Path: path, Role: "thumbnail", Decision: "thumb_l3_embed", Width: 80, Height: 60, SizeBytes: 256},
-			},
-		},
-	}
-	form := url.Values{"group:g2.member0": {"on"}}
-	data, err := composeThumbnailConfirmTSV(groups, form)
-	if err != nil {
-		t.Fatalf("composeThumbnailConfirmTSV: %v", err)
-	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	found := false
-	for _, line := range lines[1:] {
-		fields := strings.Split(line, "\t")
-		if fields[0] == path {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("unicode path not round-tripped; output:\n%s", data)
-	}
-}
-
-func TestComposeThumbnailConfirmTSV_RejectsTabInPath(t *testing.T) {
-	groups := []ResultGroup{
-		{
-			StringGroupID: "g3",
-			Members: []ResultMember{
-				{Path: "/src/file\twith_tab.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 80, SizeBytes: 512},
-			},
-		},
-	}
-	form := url.Values{"group:g3.member0": {"on"}}
-	_, err := composeThumbnailConfirmTSV(groups, form)
-	if err == nil {
-		t.Fatal("expected error for path containing tab, got nil")
-	}
-	if !strings.Contains(err.Error(), "forbidden character") {
-		t.Errorf("error = %q, want it to contain 'forbidden character'", err.Error())
-	}
-}
-
-func TestComposeThumbnailConfirmTSV_RejectsNewlineInPath(t *testing.T) {
-	groups := []ResultGroup{
-		{
-			StringGroupID: "g4",
-			Members: []ResultMember{
-				{Path: "/src/file\nwith_newline.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Width: 100, Height: 80, SizeBytes: 512},
-			},
-		},
-	}
-	form := url.Values{"group:g4.member0": {"on"}}
-	_, err := composeThumbnailConfirmTSV(groups, form)
-	if err == nil {
-		t.Fatal("expected error for path containing newline, got nil")
-	}
-	if !strings.Contains(err.Error(), "forbidden character") {
-		t.Errorf("error = %q, want it to contain 'forbidden character'", err.Error())
-	}
-}
-
-func TestComposeThumbnailConfirmTSV_KeeperColumnFromMembers(t *testing.T) {
-	groups := []ResultGroup{
-		{
-			StringGroupID: "l2:abc123",
-			Members: []ResultMember{
-				{Path: "/src/keeper-a.jpg", Role: "keeper"},
-				{Path: "/src/thumb-a.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Keeper: "/src/keeper-a.jpg", Width: 200, Height: 200},
-			},
-		},
-		{
-			StringGroupID: "l3:def456",
-			Members: []ResultMember{
-				{Path: "/src/keeper-b.jpg", Role: "keeper"},
-				{Path: "/src/thumb-b.jpg", Role: "thumbnail", Decision: "thumb_l3_embed", Keeper: "/src/keeper-b.jpg", Width: 300, Height: 300},
-			},
-		},
-		{
-			StringGroupID: "l1-suspects",
-			Members: []ResultMember{
-				{Path: "/src/orphan.jpg", Role: "suspect", Decision: "thumb_confirmed", Reason: "l1_only_suspect", Width: 400, Height: 400},
-			},
-		},
-	}
-	form := url.Values{
-		"group:l2:abc123.member1": []string{"on"},
-		"group:l3:def456.member1": []string{"on"},
-		"group:l1-suspects.member0": []string{"on"},
-	}
-	out, err := composeThumbnailConfirmTSV(groups, form)
-	if err != nil {
-		t.Fatalf("compose: %v", err)
-	}
-	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
-	if len(lines) != 4 {
-		t.Fatalf("want 4 lines (header + 3 rows), got %d: %q", len(lines), string(out))
-	}
-	wantHeader := "path\treason\twidth\theight\tnote\tdecision\tkeeper"
-	if lines[0] != wantHeader {
-		t.Errorf("header:\n got %q\nwant %q", lines[0], wantHeader)
-	}
-	if !strings.HasSuffix(lines[1], "\tthumb_l2_exif\t/src/keeper-a.jpg") {
-		t.Errorf("L2 row missing keeper: %q", lines[1])
-	}
-	if !strings.HasSuffix(lines[2], "\tthumb_l3_embed\t/src/keeper-b.jpg") {
-		t.Errorf("L3 row missing keeper: %q", lines[2])
-	}
-	if !strings.HasSuffix(lines[3], "\tthumb_confirmed\t") {
-		t.Errorf("L1 row should end with empty keeper column: %q", lines[3])
-	}
-}
-
-func TestComposeThumbnailConfirmTSV_RejectsTabInKeeper(t *testing.T) {
-	groups := []ResultGroup{{
-		StringGroupID: "l2:x",
-		Members: []ResultMember{
-			{Path: "/src/k.jpg", Role: "keeper"},
-			{Path: "/src/t.jpg", Role: "thumbnail", Decision: "thumb_l2_exif", Keeper: "/src/bad\tkeeper.jpg"},
-		},
-	}}
-	form := url.Values{"group:l2:x.member1": []string{"on"}}
-	_, err := composeThumbnailConfirmTSV(groups, form)
-	if err == nil {
-		t.Fatal("expected error for tab-in-keeper, got nil")
+	dstDir := "/img/_QUARANTINE/_thumbs"
+	got := composeApplyCommands(groups, dstDir)
+	want := "" +
+		`{"type":"apply_move","src":"/img/a.jpg","dst_dir":"/img/_QUARANTINE/_thumbs","keeper":"/img/a.heic","decision":"thumb_l2_exif"}` + "\n" +
+		`{"type":"apply_move","src":"/img/b.jpg","dst_dir":"/img/_QUARANTINE/_thumbs","keeper":"/img/b.heic","decision":"thumb_l1_review"}` + "\n" +
+		`{"type":"apply_skip","src":"/img/c.jpg","decision":"keep_user_override"}` + "\n"
+	if string(got) != want {
+		t.Errorf("mismatch\n got=%q\nwant=%q", got, want)
 	}
 }

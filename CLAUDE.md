@@ -11,7 +11,7 @@ The repo is tiny:
 - `bin/vid_eq.sh` — helper invoked by twincut for video equivalence checks (uses `ffprobe`).
 - `installers/install.sh` / `uninstall.sh` — symlink `bin/twincut.sh` → `~/.local/bin/twincut` and `bin/vid_eq.sh` → `~/.local/bin/vid_eq`.
 
-External runtime deps: `bash`, `ffprobe`/`ffmpeg`, standard coreutils, `md5`/`sha1` tooling. Optional for L1 perceptual-hash pairing (P1 wave 2): `python3 ≥ 3.8`, `Pillow ≥ 9.0`, `imagehash ≥ 4.3` — install via `pip3 install --user pillow imagehash`. Without them, L1 falls back to flat suspect-list behavior.
+External runtime deps: `bash`, `ffprobe`/`ffmpeg`, standard coreutils, `md5`/`sha1` tooling, `jq` (for Stage 9 apply `--json-in` mode). Optional for L1 perceptual-hash pairing (P1 wave 2): `python3 ≥ 3.8`, `Pillow ≥ 9.0`, `imagehash ≥ 4.3` — install via `pip3 install --user pillow imagehash`. Without them, L1 falls back to flat suspect-list behavior.
 
 ## Common commands
 
@@ -66,6 +66,22 @@ Things that are non-obvious from skimming a single function:
 - **Quarantine vs delete.** `DEST_ACTION` (`move|delete|list`) controls what happens to source-side duplicates; `move` (default) goes to `QUAR_DIR` (default `./_QUARANTINE`). `move_unique` handles name collisions in the quarantine.
 
 - **Similar-video output** lives under per-side subdirs: `_similar_video`, `_similar_video_backup`, `_similar_video_source`, with a CSV map `_similar_video_map.csv`.
+
+- **Stage 9 (`thumbnail_detect` only): Go-owned contract.** The web-UI
+  `--json-events` channel uses a single typed schema rooted in Go structs
+  (`ui/server/events.go`). bash emits via per-type helpers in
+  `lib/events.sh` (e.g. `emit_thumb_candidate`, `emit_action_move`);
+  7 legacy `emit_event` call sites remain in `bin/twincut.sh` for
+  cross-check / restore / similar-video flows (out of Stage 9 scope —
+  those workflows will migrate in a future stage). Apply input flows
+  from Go to bash as stdin JSON-lines (`ApplyCommand` records via
+  `--json-in`); no more `.thumb-confirm.tsv` round-trip. Drift between
+  Go and bash is caught by `ui/server/events_roundtrip_test.go`, which
+  decodes every fixture in `tests/fixtures/events/` with
+  `json.Decoder.DisallowUnknownFields`. New runtime dep: `jq` (used by
+  `--json-in` apply mode for stdin parsing). New smoke:
+  `tests/p1_stage9_smoke.sh` exercises the end-to-end scan→apply
+  pipeline via the typed contract.
 
 ## Agent operational notes
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -182,5 +183,27 @@ func TestUnmarshalThumbCandidate_L1WithPhashFields(t *testing.T) {
 	}
 	if tc.PhashDistance != 3 {
 		t.Errorf("PhashDistance = %d, want 3", tc.PhashDistance)
+	}
+}
+
+func TestApplyCommand_MarshalApplyMove(t *testing.T) {
+	cmd := ApplyCommand{
+		Type: "apply_move", Src: "/img/IMG.JPG",
+		DstDir: "/img/_Q/_thumbs", Keeper: "/img/IMG.HEIC",
+		Decision: "thumb_l2_exif",
+	}
+	got, _ := json.Marshal(cmd)
+	want := `{"type":"apply_move","src":"/img/IMG.JPG","dst_dir":"/img/_Q/_thumbs","keeper":"/img/IMG.HEIC","decision":"thumb_l2_exif"}`
+	if string(got) != want {
+		t.Errorf("got=%s want=%s", got, want)
+	}
+}
+
+func TestApplyCommand_MarshalApplySkipOmitsKeeper(t *testing.T) {
+	cmd := ApplyCommand{Type: "apply_skip", Src: "/img/IMG.JPG", Decision: "keep_user_override"}
+	got, _ := json.Marshal(cmd)
+	want := `{"type":"apply_skip","src":"/img/IMG.JPG","decision":"keep_user_override"}`
+	if string(got) != want {
+		t.Errorf("got=%s want=%s", got, want)
 	}
 }

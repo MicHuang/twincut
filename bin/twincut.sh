@@ -84,6 +84,10 @@ LIB_DIR=""
 if   [[ -d "$SELF_DIR/../lib" ]]; then LIB_DIR="$(cd -- "$SELF_DIR/../lib" && pwd -P)"
 elif [[ -d "$SELF_DIR/lib"     ]]; then LIB_DIR="$(cd -- "$SELF_DIR/lib"     && pwd -P)"
 fi
+if [[ -n "$LIB_DIR" && -f "$LIB_DIR/events.sh" ]]; then
+  # shellcheck source=../lib/events.sh
+  source "$LIB_DIR/events.sh"
+fi
 THUMB_LIB_LOADED=false
 if [[ -n "$LIB_DIR" && -f "$LIB_DIR/thumb.sh" ]]; then
   # shellcheck source=../lib/thumb.sh
@@ -149,8 +153,6 @@ THUMB_ACTION="move"            # move | list | review
 THUMB_MAX_EDGE=512
 THUMB_MAYBE_MAX_EDGE=1024
 THUMB_REQUIRE_EXIF_MATCH=false
-THUMB_CONFIRM_FILE=""
-
 # P1 wave 2: L1 perceptual-hash knobs (env-only, no CLI flag)
 THUMB_PHASH_ENABLED="${THUMB_PHASH_ENABLED:-true}"
 THUMB_PHASH_HAMMING="${THUMB_PHASH_HAMMING:-5}"
@@ -159,9 +161,11 @@ THUMB_PHASH_HASH_SIZE="${THUMB_PHASH_HASH_SIZE:-8}"
 
 # Mode flag
 DO_THUMB=false
+THUMB_DETECT_APPLY=false   # --thumbnail-detect-apply: apply mode (no scan)
 
 # Web UI integration: NDJSON event stream + per-file exclusion
 JSON_EVENTS=false
+JSON_IN=false              # --json-in: read ApplyCommand JSON-lines from stdin
 EXCLUDE_PATHS=()
 
 # Apply-list mode: when set, twincut skips scan/match and just executes
@@ -173,18 +177,6 @@ APPLY_LIST=""
 # JSON string escaper. Handles backslash, quote, control chars, newline, tab,
 # carriage return. Output is bare (no surrounding quotes) so callers can
 # compose object literals.
-json_escape(){
-  local s="${1-}"
-  s="${s//\\/\\\\}"
-  s="${s//\"/\\\"}"
-  s="${s//$'\n'/\\n}"
-  s="${s//$'\r'/\\r}"
-  s="${s//$'\t'/\\t}"
-  s="${s//$'\b'/\\b}"
-  s="${s//$'\f'/\\f}"
-  printf '%s' "$s"
-}
-
 # Emit a single NDJSON event line on stdout if --json-events is enabled.
 # Usage: emit_event TYPE [k=v ...]
 #   v starts with @ → raw JSON value (numbers, bools, nested literals)
@@ -272,11 +264,11 @@ is_excluded(){
 }
 
 die(){
-  emit_event error code=usage_error detail="$*"
+  emit_error --code usage_error --detail "$*"
   echo "ERROR: $*" >&2; exit 2;
 }
 die3(){
-  emit_event error code=runtime_error detail="$*"
+  emit_error --code runtime_error --detail "$*"
   echo "ERROR: $*" >&2; exit 3;
 }
 mtime(){ stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
@@ -343,7 +335,7 @@ process_apply_list(){
     case "$_move" in '#'*) continue ;; esac
     _row=$((_row+1))
     if [[ ! -e "$_move" ]]; then
-      emit_event warn code=missing_file path="$_move" detail="apply-list source not found"
+      emit_warn --code missing_file --path "$_move" --detail "apply-list source not found"
       continue
     fi
     case "$_reason" in
@@ -364,24 +356,120 @@ process_apply_list(){
   TOTAL=$_row
 }
 
+# _resolve_abs PATH — resolve to canonical absolute path via python3.
+# Returns empty string on failure (path non-existent or python3 absent).
+# python3 is used because macOS `realpath` semantics vary across versions.
+_resolve_abs(){
+  local p="$1"
+  [[ -z "$p" ]] && { printf ''; return; }
+  python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$p" 2>/dev/null || printf ''
+}
+
+# _is_under CHILD PARENT — return 0 if CHILD is strictly under PARENT.
+# Both arguments must be absolute paths (no trailing slash required).
+# Returns 1 for empty arguments or paths outside the parent tree.
+_is_under(){
+  local child="$1" parent="$2"
+  [[ -z "$child" || -z "$parent" ]] && return 1
+  parent="${parent%/}"
+  [[ "$child" == "$parent" ]] && return 0
+  [[ "$child" == "$parent"/* ]] && return 0
+  return 1
+}
+
+# process_apply_list_jsonin — apply mode via --json-in.
+# Reads ApplyCommand JSON-lines from stdin via jq, validates each command,
+# and dispatches to qmove. Emits emit_run_end when done.
+# Allowed ApplyCommand types: apply_move, apply_skip.
+# Allowed decisions for apply_move: thumb_l1_review, thumb_l2_exif,
+#   thumb_l3_embed, thumb_confirmed, keep_user_override.
+process_apply_list_jsonin(){
+  if ! command -v jq >/dev/null 2>&1; then
+    emit_error --code usage_error --detail "jq required for --json-in mode"
+    die "jq required for --json-in mode"
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    emit_error --code usage_error --detail "python3 required for path validation in --json-in mode"
+    die "python3 required for path validation in --json-in mode"
+  fi
+  local total=0 moved=0 skipped=0
+  local _type src dst_dir keeper decision
+  local src_root abs_src abs_dst
+  src_root="$(_resolve_abs "$SOURCE_DIR")"
+  while IFS=$'\t' read -r _type src dst_dir keeper decision; do
+    total=$((total+1))
+    abs_src="$(_resolve_abs "$src")"
+    abs_dst="$(_resolve_abs "$dst_dir")"
+    case "$_type" in
+      apply_move)
+        if ! _is_under "$abs_src" "$src_root"; then
+          emit_error --code apply_failed --path "$src" \
+            --detail "src not under \$SOURCE_DIR ($src_root)"
+          skipped=$((skipped+1)); continue
+        fi
+        if ! _is_under "$abs_dst" "$src_root"; then
+          emit_error --code apply_failed --path "$src" \
+            --detail "dst_dir not under \$SOURCE_DIR ($src_root): $dst_dir"
+          skipped=$((skipped+1)); continue
+        fi
+        case "$decision" in
+          thumb_l1_review|thumb_l2_exif|thumb_l3_embed|thumb_confirmed|keep_user_override) ;;
+          *)
+            emit_error --code apply_failed --path "$src" \
+              --detail "unknown decision '$decision'"
+            skipped=$((skipped+1)); continue ;;
+        esac
+        if [[ ! -e "$src" ]]; then
+          emit_warn --code missing_file --path "$src" \
+            --detail "apply src not on disk"
+          skipped=$((skipped+1)); continue
+        fi
+        mkdir -p "$dst_dir" || { emit_warn --code io_error --path "$dst_dir" \
+          --detail "mkdir failed"; skipped=$((skipped+1)); continue; }
+        if qmove "$src" "$dst_dir" "$keeper" "" "$decision"; then
+          moved=$((moved+1))
+        else
+          skipped=$((skipped+1))
+        fi
+        ;;
+      apply_skip)
+        if ! _is_under "$abs_src" "$src_root"; then
+          emit_error --code apply_failed --path "$src" \
+            --detail "src not under \$SOURCE_DIR ($src_root)"
+          skipped=$((skipped+1)); continue
+        fi
+        emit_action_skip --src "$src" --decision "$decision" --reason user_override
+        skipped=$((skipped+1))
+        ;;
+      *)
+        emit_error --code apply_failed --path "$src" \
+          --detail "unknown ApplyCommand type '$_type'"
+        skipped=$((skipped+1))
+        ;;
+    esac
+  done < <(jq -rc 'select(.type == "apply_move" or .type == "apply_skip") |
+                   [.type, (.src // ""), (.dst_dir // ""), (.keeper // ""), (.decision // "")] | @tsv')
+  emit_run_end --status succeeded --total "$total" --applied "$moved" --skipped "$skipped"
+}
+
 # qmove SRC DEST_DIR MATCHED HASH DECISION
 # Centralized "move into quarantine" with hardlink check + manifest write.
 # Returns 0 on action taken, 1 on skip (e.g. hardlink), 2 on error.
 qmove(){
   local src="$1" dir="$2" matched="$3" hh="$4" dec="$5"
   if is_excluded "$src"; then
-    emit_event action kind=skip src="$src" reason=excluded decision="$dec"
+    emit_action_skip --src "$src" --reason excluded --decision "$dec"
     return 1
   fi
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
-    emit_event action kind=skip src="$src" matched="$matched" reason=hardlink decision="$dec"
+    emit_action_skip --src "$src" --matched "$matched" --reason hardlink --decision "$dec"
     return 1
   fi
   mkdir -p "$dir" || {
     echo "ERROR: mkdir $dir failed" >&2
-    emit_event warn code=io_error path="$dir" detail="mkdir failed"
+    emit_warn --code io_error --path "$dir" --detail "mkdir failed"
     return 2
   }
   local base dest i=1
@@ -394,14 +482,14 @@ qmove(){
   done
   if $DRY_RUN; then
     echo "[DRY] mv \"$src\" \"$dest\""
-    emit_event action kind=move src="$src" dst="$dest" dry_run=@true matched="$matched" decision="$dec"
+    emit_action_move --src "$src" --dst "$dest" --dry-run true --matched "$matched" --decision "$dec"
   else
     mv -- "$src" "$dest" || {
       echo "ERROR: mv failed: $src -> $dest" >&2
-      emit_event warn code=io_error path="$src" detail="mv failed -> $dest"
+      emit_warn --code io_error --path "$src" --detail "mv failed -> $dest"
       return 2
     }
-    emit_event action kind=move src="$src" dst="$dest" dry_run=@false matched="$matched" decision="$dec"
+    emit_action_move --src "$src" --dst "$dest" --dry-run false --matched "$matched" --decision "$dec"
   fi
   manifest_append "$src" "$dest" "$matched" "$hh" "$dec"
   return 0
@@ -411,25 +499,25 @@ qmove(){
 qdelete(){
   local src="$1" matched="$2" hh="$3" dec="$4"
   if is_excluded "$src"; then
-    emit_event action kind=skip src="$src" reason=excluded decision="$dec"
+    emit_action_skip --src "$src" --reason excluded --decision "$dec"
     return 1
   fi
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
-    emit_event action kind=skip src="$src" matched="$matched" reason=hardlink decision="$dec"
+    emit_action_skip --src "$src" --matched "$matched" --reason hardlink --decision "$dec"
     return 1
   fi
   if $DRY_RUN; then
     echo "[DRY] rm \"$src\""
-    emit_event action kind=delete src="$src" dry_run=@true matched="$matched" decision="$dec"
+    emit_action_delete --src "$src" --dry-run true --matched "$matched" --decision "$dec"
   else
     rm -f -- "$src" || {
       echo "ERROR: rm failed: $src" >&2
-      emit_event warn code=io_error path="$src" detail="rm failed"
+      emit_warn --code io_error --path "$src" --detail "rm failed"
       return 2
     }
-    emit_event action kind=delete src="$src" dry_run=@false matched="$matched" decision="$dec"
+    emit_action_delete --src "$src" --dry-run false --matched "$matched" --decision "$dec"
   fi
   manifest_append "$src" "" "$matched" "$hh" "${dec}:deleted"
   return 0
@@ -588,7 +676,7 @@ ensure_video_meta_index(){
 # One place to interpret BAD_VIDEO action
 handle_bad_video(){
   local f="$1"
-  emit_event warn code=bad_video path="$f" detail="ffprobe failed or zero metadata"
+  emit_warn --code bad_video --path "$f" --detail "ffprobe failed or zero metadata"
   case "$BAD_VIDEO_ACTION" in
     list)   echo "[BAD-VIDEO] $f" ;;
     delete) qdelete "$f" "" "" "bad_video" ;;
@@ -600,7 +688,7 @@ handle_bad_video(){
 # AppleDouble dispatcher (centralized so we can manifest it)
 handle_appledouble(){
   local f="$1"
-  emit_event warn code=appledouble path="$f" detail="AppleDouble sidecar"
+  emit_warn --code appledouble --path "$f" --detail "AppleDouble sidecar"
   case "$APPLEDOUBLE_ACTION" in
     list)   echo "[APPLEDOUBLE] $f" ;;
     delete) qdelete "$f" "" "" "appledouble" ;;
@@ -645,9 +733,6 @@ Thumbnail detection (L1 resolution + L2 EXIF cluster + L3 embedded thumb):
                    [--thumb-max-edge 512] [--thumb-maybe-max-edge 1024]
                    [--thumb-require-exif-match]
                    [--thumb-review-csv <PATH>]
-
-Confirm review (process rows from a (possibly user-edited) review.csv):
-  $(basename "$0") --thumb-confirm <review.csv> [--thumb-dir <DIR>]
 
 Self-check (find duplicates within a single folder, role-agnostic):
   $(basename "$0") --self-check <DIR> [--dry-run] [--include-similar-video]
@@ -752,11 +837,11 @@ do_restore(){
     fi
 
     seen=$((seen+1))
-    emit_event progress phase=restore done=@"$seen" total=@"$total" current_path="$orig"
+    emit_progress --phase restore --done "$seen" --total "$total" --current-path "$orig"
 
     if [[ "$dec" == *":deleted" ]]; then
       echo "[unrecoverable] deleted: $orig"
-      emit_event action kind=restore_unrecoverable src="$orig" dst="" dry_run=@"$RESTORE_DRY_RUN"
+      emit_action_restore --kind restore_unrecoverable --src "$orig" --dst "" --dry-run "$RESTORE_DRY_RUN"
       unrecoverable=$((unrecoverable+1))
       continue
     fi
@@ -767,33 +852,33 @@ do_restore(){
       else
         echo "[missing] quarantine file gone: $quar"
       fi
-      emit_event action kind=restore_missing src="$quar" dst="$orig" dry_run=@"$RESTORE_DRY_RUN"
+      emit_action_restore --kind restore_missing --src "$quar" --dst "$orig" --dry-run "$RESTORE_DRY_RUN"
       missing=$((missing+1))
       continue
     fi
 
     if [[ -e "$orig" ]]; then
       echo "[conflict] original exists, skipping: $orig"
-      emit_event action kind=restore_conflict src="$quar" dst="$orig" dry_run=@"$RESTORE_DRY_RUN"
+      emit_action_restore --kind restore_conflict --src "$quar" --dst "$orig" --dry-run "$RESTORE_DRY_RUN"
       skipped_exists=$((skipped_exists+1))
       continue
     fi
 
     if $RESTORE_DRY_RUN; then
       echo "[DRY] mv \"$quar\" \"$orig\""
-      emit_event action kind=restore src="$quar" dst="$orig" dry_run=@true
+      emit_action_restore --kind restore --src "$quar" --dst "$orig" --dry-run true
       restored=$((restored+1))
       continue
     fi
 
     mkdir -p "$(dirname -- "$orig")" || { errors=$((errors+1)); continue; }
     if mv -- "$quar" "$orig"; then
-      emit_event action kind=restore src="$quar" dst="$orig" dry_run=@false
+      emit_action_restore --kind restore --src "$quar" --dst "$orig" --dry-run false
       restored=$((restored+1))
       printf '%s\n' "$orig" >> "$done_marker"
     else
       echo "ERROR: mv failed: $quar -> $orig" >&2
-      emit_event error code=mv_failed detail="$quar -> $orig"
+      emit_error --code mv_failed --detail "$quar -> $orig"
       errors=$((errors+1))
     fi
   done < "$mf"
@@ -880,8 +965,11 @@ while [[ $# -gt 0 ]]; do
     --exit-code-on-dupes) EXIT_CODE_ON_DUPES=true; shift;;
 
     --json-events) JSON_EVENTS=true; shift;;
+    --json-in)     JSON_IN=true; shift;;
     --exclude-path) EXCLUDE_PATHS+=("${2:-}"); shift 2;;
     --apply-list)  APPLY_LIST="${2:-}"; shift 2;;
+
+    --thumbnail-detect-apply) THUMB_DETECT_APPLY=true; shift;;
 
     --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
     --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
@@ -893,7 +981,6 @@ while [[ $# -gt 0 ]]; do
     --thumb-maybe-max-edge)    THUMB_MAYBE_MAX_EDGE="${2:-}"; shift 2;;
     --thumb-require-exif-match) THUMB_REQUIRE_EXIF_MATCH=true; shift;;
     --thumb-review-csv)        THUMB_REVIEW_CSV="${2:-}"; shift 2;;
-    --thumb-confirm)           THUMB_CONFIRM_FILE="${2:-}"; shift 2;;
 
     -h|--help) usage 0;;
     *) echo "Unknown option: $1" >&2; usage 2;;
@@ -910,6 +997,16 @@ if $JSON_EVENTS; then
   RUN_ID="${TWINCUT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 fi
 
+# --json-in validation: only valid with --thumbnail-detect-apply and --json-events.
+if $JSON_IN; then
+  if ! $THUMB_DETECT_APPLY; then
+    die "--json-in only valid with --thumbnail-detect-apply"
+  fi
+  if ! $JSON_EVENTS; then
+    die "--json-in requires --json-events"
+  fi
+fi
+
 # Apply symlink policy
 if $FOLLOW_SYMLINKS; then FIND_FOLLOW="-L"; else FIND_FOLLOW=""; fi
 
@@ -919,22 +1016,11 @@ if $RESTORE_MODE; then
   do_restore "$RESTORE_MANIFEST"
 fi
 
-# --thumb-confirm short-circuits as well (read review.csv → qmove rows).
-if [[ -n "$THUMB_CONFIRM_FILE" ]]; then
-  $THUMB_LIB_LOADED || die "thumbnail lib not loaded; expected $LIB_DIR/thumb.sh"
-  if $JSON_EVENTS; then
-    emit_event run_start mode="thumbnail_detect_apply" \
-      source="${SOURCE_DIR:-}" \
-      dry_run=@"$DRY_RUN"
-  fi
-  thumb_confirm_review "$THUMB_CONFIRM_FILE"
-  emit_event run_end \
-    total=@0 dupes=@0 moved=@"${MOVED:-0}" deleted=@0 similar=@0 \
-    source_internal_dupes=@0 backup_internal_dupes=@0 \
-    skipped_hardlink=@"${SKIPPED_HARDLINK:-0}" \
-    skipped_symlink=@"${SKIPPED_SYMLINK:-0}" \
-    manifest_path="${MANIFEST_FILE:-}" \
-    cancelled=@false
+# --thumbnail-detect-apply --json-in: read ApplyCommand JSON-lines from stdin.
+if $THUMB_DETECT_APPLY && $JSON_IN; then
+  emit_run_start --mode thumbnail_detect_apply --source "${SOURCE_DIR:-}"
+  init_manifest
+  process_apply_list_jsonin
   exit 0
 fi
 
@@ -1469,7 +1555,7 @@ while IFS= read -r -d '' f; do
 
   if (( TOTAL % PROG_STEP == 0 )); then
     printf "\r[*] Scanned %-7d / %s | dupes: %-7d" "$TOTAL" "$TOTAL_SRC" "$DUPES"
-    emit_event progress phase=scan done=@"$TOTAL" total=@"${TOTAL_SRC:-0}" current_path="$f"
+    emit_progress --phase scan --done "$TOTAL" --total "${TOTAL_SRC:-0}" --current-path "$f"
   fi
 done < <(find $FIND_FOLLOW "$SOURCE_DIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
 echo

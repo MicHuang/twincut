@@ -14,6 +14,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -141,49 +142,42 @@ func writeApplyList(stateDir string, rows [][]string) (string, error) {
 	return f.Name(), nil
 }
 
-// composeThumbnailConfirmTSV walks thumbnail ResultGroups and the apply form
-// to produce the seven-column enhanced review TSV consumed by --thumb-confirm.
-// Only checked members (form key "group:<gid>.member<i>=on") are included.
-// Keeper-role members are never included regardless of form state.
+// composeApplyCommands converts thumbnail-detect ResultGroups into an NDJSON
+// byte stream consumed by twincut.sh --thumbnail-detect-apply --json-in.
+// One ApplyCommand line is emitted per non-keeper member:
+//   - Decision has prefix "keep_" → apply_skip (file stays in place).
+//   - Otherwise → apply_move (file is moved to dstDir, keeper recorded).
 //
-// TSV columns (tab-separated, no quoting):
-//
-//	path  reason  width  height  note  decision  keeper
-//
-// Keeper is hydrated from m.Keeper (populated from thumb_candidate events
-// for L2/L3). L1 members have m.Keeper == "" (intentional — no paired keeper).
-func composeThumbnailConfirmTSV(groups []ResultGroup, form url.Values) ([]byte, error) {
+// Role=="keeper" members are always skipped — they represent the original file
+// being kept and are not acted on by the apply step.
+func composeApplyCommands(groups []ResultGroup, dstDir string) []byte {
 	var buf bytes.Buffer
-
-	header := []string{"path", "reason", "width", "height", "note", "decision", "keeper"}
-	fmt.Fprintln(&buf, strings.Join(header, "\t"))
-
 	for _, g := range groups {
-		for i, m := range g.Members {
+		for _, m := range g.Members {
 			if m.Role == "keeper" {
 				continue
 			}
-			key := "group:" + g.StringGroupID + ".member" + strconv.Itoa(i)
-			if form.Get(key) != "on" {
-				continue
-			}
-			row := []string{
-				m.Path,
-				m.Reason,
-				strconv.Itoa(m.Width),
-				strconv.Itoa(m.Height),
-				"",
-				m.Decision,
-				m.Keeper,
-			}
-			for _, field := range row {
-				if strings.ContainsAny(field, "\t\n") {
-					return nil, fmt.Errorf("field contains forbidden character (tab or newline): %q", field)
+			var cmd ApplyCommand
+			if strings.HasPrefix(m.Decision, "keep_") {
+				cmd = ApplyCommand{
+					Type:     "apply_skip",
+					Src:      m.Path,
+					Decision: m.Decision,
+				}
+			} else {
+				cmd = ApplyCommand{
+					Type:     "apply_move",
+					Src:      m.Path,
+					DstDir:   dstDir,
+					Keeper:   m.Keeper,
+					Decision: m.Decision,
 				}
 			}
-			fmt.Fprintln(&buf, strings.Join(row, "\t"))
+			line, _ := json.Marshal(cmd)
+			buf.Write(line)
+			buf.WriteByte('\n')
 		}
 	}
-
-	return buf.Bytes(), nil
+	return buf.Bytes()
 }
+

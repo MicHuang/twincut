@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# tests/p1_stage9_smoke.sh — Stage 9 end-to-end smoke.
+#
+# Sets up a tiny fixture image dir, runs a scan with --json-events,
+# composes a synthetic ApplyCommand JSON-lines stream, pipes it to
+# --thumbnail-detect-apply --json-in --json-events, and asserts the
+# resulting events.ndjson + filesystem state.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TWINCUT="$ROOT/bin/twincut.sh"
+PASS=0
+FAIL=0
+
+assert(){
+  local what="$1" cond="$2"
+  if eval "$cond"; then
+    echo "  ok   $what"
+    PASS=$((PASS+1))
+  else
+    echo "  FAIL $what (cond: $cond)"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+# === 1. fixture image dir ===
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+SRC="$TMP/src"; mkdir -p "$SRC"
+# Use Python to build gradient PNGs if Pillow is available; else skip.
+if ! python3 -c 'import PIL' 2>/dev/null; then
+  echo "[skip] Pillow not installed — Stage 9 smoke needs gradient fixtures"
+  exit 0
+fi
+python3 - <<PY
+from PIL import Image
+import os
+src = "$SRC"
+def grad(name, size, axis="x"):
+    im = Image.new("RGB", size)
+    for x in range(size[0]):
+        for y in range(size[1]):
+            v = x if axis == "x" else y
+            im.putpixel((x, y), (v % 256, (v*2) % 256, (v*3) % 256))
+    im.save(os.path.join(src, name))
+grad("keeper.jpg", (3024, 4032))
+grad("suspect_small.jpg", (320, 240))    # L1 + L2 thumb candidate
+grad("unrelated_big.jpg", (2000, 1500))  # NOT a thumb
+PY
+
+# === 2. preview scan ===
+# --json-events: twincut does exec 3>&1 1>&2 so NDJSON lands on original stdout.
+PREVIEW_NDJSON="$TMP/preview.ndjson"
+"$TWINCUT" --thumbnail-detect --source "$SRC" --json-events \
+  >"$PREVIEW_NDJSON" 2>/dev/null || true
+
+assert "preview emitted at least one run_start" \
+  '[[ $(grep -c "\"type\":\"run_start\"" "$PREVIEW_NDJSON") -ge 1 ]]'
+
+assert "preview emitted at least one thumb_candidate" \
+  '[[ $(grep -c "\"type\":\"thumb_candidate\"" "$PREVIEW_NDJSON") -ge 1 ]]'
+
+assert "preview ended with run_end" \
+  '[[ $(grep -c "\"type\":\"run_end\"" "$PREVIEW_NDJSON") -ge 1 ]]'
+
+# === 3. compose ApplyCommand JSON-lines (one apply_move for suspect_small) ===
+APPLY_INPUT="$TMP/apply.ndjson"
+QUAR_DIR="$SRC/_QUARANTINE/_thumbs"
+cat > "$APPLY_INPUT" <<EOF
+{"type":"apply_move","src":"$SRC/suspect_small.jpg","dst_dir":"$QUAR_DIR","keeper":"$SRC/keeper.jpg","decision":"thumb_l2_exif"}
+EOF
+
+# === 4. apply via --json-in ===
+APPLY_NDJSON="$TMP/apply_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SRC" \
+  >"$APPLY_NDJSON" 2>/dev/null < "$APPLY_INPUT" || true
+
+assert "apply emitted one action kind=move" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_NDJSON") -eq 1 ]]'
+
+assert "apply quarantine file exists" \
+  '[[ -e "$QUAR_DIR/suspect_small.jpg" ]]'
+
+assert "apply source file removed" \
+  '[[ ! -e "$SRC/suspect_small.jpg" ]]'
+
+assert "apply emitted run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_NDJSON"'
+
+# === 5. unknown decision triggers error event, no crash ===
+APPLY_BAD="$TMP/apply_bad.ndjson"
+cat > "$APPLY_BAD" <<EOF
+{"type":"apply_move","src":"$SRC/unrelated_big.jpg","dst_dir":"$QUAR_DIR","keeper":"","decision":"NOT_A_VALID_DECISION"}
+EOF
+APPLY_BAD_NDJSON="$TMP/apply_bad_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SRC" \
+  >"$APPLY_BAD_NDJSON" 2>/dev/null < "$APPLY_BAD" || true
+
+assert "bad-decision emitted error event" \
+  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$APPLY_BAD_NDJSON"'
+
+assert "bad-decision left source file intact" \
+  '[[ -e "$SRC/unrelated_big.jpg" ]]'
+
+# === 6. traversal attempt — dst_dir outside SOURCE_DIR must be rejected ===
+ESCAPE_TARGET="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$ESCAPE_TARGET"' EXIT
+APPLY_ESCAPE="$TMP/apply_escape.ndjson"
+cat > "$APPLY_ESCAPE" <<EOF
+{"type":"apply_move","src":"$SRC/unrelated_big.jpg","dst_dir":"$ESCAPE_TARGET","keeper":"","decision":"thumb_l2_exif"}
+EOF
+APPLY_ESCAPE_NDJSON="$TMP/apply_escape_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SRC" \
+  >"$APPLY_ESCAPE_NDJSON" 2>/dev/null < "$APPLY_ESCAPE" || true
+
+assert "traversal attempt emitted apply_failed error" \
+  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$APPLY_ESCAPE_NDJSON"'
+
+assert "traversal attempt: source file still at original location" \
+  '[[ -e "$SRC/unrelated_big.jpg" ]]'
+
+assert "traversal attempt: escape target dir is empty" \
+  '[[ -z "$(ls -A "$ESCAPE_TARGET" 2>/dev/null)" ]]'
+
+echo "========================================="
+echo "PASS=$PASS FAIL=$FAIL"
+exit $(( FAIL > 0 ? 1 : 0 ))
