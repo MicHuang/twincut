@@ -199,6 +199,28 @@ assert "D5: apply_skip bogus decision emits no action events" \
 assert "D5: apply_skip bogus decision: source file untouched" \
   '[[ -e "$SKIP_SRC/keep_me.jpg" ]]'
 
+# === D4. missing src under SOURCE_DIR — emit_warn missing_file path ===
+MISS_SRC="$TMP/srcD4"; mkdir -p "$MISS_SRC"
+MISS_QUAR="$MISS_SRC/_QUARANTINE/_thumbs"
+
+APPLY_MISS="$TMP/apply_miss.ndjson"
+cat > "$APPLY_MISS" <<EOF
+{"type":"apply_move","src":"$MISS_SRC/never_existed.jpg","dst_dir":"$MISS_QUAR","keeper":"","decision":"thumb_l2_exif"}
+EOF
+
+MISS_NDJSON="$TMP/apply_miss_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$MISS_SRC" \
+  >"$MISS_NDJSON" 2>/dev/null < "$APPLY_MISS" || true
+
+assert "D4: missing-src emits warn missing_file" \
+  'grep -q "\"type\":\"warn\".*\"code\":\"missing_file\"" "$MISS_NDJSON"'
+
+assert "D4: missing-src emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$MISS_NDJSON") -eq 0 ]]'
+
+assert "D4: missing-src emits run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$MISS_NDJSON"'
+
 echo "========================================="
 echo "PASS=$PASS FAIL=$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))
