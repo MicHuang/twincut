@@ -378,11 +378,26 @@ _is_under(){
   return 1
 }
 
+# _validate_decision DECISION SRC
+#   Returns 0 if DECISION is in the canonical 5-value thumbnail allowlist.
+#   Emits apply_failed and returns 1 otherwise.
+_validate_decision(){
+  local decision="$1" src="$2"
+  case "$decision" in
+    thumb_l1_review|thumb_l2_exif|thumb_l3_embed|thumb_confirmed|keep_user_override)
+      return 0 ;;
+    *)
+      emit_error --code apply_failed --path "$src" \
+        --detail "unknown decision '$decision'"
+      return 1 ;;
+  esac
+}
+
 # process_apply_list_jsonin — apply mode via --json-in.
 # Reads ApplyCommand JSON-lines from stdin via jq, validates each command,
 # and dispatches to qmove. Emits emit_run_end when done.
 # Allowed ApplyCommand types: apply_move, apply_skip.
-# Allowed decisions for apply_move: thumb_l1_review, thumb_l2_exif,
+# Allowed decisions (both branches): thumb_l1_review, thumb_l2_exif,
 #   thumb_l3_embed, thumb_confirmed, keep_user_override.
 process_apply_list_jsonin(){
   if ! command -v jq >/dev/null 2>&1; then
@@ -445,13 +460,7 @@ process_apply_list_jsonin(){
             --detail "dst_dir not under \$SOURCE_DIR ($src_root): $dst_dir"
           skipped=$((skipped+1)); continue
         fi
-        case "$decision" in
-          thumb_l1_review|thumb_l2_exif|thumb_l3_embed|thumb_confirmed|keep_user_override) ;;
-          *)
-            emit_error --code apply_failed --path "$src" \
-              --detail "unknown decision '$decision'"
-            skipped=$((skipped+1)); continue ;;
-        esac
+        _validate_decision "$decision" "$src" || { skipped=$((skipped+1)); continue; }
         if [[ ! -e "$src" ]]; then
           emit_warn --code missing_file --path "$src" \
             --detail "apply src not on disk"
@@ -471,6 +480,7 @@ process_apply_list_jsonin(){
             --detail "src not under \$SOURCE_DIR ($src_root)"
           skipped=$((skipped+1)); continue
         fi
+        _validate_decision "$decision" "$src" || { skipped=$((skipped+1)); continue; }
         emit_action_skip --src "$src" --decision "$decision" --reason user_override
         skipped=$((skipped+1))
         ;;

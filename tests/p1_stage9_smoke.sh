@@ -177,6 +177,28 @@ assert "D3: malformed JSON emits apply_failed error" \
 assert "D3: malformed JSON emits no action events" \
   '[[ $(grep -c "\"type\":\"action\"" "$BAD_NDJSON") -eq 0 ]]'
 
+# === D5. apply_skip with bogus decision — must be rejected ===
+SKIP_SRC="$TMP/srcD5"; mkdir -p "$SKIP_SRC"
+cp "$SRC/unrelated_big.jpg" "$SKIP_SRC/keep_me.jpg"
+
+APPLY_SKIP_BAD="$TMP/apply_skip_bad.ndjson"
+cat > "$APPLY_SKIP_BAD" <<EOF
+{"type":"apply_skip","src":"$SKIP_SRC/keep_me.jpg","decision":"haha_bogus"}
+EOF
+
+SKIP_BAD_NDJSON="$TMP/apply_skip_bad_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SKIP_SRC" \
+  >"$SKIP_BAD_NDJSON" 2>/dev/null < "$APPLY_SKIP_BAD" || true
+
+assert "D5: apply_skip bogus decision emits apply_failed error" \
+  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\".*\"detail\":\"unknown decision" "$SKIP_BAD_NDJSON"'
+
+assert "D5: apply_skip bogus decision emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$SKIP_BAD_NDJSON") -eq 0 ]]'
+
+assert "D5: apply_skip bogus decision: source file untouched" \
+  '[[ -e "$SKIP_SRC/keep_me.jpg" ]]'
+
 echo "========================================="
 echo "PASS=$PASS FAIL=$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))
