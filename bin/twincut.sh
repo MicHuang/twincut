@@ -185,7 +185,8 @@ APPLY_LIST=""
 emit_event(){
   $JSON_EVENTS || return 0
   local type="$1"; shift
-  local out='{"type":"'"$type"'","ts":'"$(date -u +%s)"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"'"$type"'","ts":'"$ts"
   if [[ -n "${RUN_ID:-}" ]]; then out+=',"run_id":"'"$(json_escape "$RUN_ID")"'"'; fi
   local kv k v
   for kv in "$@"; do
