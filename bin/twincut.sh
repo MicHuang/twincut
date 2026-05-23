@@ -395,9 +395,22 @@ process_apply_list_jsonin(){
   fi
   local total=0 moved=0 skipped=0
   local _type src dst_dir keeper decision
+  local _enc_type _enc_src _enc_dst _enc_keeper _enc_dec
   local src_root abs_src abs_dst
   src_root="$(_resolve_abs "$SOURCE_DIR")"
-  while IFS=$'\t' read -r _type src dst_dir keeper decision; do
+  # NUL-safe field transport: jq emits each field as @base64, one per line.
+  # base64 output contains only [A-Za-z0-9+/=] so newline is an unambiguous
+  # record separator.  bash then decodes; tab/newline in paths are preserved.
+  while IFS= read -r _enc_type   && \
+        IFS= read -r _enc_src    && \
+        IFS= read -r _enc_dst    && \
+        IFS= read -r _enc_keeper && \
+        IFS= read -r _enc_dec; do
+    _type=$(printf '%s' "$_enc_type"   | base64 --decode)
+    src=$(printf '%s' "$_enc_src"      | base64 --decode)
+    dst_dir=$(printf '%s' "$_enc_dst"  | base64 --decode)
+    keeper=$(printf '%s' "$_enc_keeper"| base64 --decode)
+    decision=$(printf '%s' "$_enc_dec" | base64 --decode)
     total=$((total+1))
     abs_src="$(_resolve_abs "$src")"
     abs_dst="$(_resolve_abs "$dst_dir")"
@@ -448,8 +461,12 @@ process_apply_list_jsonin(){
         skipped=$((skipped+1))
         ;;
     esac
-  done < <(jq -rc 'select(.type == "apply_move" or .type == "apply_skip") |
-                   [.type, (.src // ""), (.dst_dir // ""), (.keeper // ""), (.decision // "")] | @tsv')
+  done < <(jq -rj 'select(.type == "apply_move" or .type == "apply_skip") |
+                   (.type         | @base64), "\n",
+                   (.src     // ""| @base64), "\n",
+                   (.dst_dir // ""| @base64), "\n",
+                   (.keeper  // ""| @base64), "\n",
+                   (.decision// ""| @base64), "\n"')
   emit_run_end --status succeeded --total "$total" --applied "$moved" --skipped "$skipped"
 }
 

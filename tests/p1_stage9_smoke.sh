@@ -123,6 +123,34 @@ assert "traversal attempt: source file still at original location" \
 assert "traversal attempt: escape target dir is empty" \
   '[[ -z "$(ls -A "$ESCAPE_TARGET" 2>/dev/null)" ]]'
 
+# === D1. tab-in-path — NUL-delim parser must preserve literal \t ===
+TAB_NAME="$(printf 'tab%bafter' '\t')"   # tab character embedded in name
+TAB_SRC="$TMP/srcD1"; mkdir -p "$TAB_SRC"
+cp "$SRC/keeper.jpg" "$TAB_SRC/keeper.jpg"
+cp "$SRC/unrelated_big.jpg" "$TAB_SRC/$TAB_NAME.jpg"
+TAB_QUAR="$TAB_SRC/_QUARANTINE/_thumbs"
+
+APPLY_TAB="$TMP/apply_tab.ndjson"
+# jq pre-composes the JSON so the tab byte is correctly escaped as \t in the JSON literal
+jq -cn --arg src "$TAB_SRC/$TAB_NAME.jpg" \
+      --arg dst "$TAB_QUAR" \
+      --arg keep "$TAB_SRC/keeper.jpg" \
+  '{type:"apply_move", src:$src, dst_dir:$dst, keeper:$keep, decision:"thumb_l2_exif"}' \
+  > "$APPLY_TAB"
+
+APPLY_TAB_NDJSON="$TMP/apply_tab_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$TAB_SRC" \
+  >"$APPLY_TAB_NDJSON" 2>/dev/null < "$APPLY_TAB" || true
+
+assert "D1: tab-in-path apply emits action kind=move" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_TAB_NDJSON") -eq 1 ]]'
+
+assert "D1: tab-in-path: quarantine file with tab in name exists" \
+  '[[ -e "$TAB_QUAR/$TAB_NAME.jpg" ]]'
+
+assert "D1: tab-in-path: original source file removed" \
+  '[[ ! -e "$TAB_SRC/$TAB_NAME.jpg" ]]'
+
 echo "========================================="
 echo "PASS=$PASS FAIL=$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))
