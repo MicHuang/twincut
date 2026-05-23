@@ -151,6 +151,32 @@ assert "D1: tab-in-path: quarantine file with tab in name exists" \
 assert "D1: tab-in-path: original source file removed" \
   '[[ ! -e "$TAB_SRC/$TAB_NAME.jpg" ]]'
 
+# === D2. zero-command apply — empty stdin is a no-op success ===
+ZERO_SRC="$TMP/srcD2"; mkdir -p "$ZERO_SRC"
+ZERO_NDJSON="$TMP/apply_zero_result.ndjson"
+printf '' \
+  | "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$ZERO_SRC" \
+    >"$ZERO_NDJSON" 2>/dev/null || true
+
+assert "D2: zero-command apply emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$ZERO_NDJSON") -eq 0 ]]'
+
+assert "D2: zero-command apply emits no error events" \
+  '[[ $(grep -c "\"type\":\"error\"" "$ZERO_NDJSON") -eq 0 ]]'
+
+# === D3. malformed JSON stdin — pre-flight rejects with apply_failed ===
+BAD_SRC="$TMP/srcD3"; mkdir -p "$BAD_SRC"
+BAD_NDJSON="$TMP/apply_malformed_result.ndjson"
+printf 'this is definitely not json\n' \
+  | "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$BAD_SRC" \
+    >"$BAD_NDJSON" 2>/dev/null || true
+
+assert "D3: malformed JSON emits apply_failed error" \
+  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$BAD_NDJSON"'
+
+assert "D3: malformed JSON emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$BAD_NDJSON") -eq 0 ]]'
+
 echo "========================================="
 echo "PASS=$PASS FAIL=$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))

@@ -393,6 +393,25 @@ process_apply_list_jsonin(){
     emit_error --code usage_error --detail "python3 required for path validation in --json-in mode"
     die "python3 required for path validation in --json-in mode"
   fi
+
+  # Buffer stdin once so we can pre-validate without losing the stream.
+  # Apply lists for thumbnail_detect are bounded (typically <1MB).
+  local stdin_input
+  stdin_input=$(cat)
+
+  # Zero-command apply is a no-op success (smoke gap D2).
+  if [[ -z "$stdin_input" ]]; then
+    emit_run_end --status succeeded --total 0 --applied 0 --skipped 0
+    return 0
+  fi
+
+  # Pre-flight: every input line must be valid JSON (smoke gap D3).
+  if ! printf '%s' "$stdin_input" | jq -e -c '.' >/dev/null 2>&1; then
+    emit_error --code apply_failed \
+      --detail "malformed apply input (not valid JSON)"
+    return 1
+  fi
+
   local total=0 moved=0 skipped=0
   local _type src dst_dir keeper decision
   local _enc_type _enc_src _enc_dst _enc_keeper _enc_dec
@@ -461,7 +480,7 @@ process_apply_list_jsonin(){
         skipped=$((skipped+1))
         ;;
     esac
-  done < <(jq -rj 'select(.type == "apply_move" or .type == "apply_skip") |
+  done < <(printf '%s' "$stdin_input" | jq -rj 'select(.type == "apply_move" or .type == "apply_skip") |
                    (.type         | @base64), "\n",
                    (.src     // ""| @base64), "\n",
                    (.dst_dir // ""| @base64), "\n",
