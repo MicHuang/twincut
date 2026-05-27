@@ -28,7 +28,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq jq ffmpeg
       - name: Install Python deps
-        run: pip3 install pillow imagehash
+        run: pip3 install --break-system-packages pillow imagehash
       - name: Run shell test suites
         run: |
           bash tests/events_contract.sh
