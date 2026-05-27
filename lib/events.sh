@@ -104,14 +104,18 @@ emit_run_start(){
 emit_run_end(){
   $JSON_EVENTS || return 0
   local status="" duration_ms="" total="" applied="" skipped="" run_id=""
+  local restored="" missing="" unrecoverable=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --status)       status="$2"; shift 2 ;;
-      --duration-ms)  duration_ms="$2"; shift 2 ;;
-      --total)        total="$2"; shift 2 ;;
-      --applied)      applied="$2"; shift 2 ;;
-      --skipped)      skipped="$2"; shift 2 ;;
-      --run-id)       run_id="$2"; shift 2 ;;
+      --status)          status="$2"; shift 2 ;;
+      --duration-ms)     duration_ms="$2"; shift 2 ;;
+      --total)           total="$2"; shift 2 ;;
+      --applied)         applied="$2"; shift 2 ;;
+      --skipped)         skipped="$2"; shift 2 ;;
+      --run-id)          run_id="$2"; shift 2 ;;
+      --restored)        restored="$2"; shift 2 ;;
+      --missing)         missing="$2"; shift 2 ;;
+      --unrecoverable)   unrecoverable="$2"; shift 2 ;;
       *) echo "emit_run_end: unknown arg $1" >&2; return 0 ;;
     esac
   done
@@ -123,7 +127,10 @@ emit_run_end(){
   [[ -n "$duration_ms" ]] && out+=',"duration_ms":'"$(_emit_num duration_ms "$duration_ms")"
   [[ -n "$total" ]]       && out+=',"total":'"$(_emit_num total "$total")"
   [[ -n "$applied" ]]     && out+=',"applied":'"$(_emit_num applied "$applied")"
-  [[ -n "$skipped" ]]     && out+=',"skipped":'"$(_emit_num skipped "$skipped")"
+  [[ -n "$skipped" ]]        && out+=',"skipped":'"$(_emit_num skipped "$skipped")"
+  [[ -n "$restored" ]]       && out+=',"restored":'"$(_emit_num restored "$restored")"
+  [[ -n "$missing" ]]        && out+=',"missing":'"$(_emit_num missing "$missing")"
+  [[ -n "$unrecoverable" ]]  && out+=',"unrecoverable":'"$(_emit_num unrecoverable "$unrecoverable")"
   out+='}'
   _emit_write "$out"
 }

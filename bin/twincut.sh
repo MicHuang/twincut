@@ -850,7 +850,7 @@ do_restore(){
   local already_done=""
   [[ -f "$done_marker" ]] && already_done="$(cat "$done_marker")"
 
-  emit_event run_start mode=restore source="$mf"
+  emit_run_start --mode restore --source "$mf"
 
   # Count restorable rows for the progress total. Cheap upfront walk.
   local total=0
@@ -939,14 +939,11 @@ do_restore(){
   echo "Errors:          $errors"
   echo "==========================="
 
-  emit_event run_end \
-    restored=@"$restored" \
-    skipped=@"$skipped_exists" \
-    missing=@"$missing" \
-    unrecoverable=@"$unrecoverable" \
-    errors=@"$errors" \
-    manifest_path="$mf" \
-    cancelled=@false
+  emit_run_end --status succeeded \
+    --restored "$restored" \
+    --skipped "$skipped_exists" \
+    --missing "$missing" \
+    --unrecoverable "$unrecoverable"
 
   if [[ "$errors" -gt 0 ]]; then exit 3; fi
   exit 0

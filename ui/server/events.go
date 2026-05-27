@@ -95,11 +95,14 @@ type RunStart struct {
 // one per run, after all other events.
 type RunEnd struct {
 	EventEnvelope
-	Status     string `json:"status"`
-	DurationMs int64  `json:"duration_ms,omitempty"`
-	Total      int64  `json:"total,omitempty"`
-	Applied    int64  `json:"applied,omitempty"`
-	Skipped    int64  `json:"skipped,omitempty"`
+	Status        string `json:"status"`
+	DurationMs    int64  `json:"duration_ms,omitempty"`
+	Total         int64  `json:"total,omitempty"`
+	Applied       int64  `json:"applied,omitempty"`
+	Skipped       int64  `json:"skipped,omitempty"`
+	Restored      int64  `json:"restored,omitempty"`
+	Missing       int64  `json:"missing,omitempty"`
+	Unrecoverable int64  `json:"unrecoverable,omitempty"`
 }
 
 // Warn is the typed payload of a "warn" event (non-fatal warning).
