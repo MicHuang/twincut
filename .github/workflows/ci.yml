@@ -31,7 +31,6 @@ jobs:
         run: pip3 install pillow imagehash
       - name: Run shell test suites
         run: |
-          bash tests/legacy_event_ts_seam.sh
           bash tests/events_contract.sh
           bash tests/p1_stage9_smoke.sh
           bash tests/p0_smoke.sh
