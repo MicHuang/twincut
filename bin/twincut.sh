@@ -421,9 +421,10 @@ process_apply_list_jsonin(){
   fi
 
   # Pre-flight: every input line must be valid JSON (smoke gap D3).
-  if ! printf '%s' "$stdin_input" | jq -e -c '.' >/dev/null 2>&1; then
+  if ! printf '%s' "$stdin_input" | jq -c '.' >/dev/null 2>&1; then
     emit_error --code apply_failed \
       --detail "malformed apply input (not valid JSON)"
+    emit_run_end --status failed --total 0 --applied 0 --skipped 0
     return 1
   fi
 
