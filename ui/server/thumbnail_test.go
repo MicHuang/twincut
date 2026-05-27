@@ -177,7 +177,7 @@ func TestHandleThumbnailsApply_UsesJsonIn(t *testing.T) {
 
 	// Intercept the spawn to capture opts without running a real process.
 	var capturedOpts StartOptions
-	srv.runs.SpawnHook = func(opts StartOptions) { capturedOpts = opts }
+	SetTestSpawnHook(t, srv.runs, func(opts StartOptions) { capturedOpts = opts })
 
 	form := url.Values{
 		"preview_run_id":       {"prev-apply"},
@@ -454,7 +454,7 @@ func TestHandleThumbnailsApply_PassesJsonInAndSource(t *testing.T) {
 	storeRun(srv.runs, "prev-apply2", r)
 
 	var capturedOpts StartOptions
-	srv.runs.SpawnHook = func(opts StartOptions) { capturedOpts = opts }
+	SetTestSpawnHook(t, srv.runs, func(opts StartOptions) { capturedOpts = opts })
 
 	form := url.Values{
 		"preview_run_id":        {"prev-apply2"},
@@ -617,7 +617,7 @@ func TestHandleThumbnailsApply_NoTSVWritten(t *testing.T) {
 	previewRun.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run", "--json-events"}
 	storeRun(srv.runs, previewID, previewRun)
 
-	srv.runs.SpawnHook = func(opts StartOptions) {} // intercept so no real bash is spawned
+	SetTestSpawnHook(t, srv.runs, func(opts StartOptions) {}) // intercept so no real bash is spawned
 
 	form := url.Values{}
 	form.Set("preview_run_id", previewID)

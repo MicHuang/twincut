@@ -309,6 +309,9 @@ func (m *RunManager) Start(opts StartOptions) (*Run, error) {
 		return r, nil
 	}
 
+	if os.Getenv("GO_TEST_RUNNING") == "1" {
+		panic("SpawnHook not set — real spawn attempted during test; use SetTestSpawnHook()")
+	}
 	args := append([]string{"--json-events"}, opts.Args...)
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "bash", append([]string{m.twincutPath}, args...)...)
