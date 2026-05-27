@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  go-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ui/go.mod
+      - run: go test ./...
+
+  shell-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq ffmpeg
+      - name: Install Python deps
+        run: pip3 install pillow imagehash
+      - name: Run shell test suites
+        run: |
+          bash tests/legacy_event_ts_seam.sh
+          bash tests/events_contract.sh
+          bash tests/p1_stage9_smoke.sh
+          bash tests/p0_smoke.sh
+          bash tests/p1_thumb_phash_smoke.sh
+          bash tests/p1_thumb_smoke.sh
