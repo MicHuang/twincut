@@ -88,6 +88,9 @@ assert "apply source file removed" \
 assert "apply emitted run_end status=succeeded" \
   'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_NDJSON"'
 
+assert "apply emitted progress phase=apply" \
+  'grep -q "\"type\":\"progress\".*\"phase\":\"apply\"" "$APPLY_NDJSON"'
+
 # === 5. unknown decision triggers error event, no crash ===
 APPLY_BAD="$TMP/apply_bad.ndjson"
 cat > "$APPLY_BAD" <<EOF

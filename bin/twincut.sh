@@ -428,11 +428,15 @@ process_apply_list_jsonin(){
     return 1
   fi
 
-  local total=0 moved=0 skipped=0
+  local total=0 moved=0 skipped=0 apply_total=0
   local _type src dst_dir keeper decision
   local _enc_type _enc_src _enc_dst _enc_keeper _enc_dec
   local src_root abs_src abs_dst
   src_root="$(_resolve_abs "$SOURCE_DIR")"
+  # Pre-count applicable records so emit_progress can report --total (Stage 10 T2).
+  # Uses the already-buffered $stdin_input (line ~415); do not re-read stdin here.
+  apply_total=$(printf '%s' "$stdin_input" | jq -c 'select(.type == "apply_move" or .type == "apply_skip")' | wc -l)
+  apply_total=$((apply_total + 0))
   # NUL-safe field transport: jq emits each field as @base64, one per line.
   # base64 output contains only [A-Za-z0-9+/=] so newline is an unambiguous
   # record separator.  bash then decodes; tab/newline in paths are preserved.
@@ -447,6 +451,7 @@ process_apply_list_jsonin(){
     keeper=$(printf '%s' "$_enc_keeper"| base64 --decode)
     decision=$(printf '%s' "$_enc_dec" | base64 --decode)
     total=$((total+1))
+    emit_progress --phase apply --done "$total" --total "$apply_total" --current-path "$src"
     abs_src="$(_resolve_abs "$src")"
     abs_dst="$(_resolve_abs "$dst_dir")"
     case "$_type" in
