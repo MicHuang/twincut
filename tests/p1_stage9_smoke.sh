@@ -123,6 +123,134 @@ assert "traversal attempt: source file still at original location" \
 assert "traversal attempt: escape target dir is empty" \
   '[[ -z "$(ls -A "$ESCAPE_TARGET" 2>/dev/null)" ]]'
 
+# === D1. tab-in-path — NUL-delim parser must preserve literal \t ===
+TAB_NAME="$(printf 'tab%bafter' '\t')"   # tab character embedded in name
+TAB_SRC="$TMP/srcD1"; mkdir -p "$TAB_SRC"
+cp "$SRC/keeper.jpg" "$TAB_SRC/keeper.jpg"
+cp "$SRC/unrelated_big.jpg" "$TAB_SRC/$TAB_NAME.jpg"
+TAB_QUAR="$TAB_SRC/_QUARANTINE/_thumbs"
+
+APPLY_TAB="$TMP/apply_tab.ndjson"
+# jq pre-composes the JSON so the tab byte is correctly escaped as \t in the JSON literal
+jq -cn --arg src "$TAB_SRC/$TAB_NAME.jpg" \
+      --arg dst "$TAB_QUAR" \
+      --arg keep "$TAB_SRC/keeper.jpg" \
+  '{type:"apply_move", src:$src, dst_dir:$dst, keeper:$keep, decision:"thumb_l2_exif"}' \
+  > "$APPLY_TAB"
+
+APPLY_TAB_NDJSON="$TMP/apply_tab_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$TAB_SRC" \
+  >"$APPLY_TAB_NDJSON" 2>/dev/null < "$APPLY_TAB" || true
+
+assert "D1: tab-in-path apply emits action kind=move" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_TAB_NDJSON") -eq 1 ]]'
+
+assert "D1: tab-in-path: quarantine file with tab in name exists" \
+  '[[ -e "$TAB_QUAR/$TAB_NAME.jpg" ]]'
+
+assert "D1: tab-in-path: original source file removed" \
+  '[[ ! -e "$TAB_SRC/$TAB_NAME.jpg" ]]'
+
+# === D1b. newline-in-path — @base64 parser must preserve literal \n ===
+NL_NAME="$(printf 'line1\nline2')"
+NL_SRC="$TMP/srcD1b"; mkdir -p "$NL_SRC"
+cp "$SRC/keeper.jpg" "$NL_SRC/keeper.jpg"
+cp "$SRC/unrelated_big.jpg" "$NL_SRC/$NL_NAME.jpg"
+NL_QUAR="$NL_SRC/_QUARANTINE/_thumbs"
+
+APPLY_NL="$TMP/apply_nl.ndjson"
+jq -cn --arg src "$NL_SRC/$NL_NAME.jpg" \
+      --arg dst "$NL_QUAR" \
+      --arg keep "$NL_SRC/keeper.jpg" \
+  '{type:"apply_move", src:$src, dst_dir:$dst, keeper:$keep, decision:"thumb_l2_exif"}' \
+  > "$APPLY_NL"
+
+APPLY_NL_NDJSON="$TMP/apply_nl_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$NL_SRC" \
+  >"$APPLY_NL_NDJSON" 2>/dev/null < "$APPLY_NL" || true
+
+assert "D1b: newline-in-path apply emits action kind=move" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_NL_NDJSON") -eq 1 ]]'
+
+assert "D1b: newline-in-path: quarantine file exists" \
+  '[[ -e "$NL_QUAR/$NL_NAME.jpg" ]]'
+
+assert "D1b: newline-in-path: original source file removed" \
+  '[[ ! -e "$NL_SRC/$NL_NAME.jpg" ]]'
+
+# === D2. zero-command apply — empty stdin is a no-op success ===
+ZERO_SRC="$TMP/srcD2"; mkdir -p "$ZERO_SRC"
+ZERO_NDJSON="$TMP/apply_zero_result.ndjson"
+printf '' \
+  | "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$ZERO_SRC" \
+    >"$ZERO_NDJSON" 2>/dev/null || true
+
+assert "D2: zero-command apply emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$ZERO_NDJSON") -eq 0 ]]'
+
+assert "D2: zero-command apply emits no error events" \
+  '[[ $(grep -c "\"type\":\"error\"" "$ZERO_NDJSON") -eq 0 ]]'
+
+# === D3. malformed JSON stdin — pre-flight rejects with apply_failed ===
+BAD_SRC="$TMP/srcD3"; mkdir -p "$BAD_SRC"
+BAD_NDJSON="$TMP/apply_malformed_result.ndjson"
+printf 'this is definitely not json\n' \
+  | "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$BAD_SRC" \
+    >"$BAD_NDJSON" 2>/dev/null || true
+
+assert "D3: malformed JSON emits apply_failed error" \
+  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$BAD_NDJSON"'
+
+assert "D3: malformed JSON emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$BAD_NDJSON") -eq 0 ]]'
+
+assert "D3: malformed JSON emits run_end status=failed" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"failed\"" "$BAD_NDJSON"'
+
+# === D5. apply_skip with bogus decision — must be rejected ===
+SKIP_SRC="$TMP/srcD5"; mkdir -p "$SKIP_SRC"
+cp "$SRC/unrelated_big.jpg" "$SKIP_SRC/keep_me.jpg"
+
+APPLY_SKIP_BAD="$TMP/apply_skip_bad.ndjson"
+cat > "$APPLY_SKIP_BAD" <<EOF
+{"type":"apply_skip","src":"$SKIP_SRC/keep_me.jpg","decision":"haha_bogus"}
+EOF
+
+SKIP_BAD_NDJSON="$TMP/apply_skip_bad_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SKIP_SRC" \
+  >"$SKIP_BAD_NDJSON" 2>/dev/null < "$APPLY_SKIP_BAD" || true
+
+assert "D5: apply_skip bogus decision emits apply_failed error" \
+  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\".*\"detail\":\"unknown decision" "$SKIP_BAD_NDJSON"'
+
+assert "D5: apply_skip bogus decision emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$SKIP_BAD_NDJSON") -eq 0 ]]'
+
+assert "D5: apply_skip bogus decision: source file untouched" \
+  '[[ -e "$SKIP_SRC/keep_me.jpg" ]]'
+
+# === D4. missing src under SOURCE_DIR — emit_warn missing_file path ===
+MISS_SRC="$TMP/srcD4"; mkdir -p "$MISS_SRC"
+MISS_QUAR="$MISS_SRC/_QUARANTINE/_thumbs"
+
+APPLY_MISS="$TMP/apply_miss.ndjson"
+cat > "$APPLY_MISS" <<EOF
+{"type":"apply_move","src":"$MISS_SRC/never_existed.jpg","dst_dir":"$MISS_QUAR","keeper":"","decision":"thumb_l2_exif"}
+EOF
+
+MISS_NDJSON="$TMP/apply_miss_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$MISS_SRC" \
+  >"$MISS_NDJSON" 2>/dev/null < "$APPLY_MISS" || true
+
+assert "D4: missing-src emits warn missing_file" \
+  'grep -q "\"type\":\"warn\".*\"code\":\"missing_file\"" "$MISS_NDJSON"'
+
+assert "D4: missing-src emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$MISS_NDJSON") -eq 0 ]]'
+
+assert "D4: missing-src emits run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$MISS_NDJSON"'
+
 echo "========================================="
 echo "PASS=$PASS FAIL=$FAIL"
 exit $(( FAIL > 0 ? 1 : 0 ))

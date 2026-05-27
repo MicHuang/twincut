@@ -185,7 +185,8 @@ APPLY_LIST=""
 emit_event(){
   $JSON_EVENTS || return 0
   local type="$1"; shift
-  local out='{"type":"'"$type"'","ts":'"$(date -u +%s)"
+  local ts; ts=$(_emit_now_ts)
+  local out='{"type":"'"$type"'","ts":'"$ts"
   if [[ -n "${RUN_ID:-}" ]]; then out+=',"run_id":"'"$(json_escape "$RUN_ID")"'"'; fi
   local kv k v
   for kv in "$@"; do
@@ -377,11 +378,26 @@ _is_under(){
   return 1
 }
 
+# _validate_decision DECISION SRC
+#   Returns 0 if DECISION is in the canonical 5-value thumbnail allowlist.
+#   Emits apply_failed and returns 1 otherwise.
+_validate_decision(){
+  local decision="$1" src="$2"
+  case "$decision" in
+    thumb_l1_review|thumb_l2_exif|thumb_l3_embed|thumb_confirmed|keep_user_override)
+      return 0 ;;
+    *)
+      emit_error --code apply_failed --path "$src" \
+        --detail "unknown decision '$decision'"
+      return 1 ;;
+  esac
+}
+
 # process_apply_list_jsonin — apply mode via --json-in.
 # Reads ApplyCommand JSON-lines from stdin via jq, validates each command,
 # and dispatches to qmove. Emits emit_run_end when done.
 # Allowed ApplyCommand types: apply_move, apply_skip.
-# Allowed decisions for apply_move: thumb_l1_review, thumb_l2_exif,
+# Allowed decisions (both branches): thumb_l1_review, thumb_l2_exif,
 #   thumb_l3_embed, thumb_confirmed, keep_user_override.
 process_apply_list_jsonin(){
   if ! command -v jq >/dev/null 2>&1; then
@@ -392,11 +408,44 @@ process_apply_list_jsonin(){
     emit_error --code usage_error --detail "python3 required for path validation in --json-in mode"
     die "python3 required for path validation in --json-in mode"
   fi
+
+  # Buffer stdin once so we can pre-validate without losing the stream.
+  # Apply lists for thumbnail_detect are bounded (typically <1MB).
+  local stdin_input
+  stdin_input=$(cat)
+
+  # Zero-command apply is a no-op success (smoke gap D2).
+  if [[ -z "$stdin_input" ]]; then
+    emit_run_end --status succeeded --total 0 --applied 0 --skipped 0
+    return 0
+  fi
+
+  # Pre-flight: every input line must be valid JSON (smoke gap D3).
+  if ! printf '%s' "$stdin_input" | jq -c '.' >/dev/null 2>&1; then
+    emit_error --code apply_failed \
+      --detail "malformed apply input (not valid JSON)"
+    emit_run_end --status failed --total 0 --applied 0 --skipped 0
+    return 1
+  fi
+
   local total=0 moved=0 skipped=0
   local _type src dst_dir keeper decision
+  local _enc_type _enc_src _enc_dst _enc_keeper _enc_dec
   local src_root abs_src abs_dst
   src_root="$(_resolve_abs "$SOURCE_DIR")"
-  while IFS=$'\t' read -r _type src dst_dir keeper decision; do
+  # NUL-safe field transport: jq emits each field as @base64, one per line.
+  # base64 output contains only [A-Za-z0-9+/=] so newline is an unambiguous
+  # record separator.  bash then decodes; tab/newline in paths are preserved.
+  while IFS= read -r _enc_type   && \
+        IFS= read -r _enc_src    && \
+        IFS= read -r _enc_dst    && \
+        IFS= read -r _enc_keeper && \
+        IFS= read -r _enc_dec; do
+    _type=$(printf '%s' "$_enc_type"   | base64 --decode)
+    src=$(printf '%s' "$_enc_src"      | base64 --decode)
+    dst_dir=$(printf '%s' "$_enc_dst"  | base64 --decode)
+    keeper=$(printf '%s' "$_enc_keeper"| base64 --decode)
+    decision=$(printf '%s' "$_enc_dec" | base64 --decode)
     total=$((total+1))
     abs_src="$(_resolve_abs "$src")"
     abs_dst="$(_resolve_abs "$dst_dir")"
@@ -412,13 +461,7 @@ process_apply_list_jsonin(){
             --detail "dst_dir not under \$SOURCE_DIR ($src_root): $dst_dir"
           skipped=$((skipped+1)); continue
         fi
-        case "$decision" in
-          thumb_l1_review|thumb_l2_exif|thumb_l3_embed|thumb_confirmed|keep_user_override) ;;
-          *)
-            emit_error --code apply_failed --path "$src" \
-              --detail "unknown decision '$decision'"
-            skipped=$((skipped+1)); continue ;;
-        esac
+        _validate_decision "$decision" "$src" || { skipped=$((skipped+1)); continue; }
         if [[ ! -e "$src" ]]; then
           emit_warn --code missing_file --path "$src" \
             --detail "apply src not on disk"
@@ -438,6 +481,7 @@ process_apply_list_jsonin(){
             --detail "src not under \$SOURCE_DIR ($src_root)"
           skipped=$((skipped+1)); continue
         fi
+        _validate_decision "$decision" "$src" || { skipped=$((skipped+1)); continue; }
         emit_action_skip --src "$src" --decision "$decision" --reason user_override
         skipped=$((skipped+1))
         ;;
@@ -447,8 +491,12 @@ process_apply_list_jsonin(){
         skipped=$((skipped+1))
         ;;
     esac
-  done < <(jq -rc 'select(.type == "apply_move" or .type == "apply_skip") |
-                   [.type, (.src // ""), (.dst_dir // ""), (.keeper // ""), (.decision // "")] | @tsv')
+  done < <(printf '%s' "$stdin_input" | jq -rj 'select(.type == "apply_move" or .type == "apply_skip") |
+                   (.type         | @base64), "\n",
+                   (.src     // ""| @base64), "\n",
+                   (.dst_dir // ""| @base64), "\n",
+                   (.keeper  // ""| @base64), "\n",
+                   (.decision// ""| @base64), "\n"')
   emit_run_end --status succeeded --total "$total" --applied "$moved" --skipped "$skipped"
 }
 
