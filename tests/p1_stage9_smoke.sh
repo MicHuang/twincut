@@ -88,6 +88,9 @@ assert "apply source file removed" \
 assert "apply emitted run_end status=succeeded" \
   'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_NDJSON"'
 
+assert "apply emitted progress phase=apply" \
+  'grep -q "\"type\":\"progress\".*\"phase\":\"apply\"" "$APPLY_NDJSON"'
+
 # === 5. unknown decision triggers error event, no crash ===
 APPLY_BAD="$TMP/apply_bad.ndjson"
 cat > "$APPLY_BAD" <<EOF
@@ -250,6 +253,70 @@ assert "D4: missing-src emits no action events" \
 
 assert "D4: missing-src emits run_end status=succeeded" \
   'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$MISS_NDJSON"'
+
+# === E2E. detect→review→apply seam ===
+# Earlier sections prove (a) detection emits thumb_candidate and (b) a
+# hand-written ApplyCommand applies — but nothing proved the detector's OWN
+# output round-trips through the typed apply contract. Here we derive the
+# ApplyCommand straight from a real thumb_candidate event (mirroring the Go
+# UI's composeApplyCommands: type, src, dst_dir, keeper, decision), pipe it
+# back through --json-in, and verify the on-disk move. Closes the seam that
+# the three-way detect/phash/apply test split otherwise left uncovered.
+E2E_SRC="$TMP/srcE2E"; mkdir -p "$E2E_SRC"
+python3 - <<PY
+from PIL import Image
+import os
+src = "$E2E_SRC"
+def grad(name, size):
+    # Paint a small gradient then C-resize to target (fast; avoids a
+    # multi-million-iteration putpixel loop on large fixtures).
+    small = Image.new("RGB", (64, 64))
+    for x in range(64):
+        for y in range(64):
+            small.putpixel((x, y), ((x*4) % 256, (y*4) % 256, (x*y) % 256))
+    small.resize(size).save(os.path.join(src, name))
+grad("e2e_keeper.jpg", (1600, 1600))  # >1024 long edge, >0.5MP → not a candidate
+grad("e2e_thumb.jpg", (320, 240))     # small dims → L1 thumbnail candidate
+PY
+
+E2E_PREVIEW="$TMP/e2e_preview.ndjson"
+"$TWINCUT" --thumbnail-detect --source "$E2E_SRC" --json-events \
+  >"$E2E_PREVIEW" 2>/dev/null || true
+
+# The real candidate path the detector reported (verify the move against it).
+E2E_CAND="$(jq -rs 'map(select(.type=="thumb_candidate")) | (.[0].path // "")' "$E2E_PREVIEW")"
+assert "E2E: detector reported a thumb_candidate path on disk" \
+  '[[ -n "$E2E_CAND" && -e "$E2E_CAND" ]]'
+
+# Derive the ApplyCommand from that event (slurp + take first; no head/SIGPIPE
+# under pipefail). dst_dir is the UI-chosen quarantine subdir.
+E2E_QUAR="$E2E_SRC/_QUARANTINE/_thumbs"
+E2E_APPLY="$TMP/e2e_apply.ndjson"
+jq -cs --arg quar "$E2E_QUAR" '
+  (map(select(.type=="thumb_candidate")) | .[0]) as $c
+  | if $c == null then empty
+    else {type:"apply_move", src:$c.path, dst_dir:$quar, keeper:($c.keeper // ""), decision:$c.decision}
+    end
+' "$E2E_PREVIEW" > "$E2E_APPLY"
+
+assert "E2E: derived exactly one apply_move from detector output" \
+  '[[ $(grep -c "\"type\":\"apply_move\"" "$E2E_APPLY") -eq 1 ]]'
+
+E2E_RESULT="$TMP/e2e_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$E2E_SRC" \
+  >"$E2E_RESULT" 2>/dev/null < "$E2E_APPLY" || true
+
+assert "E2E: detector-derived apply emitted action kind=move" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$E2E_RESULT") -eq 1 ]]'
+
+assert "E2E: detector-derived candidate left the source tree" \
+  '[[ ! -e "$E2E_CAND" ]]'
+
+assert "E2E: detector-derived candidate now in quarantine" \
+  '[[ -e "$E2E_QUAR/$(basename "$E2E_CAND")" ]]'
+
+assert "E2E: apply emitted run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$E2E_RESULT"'
 
 echo "========================================="
 echo "PASS=$PASS FAIL=$FAIL"

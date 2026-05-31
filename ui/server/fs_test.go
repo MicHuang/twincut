@@ -19,12 +19,25 @@ func TestIsAllowedPath(t *testing.T) {
 		{"", true},
 		{home, true},
 		{filepath.Join(home, "Pictures"), true},
-		{"/Volumes", true},
 		{"/", false},
 		{"/etc", false},
 		{"/etc/passwd", false},
 		{"/System", false},
 		{"/private/var", false},
+	}
+	// /Volumes is an allowed root only on systems where it exists (macOS).
+	// On Linux CI runners it is absent, so allowedRoots() omits it and the
+	// expectation flips to false — assert per-platform rather than hardcode.
+	if _, err := os.Stat("/Volumes"); err == nil {
+		cases = append(cases, struct {
+			path string
+			want bool
+		}{"/Volumes", true})
+	} else {
+		cases = append(cases, struct {
+			path string
+			want bool
+		}{"/Volumes", false})
 	}
 	for _, c := range cases {
 		t.Run(c.path, func(t *testing.T) {

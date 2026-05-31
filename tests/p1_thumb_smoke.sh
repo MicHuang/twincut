@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-# tests/p1_thumb_smoke.sh — smoke test for P1 thumbnail detection (L1+L2+L3).
+# tests/p1_thumb_smoke.sh — smoke test for P1 thumbnail DETECTION (L1+L2+L3).
 #
-# Validates the no-AI part of the pipeline:
-#   - L1 dimension classification (sips path)
-#   - L1-only suspects → review.csv (no automatic move)
+# Scope: the detect/scan side of thumbnail_detect — classification and the
+# events/review.csv it produces. The APPLY side (executing the moves) is
+# covered by tests/p1_stage9_smoke.sh via the Go-owned --json-in contract;
+# L1 pHash pairing is covered by tests/p1_thumb_phash_smoke.sh.
+#
+# Validates:
+#   - L1 dimension classification (sips path) → review.csv (no automatic move)
+#   - L1-only suspects are never auto-moved (review-only policy)
 #   - graceful degrade when exiftool is absent (L2/L3 skipped, no crash)
-#   - --thumb-confirm processes (a possibly user-edited) review.csv via qmove
-#   - manifest is written for confirmed moves
-#   - --restore rolls back confirmed moves
 #   - thumbnail-detect can run standalone (only --source, no --backup)
+#   - thumbnail-detect coexists with cross-check
+#   - --json-events emits thumb_candidate / thumb_l1_review NDJSON
+#   - run_start mode field + --apply-list mutual-exclusion guard
 #
 # When exiftool IS available, additionally validates:
 #   - L2 EXIF clustering: identical fingerprint, different size → small one moved
-#   - L3 embedded thumbnail: small file == big file's embedded thumb → small moved
+#   - L3 embedded thumbnail: small file == big file's embedded thumb (dry-run event)
 # These extra checks require: brew install exiftool
 
 set -euo pipefail
@@ -20,7 +25,20 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TWINCUT="$ROOT/bin/twincut.sh"
 
-command -v sips >/dev/null 2>&1 || { echo "sips not found — this test requires macOS 'sips'"; exit 0; }
+# Under TWINCUT_REQUIRE_TOOLS=1 (set by the macOS CI job) a missing tool is a
+# hard FAILURE instead of a silent skip — that silent skip is exactly how this
+# suite could go green in CI without exercising anything (reviewer-codex finding).
+if ! command -v sips >/dev/null 2>&1; then
+  if [[ "${TWINCUT_REQUIRE_TOOLS:-0}" == "1" ]]; then
+    echo "FAIL: 'sips' not found but TWINCUT_REQUIRE_TOOLS=1 — this runner must exercise the thumbnail path"; exit 1
+  fi
+  echo "sips not found — this test requires macOS 'sips'; skipping"; exit 0
+fi
+# exiftool gates L2/L3. Require it under require-mode so CI gets real L2/L3
+# coverage; in normal mode the per-section guards degrade gracefully (L1 runs).
+if [[ "${TWINCUT_REQUIRE_TOOLS:-0}" == "1" ]] && ! command -v exiftool >/dev/null 2>&1; then
+  echo "FAIL: 'exiftool' not found but TWINCUT_REQUIRE_TOOLS=1 — L2/L3 coverage required"; exit 1
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -37,10 +55,34 @@ assert_file(){     [[ -e "$1" ]] && ok "exists: $1"     || bad "missing: $1"; }
 assert_not_file(){ [[ ! -e "$1" ]] && ok "absent: $1"   || bad "still there: $1"; }
 
 # ---------- fixtures ----------
-# Use a system PNG as a real image source so sips can read dimensions.
-SEED="/System/Library/Desktop Pictures/Solid Colors/Black.png"
-[[ -f "$SEED" ]] || SEED="/System/Library/Desktop Pictures/Solid Colors/Stone.png"
-[[ -f "$SEED" ]] || { echo "no seed image found, skipping"; exit 0; }
+# Seed image: generate a large PNG so the suite is runner-independent (GitHub
+# macOS runners lack the Desktop Pictures dir). `sips -z` only shrinks, so the
+# seed must be bigger than the largest target (2000px). L2/L3 inject their own
+# EXIF via exiftool below, so the seed needs no metadata of its own.
+SEED="$TMP/_seed.png"
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import PIL' >/dev/null 2>&1; then
+  python3 - "$SEED" <<'PY'
+import sys
+from PIL import Image
+# Build a small gradient then upscale (fast C resize) to 2400x2400.
+small = Image.new("RGB", (64, 64))
+for x in range(64):
+    for y in range(64):
+        small.putpixel((x, y), ((x * 4) % 256, (y * 4) % 256, (x * y) % 256))
+small.resize((2400, 2400)).save(sys.argv[1])
+PY
+fi
+# Fall back to a system image (local macOS dev), then skip/fail per require-mode.
+if [[ ! -f "$SEED" ]]; then
+  SEED="/System/Library/Desktop Pictures/Solid Colors/Black.png"
+  [[ -f "$SEED" ]] || SEED="/System/Library/Desktop Pictures/Solid Colors/Stone.png"
+fi
+if [[ ! -f "$SEED" ]]; then
+  if [[ "${TWINCUT_REQUIRE_TOOLS:-0}" == "1" ]]; then
+    echo "FAIL: no seed image and Pillow unavailable but TWINCUT_REQUIRE_TOOLS=1"; exit 1
+  fi
+  echo "no seed image found, skipping"; exit 0
+fi
 
 # Big image: 2000x2000 (long edge >> 1024 → l1=ok)
 sips -z 2000 2000 "$SEED" --out "$SRC/big.png" >/dev/null
@@ -83,29 +125,7 @@ if ! command -v exiftool >/dev/null 2>&1; then
 fi
 
 # ----------------------------------------------------------------------------
-note "2. --thumb-confirm moves rows from review.csv and writes manifest"
-"$TWINCUT" --thumb-confirm "$REVIEW" --assume-yes >/tmp/twincut_confirm.log 2>&1
-
-# tiny.png and maybe.png should be moved into _thumbnails/
-assert_not_file "$SRC/tiny.png"
-assert_not_file "$SRC/maybe.png"
-assert_file "$SRC/_thumbnails/tiny.png"
-assert_file "$SRC/_thumbnails/maybe.png"
-
-# manifest should exist with thumb_confirmed rows
-MF=$(ls -t "$SRC/_thumbnails"/_manifest-*.tsv 2>/dev/null | head -n1 || true)
-[[ -n "$MF" ]] && ok "thumb manifest created" || bad "no manifest after confirm"
-grep -q "thumb_confirmed" "$MF" && ok "manifest has thumb_confirmed rows" || bad "no thumb_confirmed rows"
-
-# ----------------------------------------------------------------------------
-note "3. --restore rolls thumbnails back"
-"$TWINCUT" --restore "$MF" --assume-yes >/tmp/twincut_thumb_restore.log 2>&1
-assert_file "$SRC/tiny.png"
-assert_file "$SRC/maybe.png"
-assert_not_file "$SRC/_thumbnails/tiny.png"
-
-# ----------------------------------------------------------------------------
-note "4. --thumb-action move with no L2/L3 evidence does NOT auto-move L1-only"
+note "2. --thumb-action move with no L2/L3 evidence does NOT auto-move L1-only"
 # Re-run with --thumb-action move; without exiftool, L1-only files must STILL
 # go to review (the L2/L3 evidence is missing → policy never auto-deletes).
 rm -f "$REVIEW"
@@ -115,7 +135,7 @@ assert_file "$SRC/tiny.png"
 assert_file "$SRC/maybe.png"
 
 # ----------------------------------------------------------------------------
-note "5. coexists with cross-check"
+note "3. coexists with cross-check"
 BK="$TMP/backup"; mkdir -p "$BK"
 echo "dupe-content" > "$BK/d.jpg"
 cp "$BK/d.jpg" "$SRC/d.jpg"
@@ -129,7 +149,7 @@ assert_file "$SRC/_thumbnails/_review.csv"          # thumbnail phase ran
 # ----------------------------------------------------------------------------
 # Optional L2/L3 checks (only if exiftool is installed).
 if command -v exiftool >/dev/null 2>&1; then
-  note "6. L2 EXIF clustering (optional, requires exiftool)"
+  note "4. L2 EXIF clustering (optional, requires exiftool)"
   # Build a real JPEG with EXIF then derive a smaller copy that shares EXIF.
   # NOTE: sips -z only shrinks; use --resampleHeightWidth to force an exact
   # size, so photo.jpg is reliably larger than photo_small.jpg regardless of
@@ -155,9 +175,9 @@ if command -v exiftool >/dev/null 2>&1; then
 fi
 
 # ----------------------------------------------------------------------------
-# Section 7: L2 dry-run emits thumb_candidate NDJSON (no file moved)
+# Section 5: L2 dry-run emits thumb_candidate NDJSON (no file moved)
 if command -v exiftool >/dev/null 2>&1; then
-  note "7. L2 dry-run emits thumb_candidate NDJSON — no file moved"
+  note "5. L2 dry-run emits thumb_candidate NDJSON — no file moved"
   rm -rf "$SRC"; mkdir -p "$SRC"
   sips -s format jpeg "$SEED" --resampleHeightWidth 1600 1600 --out "$SRC/photo.jpg" >/dev/null
   exiftool -overwrite_original \
@@ -191,9 +211,9 @@ if command -v exiftool >/dev/null 2>&1; then
 fi
 
 # ----------------------------------------------------------------------------
-# Section 8: L3 dry-run emits thumb_candidate NDJSON (no file moved)
+# Section 6: L3 dry-run emits thumb_candidate NDJSON (no file moved)
 if command -v exiftool >/dev/null 2>&1; then
-  note "8. L3 dry-run emits thumb_candidate NDJSON — no file moved"
+  note "6. L3 dry-run emits thumb_candidate NDJSON — no file moved"
   # Build an L3 pair: big.jpg with an embedded thumbnail == small.jpg pixel-for-pixel.
   # Strategy: create small.jpg first, then embed it as the thumbnail of big.jpg.
   rm -rf "$SRC"; mkdir -p "$SRC"
@@ -223,75 +243,7 @@ if command -v exiftool >/dev/null 2>&1; then
 fi
 
 # ----------------------------------------------------------------------------
-# Section 9: --thumb-confirm decision column
-note "9. --thumb-confirm: 7-column TSV uses decision and keeper columns"
-rm -rf "$SRC"; mkdir -p "$SRC"
-sips -z 200 200 "$SEED" --out "$SRC/thumbA.png" >/dev/null
-sips -z 300 300 "$SEED" --out "$SRC/thumbB.png" >/dev/null
-sips -z 400 400 "$SEED" --out "$SRC/thumbC.png" >/dev/null
-
-THUMB_DIR9="$TMP/td9"; mkdir -p "$THUMB_DIR9"
-CSV9="$THUMB_DIR9/_review9.tsv"
-# 7-column TSV: path\treason\twidth\theight\tnote\tdecision\tkeeper (no quoting)
-printf 'path\treason\twidth\theight\tnote\tdecision\tkeeper\n' > "$CSV9"
-printf '%s\tl1_only_thumb\t200\t200\t\tthumb_l2_exif\t%s\n' "$SRC/thumbA.png" "$SRC/keeperA.png" >> "$CSV9"
-printf '%s\tl1_only_thumb\t300\t300\t\tthumb_l3_embed\t%s\n' "$SRC/thumbB.png" "$SRC/keeperB.png" >> "$CSV9"
-printf '%s\tl1_only_thumb\t400\t400\t\tthumb_confirmed\t\n' "$SRC/thumbC.png" >> "$CSV9"
-
-"$TWINCUT" --thumb-confirm "$CSV9" --thumb-dir "$THUMB_DIR9" --assume-yes \
-  >/tmp/twincut_confirm9.log 2>&1
-
-MF9=$(ls -t "$THUMB_DIR9"/_manifest-*.tsv 2>/dev/null | head -n1 || true)
-[[ -n "$MF9" ]] && ok "section 9: manifest created" || bad "section 9: no manifest"
-
-grep -q "thumb_l2_exif"   "$MF9" && ok "manifest has thumb_l2_exif row"   || bad "manifest missing thumb_l2_exif"
-grep -q "thumb_l3_embed"  "$MF9" && ok "manifest has thumb_l3_embed row"  || bad "manifest missing thumb_l3_embed"
-grep -q "thumb_confirmed" "$MF9" && ok "manifest has thumb_confirmed row"  || bad "manifest missing thumb_confirmed"
-grep -q "$SRC/keeperA.png" "$MF9" && ok "9: manifest records L2 keeper path"   || bad "9: L2 keeper missing from manifest"
-grep -q "$SRC/keeperB.png" "$MF9" && ok "9: manifest records L3 keeper path"   || bad "9: L3 keeper missing from manifest"
-
-# ----------------------------------------------------------------------------
-note "9b. --thumb-confirm: legacy 5-column TSV falls back to thumb_confirmed"
-rm -rf "$SRC"; mkdir -p "$SRC"
-sips -z 200 200 "$SEED" --out "$SRC/thumbD.png" >/dev/null
-
-THUMB_DIR9B="$TMP/td9b"; mkdir -p "$THUMB_DIR9B"
-CSV9B="$THUMB_DIR9B/_review9b.tsv"
-# 5-column TSV (legacy): no decision column (no quoting)
-printf 'path\treason\twidth\theight\tnote\n' > "$CSV9B"
-printf '%s\tl1_only_thumb\t200\t200\t\n' "$SRC/thumbD.png" >> "$CSV9B"
-
-"$TWINCUT" --thumb-confirm "$CSV9B" --thumb-dir "$THUMB_DIR9B" --assume-yes \
-  >/tmp/twincut_confirm9b.log 2>&1
-
-MF9B=$(ls -t "$THUMB_DIR9B"/_manifest-*.tsv 2>/dev/null | head -n1 || true)
-[[ -n "$MF9B" ]] && ok "section 9b: manifest created" || bad "section 9b: no manifest"
-grep -q "thumb_confirmed" "$MF9B" && ok "9b: legacy TSV defaults to thumb_confirmed" || bad "9b: missing thumb_confirmed"
-
-# ----------------------------------------------------------------------------
-note "9c. --thumb-confirm: unknown decision value is rejected with warning, row skipped"
-rm -rf "$SRC"; mkdir -p "$SRC"
-sips -z 200 200 "$SEED" --out "$SRC/thumbE.png" >/dev/null
-
-THUMB_DIR9C="$TMP/td9c"; mkdir -p "$THUMB_DIR9C"
-CSV9C="$THUMB_DIR9C/_review9c.tsv"
-printf 'path\treason\twidth\theight\tnote\tdecision\tkeeper\n' > "$CSV9C"
-printf '%s\tl1_only_thumb\t200\t200\t\tinvalid_value\t\n' "$SRC/thumbE.png" >> "$CSV9C"
-
-"$TWINCUT" --thumb-confirm "$CSV9C" --thumb-dir "$THUMB_DIR9C" --assume-yes \
-  >/tmp/twincut_confirm9c.log 2>&1 || true
-
-# thumbE.png must still be in source (row was skipped)
-assert_file "$SRC/thumbE.png"
-# Warning must appear in stderr (captured in log via 2>&1)
-grep -qi "unknown\|invalid\|reject" /tmp/twincut_confirm9c.log \
-  && ok "9c: unknown decision value warning printed" \
-  || bad "9c: no warning for unknown decision value"
-
-# ----------------------------------------------------------------------------
-note "10. run_start _mode field for thumbnail paths"
-
-# 10a: --thumbnail-detect --dry-run --json-events → mode=thumbnail_detect_preview
+note "7. run_start mode=thumbnail_detect_preview on dry-run"
 rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/s.png" >/dev/null
 MODE_OUT="$(
@@ -299,31 +251,14 @@ MODE_OUT="$(
     2>/dev/null
 )"
 if printf '%s\n' "$MODE_OUT" | grep -q '"type":"run_start".*"mode":"thumbnail_detect_preview"'; then
-  ok "10a: run_start mode=thumbnail_detect_preview on dry-run"
+  ok "7: run_start mode=thumbnail_detect_preview on dry-run"
 else
-  bad "10a: expected mode=thumbnail_detect_preview in run_start"
+  bad "7: expected mode=thumbnail_detect_preview in run_start"
   printf '%s\n' "$MODE_OUT" | grep '"type":"run_start"' || true
 fi
 
-# 10b: --thumb-confirm --json-events → mode=thumbnail_detect_apply
-rm -rf "$SRC"; mkdir -p "$SRC"
-sips -z 200 200 "$SEED" --out "$SRC/tc.png" >/dev/null
-THUMB_DIR10="$TMP/td10"; mkdir -p "$THUMB_DIR10"
-CSV10="$THUMB_DIR10/_r10.tsv"
-printf 'path\treason\twidth\theight\tnote\n' > "$CSV10"
-printf '%s\tl1_only_thumb\t200\t200\t\n' "$SRC/tc.png" >> "$CSV10"
-CONFIRM_OUT="$(
-  "$TWINCUT" --thumb-confirm "$CSV10" --thumb-dir "$THUMB_DIR10" --json-events --assume-yes \
-    2>/dev/null
-)"
-if printf '%s\n' "$CONFIRM_OUT" | grep -q '"type":"run_start".*"mode":"thumbnail_detect_apply"'; then
-  ok "10b: run_start mode=thumbnail_detect_apply on --thumb-confirm"
-else
-  bad "10b: expected mode=thumbnail_detect_apply in run_start"
-  printf '%s\n' "$CONFIRM_OUT" | grep '"type":"run_start"' || true
-fi
-
-# 10c: --thumbnail-detect + --apply-list must exit non-zero with usage error
+# ----------------------------------------------------------------------------
+note "8. --thumbnail-detect + --apply-list is rejected (usage error)"
 set +e
 GUARD_OUT="$(
   "$TWINCUT" --source "$SRC" --thumbnail-detect --apply-list /tmp/nonexistent.tsv \
@@ -332,18 +267,18 @@ GUARD_OUT="$(
 GUARD_RC=$?
 set -e
 if [[ "$GUARD_RC" -ne 0 ]]; then
-  ok "10c: --thumbnail-detect + --apply-list exits non-zero (rc=$GUARD_RC)"
+  ok "8: --thumbnail-detect + --apply-list exits non-zero (rc=$GUARD_RC)"
 else
-  bad "10c: expected non-zero exit for --thumbnail-detect + --apply-list combination"
+  bad "8: expected non-zero exit for --thumbnail-detect + --apply-list combination"
 fi
 if printf '%s\n' "$GUARD_OUT" | grep -qi "mutually exclusive\|cannot combine\|usage"; then
-  ok "10c: usage error message printed"
+  ok "8: usage error message printed"
 else
-  bad "10c: no usage error message for --thumbnail-detect + --apply-list"
+  bad "8: no usage error message for --thumbnail-detect + --apply-list"
 fi
 
 # ----------------------------------------------------------------------------
-note "11. dry-run leaves L1-only files on disk (no thumbnails/ writes)"
+note "9. dry-run leaves L1-only files on disk (no thumbnails/ writes)"
 rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/dry_tiny.png" >/dev/null
 sips -z 500 700 "$SEED" --out "$SRC/dry_maybe.png" >/dev/null
@@ -351,7 +286,7 @@ sips -z 2000 2000 "$SEED" --out "$SRC/dry_big.png" >/dev/null
 
 rm -rf "$SRC/_thumbnails"
 "$TWINCUT" --source "$SRC" --thumbnail-detect --dry-run --assume-yes \
-  >/tmp/twincut_dry11.log 2>&1
+  >/tmp/twincut_dry9.log 2>&1
 
 # Files must still be in source
 assert_file "$SRC/dry_tiny.png"
@@ -362,73 +297,73 @@ assert_file "$SRC/dry_big.png"
 if [[ -d "$SRC/_thumbnails" ]]; then
   MOVED_COUNT="$(find "$SRC/_thumbnails" -type f ! -name '*.csv' ! -name '_manifest*' | wc -l | tr -d ' ')"
   if [[ "$MOVED_COUNT" -eq 0 ]]; then
-    ok "11: dry-run left no image files in _thumbnails/"
+    ok "9: dry-run left no image files in _thumbnails/"
   else
-    bad "11: dry-run moved $MOVED_COUNT file(s) into _thumbnails/ — should not move"
+    bad "9: dry-run moved $MOVED_COUNT file(s) into _thumbnails/ — should not move"
   fi
 else
-  ok "11: _thumbnails/ not created by dry-run"
+  ok "9: _thumbnails/ not created by dry-run"
 fi
 
 # review.csv, if written, must have exactly 5 tab-separated columns in the header (no decision column)
-REVIEW11="$SRC/_thumbnails/_review.csv"
-if [[ -f "$REVIEW11" ]]; then
-  HEADER11="$(head -n1 "$REVIEW11")"
-  if [[ "$HEADER11" == $'path\treason\twidth\theight\tnote' ]]; then
-    ok "11: review.csv header has 5 TSV columns (no decision column)"
+REVIEW9="$SRC/_thumbnails/_review.csv"
+if [[ -f "$REVIEW9" ]]; then
+  HEADER9="$(head -n1 "$REVIEW9")"
+  if [[ "$HEADER9" == $'path\treason\twidth\theight\tnote' ]]; then
+    ok "9: review.csv header has 5 TSV columns (no decision column)"
   else
-    bad "11: review.csv header is '$HEADER11', want tab-separated 'path\treason\twidth\theight\tnote'"
+    bad "9: review.csv header is '$HEADER9', want tab-separated 'path\treason\twidth\theight\tnote'"
   fi
 fi
 
 # ---------------------------------------------------------------------
-# Section 12: Stage 8.5 Fix 1 — L1 → NDJSON events under --json-events
+# Section 10: Stage 8.5 Fix 1 — L1 → NDJSON events under --json-events
 # ---------------------------------------------------------------------
-note "12. thumb-detect with --json-events emits thumb_l1_review events and skips _review.csv"
+note "10. thumb-detect with --json-events emits thumb_l1_review events and skips _review.csv"
 rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/orphanA.png" >/dev/null
 sips -z 300 300 "$SEED" --out "$SRC/orphanB.png" >/dev/null
 
-LOG12="/tmp/twincut_stage85_t12.log"
+LOG10="/tmp/twincut_stage85_t10.log"
 "$TWINCUT" --thumbnail-detect --dry-run --json-events \
-  --source "$SRC" --assume-yes >"$LOG12" 2>&1
+  --source "$SRC" --assume-yes >"$LOG10" 2>&1
 
 [[ ! -f "$SRC/_thumbnails/_review.csv" ]] \
-  && ok "section 12: _review.csv NOT created under --json-events" \
-  || bad "section 12: _review.csv was created under --json-events (should be skipped)"
+  && ok "section 10: _review.csv NOT created under --json-events" \
+  || bad "section 10: _review.csv was created under --json-events (should be skipped)"
 
-N12=$(grep -c '"decision":"thumb_l1_review"' "$LOG12" || true)
-[[ "$N12" -ge 2 ]] \
-  && ok "section 12: $N12 thumb_l1_review events emitted (>=2 expected)" \
-  || bad "section 12: only $N12 thumb_l1_review events in log (expected >=2)"
+N10=$(grep -c '"decision":"thumb_l1_review"' "$LOG10" || true)
+[[ "$N10" -ge 2 ]] \
+  && ok "section 10: $N10 thumb_l1_review events emitted (>=2 expected)" \
+  || bad "section 10: only $N10 thumb_l1_review events in log (expected >=2)"
 
-grep '"decision":"thumb_l1_review"' "$LOG12" | head -1 | \
+grep '"decision":"thumb_l1_review"' "$LOG10" | head -1 | \
   grep -q '"path":".*"' && \
-  grep '"decision":"thumb_l1_review"' "$LOG12" | head -1 | \
+  grep '"decision":"thumb_l1_review"' "$LOG10" | head -1 | \
   grep -q '"reason":"l1_only_' && \
-  grep '"decision":"thumb_l1_review"' "$LOG12" | head -1 | \
+  grep '"decision":"thumb_l1_review"' "$LOG10" | head -1 | \
   grep -q '"width":[0-9]' \
-  && ok "section 12: L1 event has path/reason/width fields" \
-  || bad "section 12: L1 event missing required fields"
+  && ok "section 10: L1 event has path/reason/width fields" \
+  || bad "section 10: L1 event missing required fields"
 
 # ---------------------------------------------------------------------
-# Section 12b: Stage 8.5 regression — legacy CLI (no --json-events) still writes file
+# Section 11: Stage 8.5 regression — legacy CLI (no --json-events) still writes file
 # ---------------------------------------------------------------------
-note "12b. thumb-detect without --json-events still writes _review.csv (legacy CLI regression guard)"
+note "11. thumb-detect without --json-events still writes _review.csv (legacy CLI regression guard)"
 rm -rf "$SRC"; mkdir -p "$SRC"
 sips -z 200 200 "$SEED" --out "$SRC/orphanC.png" >/dev/null
 
-LOG12B="/tmp/twincut_stage85_t12b.log"
+LOG11="/tmp/twincut_stage85_t11.log"
 "$TWINCUT" --thumbnail-detect --dry-run \
-  --source "$SRC" --assume-yes >"$LOG12B" 2>&1
+  --source "$SRC" --assume-yes >"$LOG11" 2>&1
 
 [[ -f "$SRC/_thumbnails/_review.csv" ]] \
-  && ok "section 12b: _review.csv written for legacy CLI path" \
-  || bad "section 12b: _review.csv missing for legacy CLI path"
+  && ok "section 11: _review.csv written for legacy CLI path" \
+  || bad "section 11: _review.csv missing for legacy CLI path"
 
 grep -q "orphanC.png" "$SRC/_thumbnails/_review.csv" \
-  && ok "section 12b: review file contains expected suspect" \
-  || bad "section 12b: review file missing expected suspect"
+  && ok "section 11: review file contains expected suspect" \
+  || bad "section 11: review file missing expected suspect"
 
 echo
 echo "===== RESULT: $PASS passed, $FAIL failed ====="

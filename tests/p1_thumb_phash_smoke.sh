@@ -19,7 +19,15 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TWINCUT="$ROOT/bin/twincut.sh"
 PHASH="$ROOT/bin/phash.py"
 
-command -v sips >/dev/null 2>&1 || { echo "sips not found — requires macOS"; exit 0; }
+# Under TWINCUT_REQUIRE_TOOLS=1 (macOS CI job) a missing tool is a hard FAILURE
+# instead of a silent skip — the silent skip is how this suite could go green in
+# CI without exercising the pHash path at all (reviewer-codex finding).
+if ! command -v sips >/dev/null 2>&1; then
+  if [[ "${TWINCUT_REQUIRE_TOOLS:-0}" == "1" ]]; then
+    echo "FAIL: 'sips' not found but TWINCUT_REQUIRE_TOOLS=1 — this runner must exercise the pHash path"; exit 1
+  fi
+  echo "sips not found — requires macOS; skipping"; exit 0
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -44,6 +52,10 @@ if command -v python3 >/dev/null 2>&1 \
   HAVE_PHASH_DEPS=true
   ok "section 0: python3 + Pillow + imagehash available"
 else
+  if [[ "${TWINCUT_REQUIRE_TOOLS:-0}" == "1" ]]; then
+    bad "section 0: pHash deps (python3+Pillow+imagehash) missing but TWINCUT_REQUIRE_TOOLS=1"
+    echo "PASS=$PASS FAIL=$FAIL"; exit 1
+  fi
   ok "section 0: pHash deps NOT available — sections 1–9, 12 will be skipped"
 fi
 
@@ -52,9 +64,18 @@ fi
 # ---------------------------------------------------------------------
 note "1. phash.py emits a 16-hex-char dhash for a PNG"
 if $HAVE_PHASH_DEPS; then
-  SEED="/System/Library/Desktop Pictures/Solid Colors/Black.png"
-  [[ -f "$SEED" ]] || SEED="/System/Library/Desktop Pictures/Solid Colors/Stone.png"
-  [[ -f "$SEED" ]] || { echo "no seed image"; exit 0; }
+  # Generate the seed with Pillow (guaranteed here) so the suite is
+  # runner-independent; --resampleHeightWidth below forces the final size.
+  SEED="$TMP/_seed.png"
+  python3 - "$SEED" <<'PY'
+import sys
+from PIL import Image
+small = Image.new("RGB", (64, 64))
+for x in range(64):
+    for y in range(64):
+        small.putpixel((x, y), ((x * 4) % 256, (y * 4) % 256, (x * y) % 256))
+small.resize((600, 600)).save(sys.argv[1])
+PY
 
   sips -s format png "$SEED" --resampleHeightWidth 400 400 \
        --out "$SRC/s1_a.png" >/dev/null

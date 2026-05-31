@@ -113,11 +113,15 @@ grep -q $'\tappledouble\t' "$REAL_MF" && ok "manifest has appledouble row" || ba
 
 # ----------------------------------------------------------------------------
 note "3. --restore puts files back"
-"$TWINCUT" --restore "$REAL_MF" --assume-yes >/tmp/twincut_restore.log 2>&1
+"$TWINCUT" --restore "$REAL_MF" --assume-yes --json-events >/tmp/twincut_restore_events.ndjson 2>/dev/null
 assert_file "$SRC/a.jpg"
 assert_file "$SRC/b.JPG"
 assert_file "$SRC/._a.jpg"
 assert_not_file "$QUAR/a.jpg"
+grep -q '"type":"run_start".*"mode":"restore"' /tmp/twincut_restore_events.ndjson \
+  && ok "restore emits typed run_start" || bad "restore missing typed run_start"
+grep -q '"type":"run_end".*"restored":' /tmp/twincut_restore_events.ndjson \
+  && ok "restore emits typed run_end with restored count" || bad "restore missing typed run_end"
 
 # ----------------------------------------------------------------------------
 note "4. --restore conflict: original already exists → skip, no overwrite"

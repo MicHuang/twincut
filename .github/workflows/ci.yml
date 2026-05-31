@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  go-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ui/go.mod
+      - run: go test ./...
+
+  shell-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          # imagemagick → `identify` (Linux substitute for macOS `sips`, L1 dim read)
+          # libimage-exiftool-perl → `exiftool` (L2 EXIF clustering / L3 embedded thumb)
+          sudo apt-get install -y -qq jq ffmpeg imagemagick libimage-exiftool-perl
+      - name: Install Python deps
+        run: pip3 install --break-system-packages pillow imagehash
+      - name: Run shell test suites
+        # The two sips-dependent suites (p1_thumb_smoke / p1_thumb_phash_smoke)
+        # run on the macOS job below — on Linux they only skip (no `sips`), so
+        # listing them here would be an illusory green. p1_stage9_smoke covers
+        # the detect→apply seam on Linux via Pillow fixtures.
+        run: |
+          bash tests/events_contract.sh
+          bash tests/p1_stage9_smoke.sh
+          bash tests/p0_smoke.sh
+
+  # macOS-only: exercises the sips-dependent thumbnail detect + pHash suites
+  # that cannot run on Linux. TWINCUT_REQUIRE_TOOLS=1 turns a missing tool into
+  # a hard failure so the suites can never silently skip on the very platform
+  # meant to cover them (reviewer-codex finding: silent-skip = illusory CI).
+  thumbnail-tests-macos:
+    runs-on: macos-latest
+    env:
+      TWINCUT_REQUIRE_TOOLS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install thumbnail deps
+        # sips is native to macOS; exiftool gates L2/L3; pillow+imagehash gate pHash.
+        run: |
+          brew install exiftool
+          python3 -m pip install pillow imagehash
+      - name: Run sips-dependent thumbnail suites
+        run: |
+          bash tests/p1_thumb_smoke.sh
+          bash tests/p1_thumb_phash_smoke.sh

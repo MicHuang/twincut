@@ -61,7 +61,13 @@ thumb_dimensions(){
     w=$(awk '/pixelWidth:/  {print $2}' <<<"$out")
     h=$(awk '/pixelHeight:/ {print $2}' <<<"$out")
   elif $THUMB_HAVE_IDENTIFY; then
-    read -r w h < <(identify -format '%w %h' "$f" 2>/dev/null) || return 1
+    # `identify -format` emits NO trailing newline, so `read … < <(…) || return 1`
+    # treats the EOF as failure (read returns non-zero even though w/h were
+    # assigned) and drops valid dimensions — silently skipping every file, so
+    # L1 detection emitted nothing on Linux. Capture first (mirrors the sips
+    # branch); '\n' keeps it correct for multi-frame inputs.
+    out=$(identify -format '%w %h\n' "$f" 2>/dev/null) || return 1
+    read -r w h <<<"$out"
   fi
   # Strict integer validation — sips can emit "<nil>" or "--" for odd files.
   [[ "$w" =~ ^[0-9]+$ && "$h" =~ ^[0-9]+$ && "$w" -gt 0 && "$h" -gt 0 ]] && echo "$w $h"
@@ -379,8 +385,8 @@ thumb_run_l1_phash(){
   local _f _w _h _cls _live_mt _live_sz _cached_mt _cached_sz _cached_h
   while IFS=$'\t' read -r _f _w _h _cls; do
     [[ -e "$_f" ]] || continue
-    _live_mt="$(stat -f '%m' "$_f" 2>/dev/null || stat -c '%Y' "$_f" 2>/dev/null || echo "")"
-    _live_sz="$(stat -f '%z' "$_f" 2>/dev/null || stat -c '%s' "$_f" 2>/dev/null || echo "")"
+    _live_mt="$(stat -c '%Y' "$_f" 2>/dev/null || stat -f '%m' "$_f" 2>/dev/null || echo "")"
+    _live_sz="$(stat -c '%s' "$_f" 2>/dev/null || stat -f '%z' "$_f" 2>/dev/null || echo "")"
     [[ -z "$_live_mt" || -z "$_live_sz" ]] && continue
     # lookup in live_index_file
     _cached_mt=""; _cached_sz=""; _cached_h=""
@@ -433,8 +439,8 @@ thumb_run_l1_phash(){
     local _p2 _h2 _mt2 _sz2
     while IFS=$'\t' read -r _p2 _h2; do
       [[ -z "$_p2" || -z "$_h2" ]] && continue
-      _mt2="$(stat -f '%m' "$_p2" 2>/dev/null || stat -c '%Y' "$_p2" 2>/dev/null || echo "")"
-      _sz2="$(stat -f '%z' "$_p2" 2>/dev/null || stat -c '%s' "$_p2" 2>/dev/null || echo "")"
+      _mt2="$(stat -c '%Y' "$_p2" 2>/dev/null || stat -f '%m' "$_p2" 2>/dev/null || echo "")"
+      _sz2="$(stat -c '%s' "$_p2" 2>/dev/null || stat -f '%z' "$_p2" 2>/dev/null || echo "")"
       [[ -z "$_mt2" || -z "$_sz2" ]] && continue
       printf '%s\t%s\t%s\t%s\n' "$_p2" "$_mt2" "$_sz2" "$_h2" >> "$new_entries_file"
     done < "$hash_out"
