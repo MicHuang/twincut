@@ -272,15 +272,20 @@ die3(){
   emit_error --code runtime_error --detail "$*"
   echo "ERROR: $*" >&2; exit 3;
 }
-mtime(){ stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
-fsize(){ stat -f %z "$1" 2>/dev/null || stat -c %s "$1" 2>/dev/null || echo 0; }
+mtime(){ stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+fsize(){ stat -c %s "$1" 2>/dev/null || stat -f %z "$1" 2>/dev/null || echo 0; }
 
 # (device,inode) — true if a and b are the same physical file (hardlink / same path)
 same_inode(){
   [[ -e "$1" && -e "$2" ]] || return 1
   local a b
-  a="$(stat -f '%d:%i' "$1" 2>/dev/null || stat -c '%d:%i' "$1" 2>/dev/null || echo "")"
-  b="$(stat -f '%d:%i' "$2" 2>/dev/null || stat -c '%d:%i' "$2" 2>/dev/null || echo "")"
+  # GNU (-c) first, BSD (-f) fallback. On Linux `stat -f` means --file-system,
+  # so 'stat -f %d:%i' there prints the (filename-bearing) fs status to stdout
+  # AND exits non-zero — the old -f-first order then concatenated that garbage
+  # with the -c result, making two hardlinks compare unequal. -c-first succeeds
+  # cleanly on Linux; on macOS -c errors with no stdout, falling through to -f.
+  a="$(stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1" 2>/dev/null || echo "")"
+  b="$(stat -c '%d:%i' "$2" 2>/dev/null || stat -f '%d:%i' "$2" 2>/dev/null || echo "")"
   [[ -n "$a" && "$a" == "$b" ]]
 }
 
@@ -1245,7 +1250,7 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
         KEEP_PATH=""; KEEP_MT=""
         while IFS= read -r p; do
           [[ -z "$p" ]] && continue
-          mt="$(stat -f %m "$p" 2>/dev/null || stat -c %Y "$p" 2>/dev/null || echo 0)"
+          mt="$(stat -c %Y "$p" 2>/dev/null || stat -f %m "$p" 2>/dev/null || echo 0)"
           if [[ -z "$KEEP_PATH" || "$mt" -lt "$KEEP_MT" ]]; then
             KEEP_PATH="$p"; KEEP_MT="$mt"
           fi
@@ -1315,8 +1320,8 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
             echo "$out2" | grep -q "EQUAL:yes" || { continue; }
           fi
           # Keep policy: prefer oldest mtime
-          mt_bf=$(stat -f %m "$bf" 2>/dev/null || stat -c %Y "$bf" 2>/dev/null || echo 0)
-          mt_cd=$(stat -f %m "$cand" 2>/dev/null || stat -c %Y "$cand" 2>/dev/null || echo 0)
+          mt_bf=$(stat -c %Y "$bf" 2>/dev/null || stat -f %m "$bf" 2>/dev/null || echo 0)
+          mt_cd=$(stat -c %Y "$cand" 2>/dev/null || stat -f %m "$cand" 2>/dev/null || echo 0)
           if (( mt_bf <= mt_cd )); then KEEP="$bf"; MOVE="$cand"; else KEEP="$cand"; MOVE="$bf"; fi
           _sim_reason="video_fast"; $VIDEO_FAST_STRICT && _sim_reason="video_strict"
           emit_similar_video_group "$_sim_reason" "$KEEP" "$VMETA_FILE" "$MOVE" "$VMETA_FILE"
@@ -1556,8 +1561,8 @@ while IFS= read -r -d '' f; do
             # upstream, so the outer video-fast block is never entered and this
             # branch is only reached via the legacy --report/--fix-source-dupes
             # path or when --include-similar-video is explicitly set.
-            mt_src=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
-            mt_b=$(stat -f %m "$b" 2>/dev/null || stat -c %Y "$b" 2>/dev/null || echo 0)
+            mt_src=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)
+            mt_b=$(stat -c %Y "$b" 2>/dev/null || stat -f %m "$b" 2>/dev/null || echo 0)
             if (( mt_src <= mt_b )); then KEEP="$f"; MOVE="$b"; else KEEP="$b"; MOVE="$f"; fi
             # Each source-self pair is reachable from both sides of the outer
             # find loop; canonicalize the pair and skip duplicates so the
@@ -1645,7 +1650,7 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
         KEEP_SPATH=""; KEEP_SMT=""
         while IFS= read -r sp; do
           [[ -z "$sp" ]] && continue
-          smt="$(stat -f %m "$sp" 2>/dev/null || stat -c %Y "$sp" 2>/dev/null || echo 0)"
+          smt="$(stat -c %Y "$sp" 2>/dev/null || stat -f %m "$sp" 2>/dev/null || echo 0)"
           if [[ -z "$KEEP_SPATH" || "$smt" -lt "$KEEP_SMT" ]]; then
             KEEP_SPATH="$sp"; KEEP_SMT="$smt"
           fi
