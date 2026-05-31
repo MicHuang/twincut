@@ -104,7 +104,7 @@ emit_run_start(){
 emit_run_end(){
   $JSON_EVENTS || return 0
   local status="" duration_ms="" total="" applied="" skipped="" run_id=""
-  local restored="" missing="" unrecoverable=""
+  local restored="" missing="" unrecoverable="" errors=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --status)          status="$2"; shift 2 ;;
@@ -116,6 +116,7 @@ emit_run_end(){
       --restored)        restored="$2"; shift 2 ;;
       --missing)         missing="$2"; shift 2 ;;
       --unrecoverable)   unrecoverable="$2"; shift 2 ;;
+      --errors)          errors="$2"; shift 2 ;;
       *) echo "emit_run_end: unknown arg $1" >&2; return 0 ;;
     esac
   done
@@ -131,6 +132,7 @@ emit_run_end(){
   [[ -n "$restored" ]]       && out+=',"restored":'"$(_emit_num restored "$restored")"
   [[ -n "$missing" ]]        && out+=',"missing":'"$(_emit_num missing "$missing")"
   [[ -n "$unrecoverable" ]]  && out+=',"unrecoverable":'"$(_emit_num unrecoverable "$unrecoverable")"
+  [[ -n "$errors" ]]         && out+=',"errors":'"$(_emit_num errors "$errors")"
   out+='}'
   _emit_write "$out"
 }

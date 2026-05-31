@@ -944,11 +944,14 @@ do_restore(){
   echo "Errors:          $errors"
   echo "==========================="
 
-  emit_run_end --status succeeded \
+  local restore_status=succeeded
+  [[ "$errors" -gt 0 ]] && restore_status=failed
+  emit_run_end --status "$restore_status" \
     --restored "$restored" \
     --skipped "$skipped_exists" \
     --missing "$missing" \
-    --unrecoverable "$unrecoverable"
+    --unrecoverable "$unrecoverable" \
+    --errors "$errors"
 
   if [[ "$errors" -gt 0 ]]; then exit 3; fi
   exit 0

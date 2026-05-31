@@ -25,7 +25,20 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TWINCUT="$ROOT/bin/twincut.sh"
 
-command -v sips >/dev/null 2>&1 || { echo "sips not found — this test requires macOS 'sips'"; exit 0; }
+# Under TWINCUT_REQUIRE_TOOLS=1 (set by the macOS CI job) a missing tool is a
+# hard FAILURE instead of a silent skip — that silent skip is exactly how this
+# suite could go green in CI without exercising anything (reviewer-codex finding).
+if ! command -v sips >/dev/null 2>&1; then
+  if [[ "${TWINCUT_REQUIRE_TOOLS:-0}" == "1" ]]; then
+    echo "FAIL: 'sips' not found but TWINCUT_REQUIRE_TOOLS=1 — this runner must exercise the thumbnail path"; exit 1
+  fi
+  echo "sips not found — this test requires macOS 'sips'; skipping"; exit 0
+fi
+# exiftool gates L2/L3. Require it under require-mode so CI gets real L2/L3
+# coverage; in normal mode the per-section guards degrade gracefully (L1 runs).
+if [[ "${TWINCUT_REQUIRE_TOOLS:-0}" == "1" ]] && ! command -v exiftool >/dev/null 2>&1; then
+  echo "FAIL: 'exiftool' not found but TWINCUT_REQUIRE_TOOLS=1 — L2/L3 coverage required"; exit 1
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -42,10 +55,34 @@ assert_file(){     [[ -e "$1" ]] && ok "exists: $1"     || bad "missing: $1"; }
 assert_not_file(){ [[ ! -e "$1" ]] && ok "absent: $1"   || bad "still there: $1"; }
 
 # ---------- fixtures ----------
-# Use a system PNG as a real image source so sips can read dimensions.
-SEED="/System/Library/Desktop Pictures/Solid Colors/Black.png"
-[[ -f "$SEED" ]] || SEED="/System/Library/Desktop Pictures/Solid Colors/Stone.png"
-[[ -f "$SEED" ]] || { echo "no seed image found, skipping"; exit 0; }
+# Seed image: generate a large PNG so the suite is runner-independent (GitHub
+# macOS runners lack the Desktop Pictures dir). `sips -z` only shrinks, so the
+# seed must be bigger than the largest target (2000px). L2/L3 inject their own
+# EXIF via exiftool below, so the seed needs no metadata of its own.
+SEED="$TMP/_seed.png"
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import PIL' >/dev/null 2>&1; then
+  python3 - "$SEED" <<'PY'
+import sys
+from PIL import Image
+# Build a small gradient then upscale (fast C resize) to 2400x2400.
+small = Image.new("RGB", (64, 64))
+for x in range(64):
+    for y in range(64):
+        small.putpixel((x, y), ((x * 4) % 256, (y * 4) % 256, (x * y) % 256))
+small.resize((2400, 2400)).save(sys.argv[1])
+PY
+fi
+# Fall back to a system image (local macOS dev), then skip/fail per require-mode.
+if [[ ! -f "$SEED" ]]; then
+  SEED="/System/Library/Desktop Pictures/Solid Colors/Black.png"
+  [[ -f "$SEED" ]] || SEED="/System/Library/Desktop Pictures/Solid Colors/Stone.png"
+fi
+if [[ ! -f "$SEED" ]]; then
+  if [[ "${TWINCUT_REQUIRE_TOOLS:-0}" == "1" ]]; then
+    echo "FAIL: no seed image and Pillow unavailable but TWINCUT_REQUIRE_TOOLS=1"; exit 1
+  fi
+  echo "no seed image found, skipping"; exit 0
+fi
 
 # Big image: 2000x2000 (long edge >> 1024 → l1=ok)
 sips -z 2000 2000 "$SEED" --out "$SRC/big.png" >/dev/null

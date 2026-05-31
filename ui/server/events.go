@@ -103,6 +103,7 @@ type RunEnd struct {
 	Restored      int64  `json:"restored,omitempty"`
 	Missing       int64  `json:"missing,omitempty"`
 	Unrecoverable int64  `json:"unrecoverable,omitempty"`
+	Errors        int64  `json:"errors,omitempty"`
 }
 
 // Warn is the typed payload of a "warn" event (non-fatal warning).
