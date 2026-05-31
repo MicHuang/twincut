@@ -61,7 +61,13 @@ thumb_dimensions(){
     w=$(awk '/pixelWidth:/  {print $2}' <<<"$out")
     h=$(awk '/pixelHeight:/ {print $2}' <<<"$out")
   elif $THUMB_HAVE_IDENTIFY; then
-    read -r w h < <(identify -format '%w %h' "$f" 2>/dev/null) || return 1
+    # `identify -format` emits NO trailing newline, so `read … < <(…) || return 1`
+    # treats the EOF as failure (read returns non-zero even though w/h were
+    # assigned) and drops valid dimensions — silently skipping every file, so
+    # L1 detection emitted nothing on Linux. Capture first (mirrors the sips
+    # branch); '\n' keeps it correct for multi-frame inputs.
+    out=$(identify -format '%w %h\n' "$f" 2>/dev/null) || return 1
+    read -r w h <<<"$out"
   fi
   # Strict integer validation — sips can emit "<nil>" or "--" for odd files.
   [[ "$w" =~ ^[0-9]+$ && "$h" =~ ^[0-9]+$ && "$w" -gt 0 && "$h" -gt 0 ]] && echo "$w $h"
