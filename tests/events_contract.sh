@@ -100,9 +100,22 @@ run_case "action_restore ok" "action_restore__ok.ndjson" \
   emit_action_restore --kind restore --src /q/a.jpg --dst /img/a.jpg --dry-run false
 
 # === dup_group ===
-run_case "dup_group cross_hash" "dup_group__cross_hash.ndjson" \
-  emit_dup_group --group-id 7 --match-reason md5 \
-    --keep-path /img/a.jpg --remove-path /img/b.jpg
+run_case "dup_group cross_md5" "dup_group__cross_md5.ndjson" \
+  emit_dup_group --group-id 1 --match-reason md5 --hash deadbeef \
+    --keep-path /bk/a.jpg --keep-size 1024 --keep-mtime 100 \
+    --remove-json "$(dup_remove_json /src/a.jpg 1024 200)"
+
+run_case "dup_group self_md5_multi" "dup_group__self_md5_multi.ndjson" \
+  emit_dup_group --group-id 1 --match-reason md5 --hash cafe \
+    --keep-path /p/a.jpg --keep-size 2048 --keep-mtime 100 \
+    --remove-json "$(dup_remove_json /p/b.jpg 2048 200)" \
+    --remove-json "$(dup_remove_json /p/c.jpg 2048 300)"
+
+run_case "dup_group similar_video" "dup_group__similar_video.ndjson" \
+  emit_dup_group --group-id 1 --match-reason video_fast \
+    --keep-path /v/a.mp4 --keep-size 4200000 --keep-mtime 100 \
+    --keep-duration 45.5 --keep-width 1920 --keep-height 1080 --keep-fps 29.97 --keep-bitrate 5000000 \
+    --remove-json "$(dup_remove_json /v/b.mp4 3900000 200 45.5 1920 1080 29.97 4700000)"
 
 # === json_escape control chars ===
 ESC=$'\x1b'

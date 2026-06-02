@@ -1,0 +1,1 @@
+{"type":"dup_group","ts":1747934400,"run_id":"r_test","group_id":1,"match_reason":"md5","hash":"cafe","keep_path":"/p/a.jpg","keep_size":2048,"keep_mtime":100,"remove":[{"path":"/p/b.jpg","size":2048,"mtime":200},{"path":"/p/c.jpg","size":2048,"mtime":300}]}

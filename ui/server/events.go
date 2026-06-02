@@ -165,19 +165,49 @@ type Action struct {
 	DryRun   *bool  `json:"dry_run,omitempty"`
 }
 
-// DupRemoveEntry is one element of the DupGroup.Remove list.
+// DupRemoveEntry is one element of the DupGroup.Remove list. Size/MTime are
+// present on every entry; the video-meta fields appear only for similarity
+// matches (match_reason video_*).
 type DupRemoveEntry struct {
-	Path string `json:"path"`
+	Path     string  `json:"path"`
+	Size     int64   `json:"size,omitempty"`
+	MTime    int64   `json:"mtime,omitempty"`
+	Duration float64 `json:"duration,omitempty"`
+	Width    int     `json:"width,omitempty"`
+	Height   int     `json:"height,omitempty"`
+	FPS      float64 `json:"fps,omitempty"`
+	Bitrate  int64   `json:"bitrate,omitempty"`
 }
 
-// DupGroup is the typed payload of a "dup_group" event emitted when a pair
-// of duplicates is identified during cross-check or self-check.
+// DupGroup is the typed payload of a "dup_group" event emitted during
+// cross-check, self-check, or similar-video. remove is always an array;
+// md5 matches carry hash, similarity matches carry per-side video metadata.
 type DupGroup struct {
 	EventEnvelope
-	GroupID     int64            `json:"group_id"`
-	MatchReason string           `json:"match_reason"`
-	KeepPath    string           `json:"keep_path"`
-	Remove      []DupRemoveEntry `json:"remove"`
+	GroupID      int64            `json:"group_id"`
+	MatchReason  string           `json:"match_reason"`
+	Hash         string           `json:"hash,omitempty"`
+	KeepPath     string           `json:"keep_path"`
+	KeepSize     int64            `json:"keep_size,omitempty"`
+	KeepMTime    int64            `json:"keep_mtime,omitempty"`
+	KeepDuration float64          `json:"keep_duration,omitempty"`
+	KeepWidth    int              `json:"keep_width,omitempty"`
+	KeepHeight   int              `json:"keep_height,omitempty"`
+	KeepFPS      float64          `json:"keep_fps,omitempty"`
+	KeepBitrate  int64            `json:"keep_bitrate,omitempty"`
+	Remove       []DupRemoveEntry `json:"remove"`
+}
+
+// UnmarshalDupGroup decodes the raw payload of a dup_group event into g.
+// Mirrors UnmarshalThumbCandidate.
+func UnmarshalDupGroup(ev Event, g *DupGroup) error {
+	if err := json.Unmarshal(ev.Raw, g); err != nil {
+		return fmt.Errorf("unmarshal dup_group: %w", err)
+	}
+	if g.KeepPath == "" {
+		return fmt.Errorf("dup_group seq=%d: missing keep_path", ev.Seq)
+	}
+	return nil
 }
 
 // UnmarshalThumbCandidate decodes the raw payload of a thumb_candidate event

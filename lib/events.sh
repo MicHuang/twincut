@@ -404,32 +404,79 @@ emit_action_restore(){
   _emit_write "$out"
 }
 
-# emit_dup_group — a duplicate pair/group was identified.
-#   --group-id INT        required; numeric group identifier
-#   --match-reason VAL    required; reason code (e.g. md5)
-#   --keep-path VAL       required; the file being kept
-#   --remove-path VAL     required; the file to be removed (one per event)
+# dup_remove_json — compose one remove[] entry object for emit_dup_group.
+# Echoes a bare JSON object (no newline). size/mtime are required ints;
+# args 4-8 (dur/w/h/fps/bps) are optional video meta, emitted only when
+# present and non-zero. duration/fps are floats (raw, numeric-shape guarded).
+dup_remove_json(){
+  local path="$1" size="$2" mtime="$3"
+  local dur="${4:-0}" w="${5:-0}" h="${6:-0}" fps="${7:-0}" bps="${8:-0}"
+  [[ "$dur" =~ ^[0-9]+(\.[0-9]+)?$ ]] || dur=0
+  [[ "$fps" =~ ^[0-9]+(\.[0-9]+)?$ ]] || fps=0
+  local o='{"path":"'"$(json_escape "$path")"'"'
+  o+=',"size":'"$(_emit_num size "$size")"
+  o+=',"mtime":'"$(_emit_num mtime "$mtime")"
+  [[ "$dur" != 0 ]]            && o+=',"duration":'"$dur"
+  [[ "$w"   != 0 && -n "$w" ]] && o+=',"width":'"$(_emit_num width "$w")"
+  [[ "$h"   != 0 && -n "$h" ]] && o+=',"height":'"$(_emit_num height "$h")"
+  [[ "$fps" != 0 ]]            && o+=',"fps":'"$fps"
+  [[ "$bps" != 0 && -n "$bps" ]] && o+=',"bitrate":'"$(_emit_num bitrate "$bps")"
+  o+='}'
+  printf '%s' "$o"
+}
+
+# emit_dup_group — a duplicate pair/group. remove[] is always an array; pass
+# one or more pre-composed --remove-json entries (see dup_remove_json).
+#   --group-id INT  --match-reason VAL  --hash VAL(optional)
+#   --keep-path VAL --keep-size INT --keep-mtime INT
+#   [--keep-duration FLOAT --keep-width INT --keep-height INT --keep-fps FLOAT --keep-bitrate INT]
+#   --remove-json '<obj>'   (repeatable; >=1)
 emit_dup_group(){
   $JSON_EVENTS || return 0
-  local group_id="" match_reason="" keep_path="" remove_path="" run_id=""
+  local group_id="" match_reason="" hash="" keep_path="" run_id=""
+  local keep_size="" keep_mtime="" keep_dur="" keep_w="" keep_h="" keep_fps="" keep_bps=""
+  local _remove_entries=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --group-id)      group_id="$2";      shift 2 ;;
-      --match-reason)  match_reason="$2";  shift 2 ;;
-      --keep-path)     keep_path="$2";     shift 2 ;;
-      --remove-path)   remove_path="$2";   shift 2 ;;
-      --run-id)        run_id="$2";        shift 2 ;;
+      --group-id)      group_id="$2";     shift 2 ;;
+      --match-reason)  match_reason="$2"; shift 2 ;;
+      --hash)          hash="$2";         shift 2 ;;
+      --keep-path)     keep_path="$2";    shift 2 ;;
+      --keep-size)     keep_size="$2";    shift 2 ;;
+      --keep-mtime)    keep_mtime="$2";   shift 2 ;;
+      --keep-duration) keep_dur="$2";     shift 2 ;;
+      --keep-width)    keep_w="$2";       shift 2 ;;
+      --keep-height)   keep_h="$2";       shift 2 ;;
+      --keep-fps)      keep_fps="$2";     shift 2 ;;
+      --keep-bitrate)  keep_bps="$2";     shift 2 ;;
+      --remove-json)   _remove_entries+=("$2"); shift 2 ;;
+      --run-id)        run_id="$2";       shift 2 ;;
       *) echo "emit_dup_group: unknown arg $1" >&2; return 0 ;;
     esac
   done
   [[ -z "$run_id" ]] && run_id="${RUN_ID:-}"
+  [[ "$keep_dur" =~ ^[0-9]+(\.[0-9]+)?$ ]] || keep_dur="${keep_dur:+0}"
+  [[ "$keep_fps" =~ ^[0-9]+(\.[0-9]+)?$ ]] || keep_fps="${keep_fps:+0}"
   local ts; ts=$(_emit_now_ts)
   local out='{"type":"dup_group","ts":'"$ts"
   [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
   out+=',"group_id":'"$(_emit_num group_id "$group_id")"
   out+=',"match_reason":"'"$(json_escape "$match_reason")"'"'
+  [[ -n "$hash" ]]      && out+=',"hash":"'"$(json_escape "$hash")"'"'
   out+=',"keep_path":"'"$(json_escape "$keep_path")"'"'
-  out+=',"remove":[{"path":"'"$(json_escape "$remove_path")"'"}]'
+  [[ -n "$keep_size" ]]  && out+=',"keep_size":'"$(_emit_num keep_size "$keep_size")"
+  [[ -n "$keep_mtime" ]] && out+=',"keep_mtime":'"$(_emit_num keep_mtime "$keep_mtime")"
+  [[ -n "$keep_dur" && "$keep_dur" != 0 ]] && out+=',"keep_duration":'"$keep_dur"
+  [[ -n "$keep_w"   && "$keep_w"   != 0 ]] && out+=',"keep_width":'"$(_emit_num keep_width "$keep_w")"
+  [[ -n "$keep_h"   && "$keep_h"   != 0 ]] && out+=',"keep_height":'"$(_emit_num keep_height "$keep_h")"
+  [[ -n "$keep_fps" && "$keep_fps" != 0 ]] && out+=',"keep_fps":'"$keep_fps"
+  [[ -n "$keep_bps" && "$keep_bps" != 0 ]] && out+=',"keep_bitrate":'"$(_emit_num keep_bitrate "$keep_bps")"
+  local _joined="" _e
+  for _e in ${_remove_entries[@]+"${_remove_entries[@]}"}; do
+    [[ -n "$_joined" ]] && _joined+=","
+    _joined+="$_e"
+  done
+  out+=',"remove":['"$_joined"']'
   out+='}'
   _emit_write "$out"
 }

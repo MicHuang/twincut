@@ -1,0 +1,1 @@
+{"type":"dup_group","ts":1747934400,"run_id":"r_test","group_id":1,"match_reason":"md5","hash":"deadbeef","keep_path":"/bk/a.jpg","keep_size":1024,"keep_mtime":100,"remove":[{"path":"/src/a.jpg","size":1024,"mtime":200}]}
