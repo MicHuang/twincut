@@ -156,3 +156,31 @@ Net effect: Go has exactly one canonical decode path for `dup_group`, genuinely 
 ## 10. Review plan
 
 Cross-module schema/contract refactor (events.go / results.go / lib/events.sh / fixtures / 5 bash sites, >50 lines). After implementation: `reviewer-gemini` first. Because it is a cross-module contract refactor, **suggest** `reviewer-codex` for an adversarial design pass — dispatched only on explicit user confirmation (quota).
+
+## 11. Post-review follow-ups (deferred — 2026-06-02)
+
+Both reviewers ran. reviewer-gemini: no blocker (two harmless NITs:
+`"0.0"`-string duration/fps not zero-suppressed; theoretically-empty
+`remove[]` on a fully-filtered cluster). reviewer-codex: three MAJORs, all
+premised on the NDJSON being a public/persisted contract. Verified against
+the code and **none block** — but they're worth a future stage:
+
+- **Composer seam (codex #5).** `emit_dup_group` splices caller-built
+  `--remove-json` strings; the helper doesn't validate entries, so drift can
+  re-enter at that seam (today controlled: `dup_remove_json` is the sole
+  composer, 3 callers, guarded by fixtures + roundtrip). Follow-up: have
+  `emit_dup_group` validate each entry (≥1, required `path/size/mtime`) or
+  take structured per-entry args.
+- **Journal observability (codex #2).** Run journals (`<state-dir>/runs/<id>.ndjson`)
+  persist, so the dropped `run_start` config-echo + `run_end` aggregate
+  counters reduce the journal's standalone forensic value. Mitigated today
+  (recovery uses the manifest TSV; the journal still has every typed
+  `dup_group`/`action`). Follow-up if audit matters: a compact typed audit
+  event carrying scan inputs + terminal counters.
+- **Schema versioning (codex #1).** No `schema_version` on events; the
+  byte-exact-fixture coupling proves the present shape but has no
+  evolvability/compat story. Old persisted journals are NOT typed-decoded on
+  replay (`RunManager.Get` is in-memory-only; the history list reads only
+  `run_start`/`run_end` metadata via generic access), so this is not a
+  Stage 11 regression — but a `schema_version` would make the next change
+  safer.
