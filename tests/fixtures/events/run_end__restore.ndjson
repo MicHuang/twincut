@@ -1,1 +1,1 @@
-{"type":"run_end","ts":1747934400,"run_id":"r_test","status":"succeeded","restored":5,"missing":1,"unrecoverable":0}
+{"type":"run_end","ts":1747934400,"run_id":"r_test","status":"succeeded","restored":5,"missing":1,"unrecoverable":0,"cancelled":false}

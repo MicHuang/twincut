@@ -155,7 +155,7 @@ func BuildResults(run *Run) (ResultsView, error) {
 				view.SourcePath = p.Source
 			}
 		case EventDupGroup:
-			g, err := decodeGroup(ev.Raw)
+			g, err := decodeGroup(ev)
 			if err != nil {
 				return view, fmt.Errorf("decode dup_group seq=%d: %w", ev.Seq, err)
 			}
@@ -268,18 +268,12 @@ func BuildResults(run *Run) (ResultsView, error) {
 				PhashDistance: tc.PhashDistance,
 			})
 		case EventRunEnd:
-			var p struct {
-				Cancelled    bool   `json:"cancelled"`
-				Moved        int    `json:"moved"`
-				Deleted      int    `json:"deleted"`
-				Restored     int    `json:"restored"`
-				ManifestPath string `json:"manifest_path"`
-			}
+			var p RunEnd
 			if err := json.Unmarshal(ev.Raw, &p); err == nil {
 				view.Cancelled = p.Cancelled
-				view.MovedCount = p.Moved
-				view.DeletedCount = p.Deleted
-				view.RestoredCount = p.Restored
+				view.MovedCount = int(p.Moved)
+				view.DeletedCount = int(p.Deleted)
+				view.RestoredCount = int(p.Restored)
 				view.ManifestPath = p.ManifestPath
 			}
 		}
@@ -305,71 +299,27 @@ func BuildResults(run *Run) (ResultsView, error) {
 	return view, nil
 }
 
-// decodeGroup handles both the cross-check shape (single remove_path field)
-// and the self-check shape (remove[] array). Cross-check emits one group per
-// match while iterating source files; self-check emits one group per hash
-// cluster. Similar-video matches additionally carry per-side video metadata
-// (duration / dims / fps / bitrate) which we surface via ResultFile.
-func decodeGroup(raw json.RawMessage) (ResultGroup, error) {
-	var p struct {
-		GroupID     int    `json:"group_id"`
-		MatchReason string `json:"match_reason"`
-		Hash        string `json:"hash"`
-
-		KeepPath     string  `json:"keep_path"`
-		KeepSize     int64   `json:"keep_size"`
-		KeepMTime    int64   `json:"keep_mtime"`
-		KeepDuration float64 `json:"keep_duration"`
-		KeepWidth    int     `json:"keep_width"`
-		KeepHeight   int     `json:"keep_height"`
-		KeepFPS      float64 `json:"keep_fps"`
-		KeepBitrate  int64   `json:"keep_bitrate"`
-
-		// Self-check shape:
-		Remove []struct {
-			Path     string  `json:"path"`
-			Size     int64   `json:"size"`
-			MTime    int64   `json:"mtime"`
-			Duration float64 `json:"duration"`
-			Width    int     `json:"width"`
-			Height   int     `json:"height"`
-			FPS      float64 `json:"fps"`
-			Bitrate  int64   `json:"bitrate"`
-		} `json:"remove"`
-
-		// Cross-check + similar-video shape (single removed file):
-		RemovePath     string  `json:"remove_path"`
-		RemoveSize     int64   `json:"remove_size"`
-		RemoveMTime    int64   `json:"remove_mtime"`
-		RemoveDuration float64 `json:"remove_duration"`
-		RemoveWidth    int     `json:"remove_width"`
-		RemoveHeight   int     `json:"remove_height"`
-		RemoveFPS      float64 `json:"remove_fps"`
-		RemoveBitrate  int64   `json:"remove_bitrate"`
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
+// decodeGroup converts a dup_group event into a ResultGroup using the
+// canonical DupGroup struct (remove is always an array). md5 matches carry
+// hash; similar-video matches carry per-side video metadata (duration / dims
+// / fps / bitrate) which we surface via ResultFile.
+func decodeGroup(ev Event) (ResultGroup, error) {
+	var p DupGroup
+	if err := UnmarshalDupGroup(ev, &p); err != nil {
 		return ResultGroup{}, err
 	}
-
 	g := ResultGroup{
-		GroupID:     p.GroupID,
+		GroupID:     int(p.GroupID),
 		MatchReason: p.MatchReason,
 		Hash:        p.Hash,
 		IsSimilar:   p.MatchReason != "" && p.MatchReason != "md5",
 		Keep: newResultFile(p.KeepPath, p.KeepSize, p.KeepMTime,
 			p.KeepDuration, p.KeepWidth, p.KeepHeight, p.KeepFPS, p.KeepBitrate),
 	}
-
-	if len(p.Remove) > 0 {
-		for _, r := range p.Remove {
-			g.Remove = append(g.Remove, newResultFile(r.Path, r.Size, r.MTime,
-				r.Duration, r.Width, r.Height, r.FPS, r.Bitrate))
-		}
-	} else if p.RemovePath != "" {
-		g.Remove = append(g.Remove, newResultFile(p.RemovePath, p.RemoveSize, p.RemoveMTime,
-			p.RemoveDuration, p.RemoveWidth, p.RemoveHeight, p.RemoveFPS, p.RemoveBitrate))
+	for _, r := range p.Remove {
+		g.Remove = append(g.Remove, newResultFile(r.Path, r.Size, r.MTime,
+			r.Duration, r.Width, r.Height, r.FPS, r.Bitrate))
 	}
-
 	return g, nil
 }
 

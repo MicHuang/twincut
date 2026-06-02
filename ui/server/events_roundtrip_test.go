@@ -36,6 +36,16 @@ func roundtripFixtures() []fixtureCase {
 			},
 		},
 		{
+			file:     "run_start__crosscheck.ndjson",
+			wantType: EventRunStart,
+			want: RunStart{
+				EventEnvelope: EventEnvelope{Type: EventRunStart, TS: 1747934400, RunID: "r_test"},
+				Mode:          "cross_check",
+				Source:        "/src",
+				DryRun:        true,
+			},
+		},
+		{
 			file:     "run_end__succeeded.ndjson",
 			wantType: EventRunEnd,
 			want: RunEnd{
@@ -66,6 +76,17 @@ func roundtripFixtures() []fixtureCase {
 				Restored:      3,
 				Missing:       1,
 				Errors:        2,
+			},
+		},
+		{
+			file:     "run_end__crosscheck.ndjson",
+			wantType: EventRunEnd,
+			want: RunEnd{
+				EventEnvelope: EventEnvelope{Type: EventRunEnd, TS: 1747934400, RunID: "r_test"},
+				Status:        "succeeded",
+				Total:         42,
+				Moved:         3,
+				ManifestPath:  "/q/_manifest.tsv",
 			},
 		},
 		{
@@ -191,14 +212,55 @@ func roundtripFixtures() []fixtureCase {
 			},
 		},
 		{
-			file:     "dup_group__cross_hash.ndjson",
+			file:     "dup_group__cross_md5.ndjson",
 			wantType: EventDupGroup,
 			want: DupGroup{
 				EventEnvelope: EventEnvelope{Type: EventDupGroup, TS: 1747934400, RunID: "r_test"},
-				GroupID:       7,
+				GroupID:       1,
 				MatchReason:   "md5",
-				KeepPath:      "/img/a.jpg",
-				Remove:        []DupRemoveEntry{{Path: "/img/b.jpg"}},
+				Hash:          "deadbeef",
+				KeepPath:      "/bk/a.jpg",
+				KeepSize:      1024,
+				KeepMTime:     100,
+				Remove:        []DupRemoveEntry{{Path: "/src/a.jpg", Size: 1024, MTime: 200}},
+			},
+		},
+		{
+			file:     "dup_group__self_md5_multi.ndjson",
+			wantType: EventDupGroup,
+			want: DupGroup{
+				EventEnvelope: EventEnvelope{Type: EventDupGroup, TS: 1747934400, RunID: "r_test"},
+				GroupID:       1,
+				MatchReason:   "md5",
+				Hash:          "cafe",
+				KeepPath:      "/p/a.jpg",
+				KeepSize:      2048,
+				KeepMTime:     100,
+				Remove: []DupRemoveEntry{
+					{Path: "/p/b.jpg", Size: 2048, MTime: 200},
+					{Path: "/p/c.jpg", Size: 2048, MTime: 300},
+				},
+			},
+		},
+		{
+			file:     "dup_group__similar_video.ndjson",
+			wantType: EventDupGroup,
+			want: DupGroup{
+				EventEnvelope: EventEnvelope{Type: EventDupGroup, TS: 1747934400, RunID: "r_test"},
+				GroupID:       1,
+				MatchReason:   "video_fast",
+				KeepPath:      "/v/a.mp4",
+				KeepSize:      4200000,
+				KeepMTime:     100,
+				KeepDuration:  45.5,
+				KeepWidth:     1920,
+				KeepHeight:    1080,
+				KeepFPS:       29.97,
+				KeepBitrate:   5000000,
+				Remove: []DupRemoveEntry{{
+					Path: "/v/b.mp4", Size: 3900000, MTime: 200,
+					Duration: 45.5, Width: 1920, Height: 1080, FPS: 29.97, Bitrate: 4700000,
+				}},
 			},
 		},
 	}
