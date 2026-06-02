@@ -36,6 +36,16 @@ func roundtripFixtures() []fixtureCase {
 			},
 		},
 		{
+			file:     "run_start__crosscheck.ndjson",
+			wantType: EventRunStart,
+			want: RunStart{
+				EventEnvelope: EventEnvelope{Type: EventRunStart, TS: 1747934400, RunID: "r_test"},
+				Mode:          "cross_check",
+				Source:        "/src",
+				DryRun:        true,
+			},
+		},
+		{
 			file:     "run_end__succeeded.ndjson",
 			wantType: EventRunEnd,
 			want: RunEnd{

@@ -76,12 +76,13 @@ _emit_num(){
 #   --run-id VAL    optional explicit run_id (overrides $RUN_ID)
 emit_run_start(){
   $JSON_EVENTS || return 0
-  local mode="" source="" run_id=""
+  local mode="" source="" run_id="" dry_run=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --mode)    mode="$2";    shift 2 ;;
       --source)  source="$2";  shift 2 ;;
       --run-id)  run_id="$2";  shift 2 ;;
+      --dry-run) dry_run="$2"; shift 2 ;;
       *) echo "emit_run_start: unknown arg $1" >&2; return 0 ;;
     esac
   done
@@ -91,6 +92,11 @@ emit_run_start(){
   [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
   out+=',"mode":"'"$(json_escape "$mode")"'"'
   out+=',"source":"'"$(json_escape "$source")"'"'
+  case "$dry_run" in
+    true|false) out+=',"dry_run":'"$dry_run" ;;
+    "") ;;
+    *) echo "emit_run_start: --dry-run must be true|false" >&2 ;;
+  esac
   out+='}'
   _emit_write "$out"
 }

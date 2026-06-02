@@ -40,6 +40,9 @@ run_case(){
 run_case "run_start basic" "run_start__basic.ndjson" \
   emit_run_start --mode thumbnail_detect_preview --source /img
 
+run_case "run_start crosscheck" "run_start__crosscheck.ndjson" \
+  emit_run_start --mode cross_check --source /src --dry-run true
+
 # === run_end ===
 run_case "run_end succeeded" "run_end__succeeded.ndjson" \
   emit_run_end --status succeeded --duration-ms 1234 --total 42 --applied 30 --skipped 12

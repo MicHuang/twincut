@@ -89,6 +89,7 @@ type RunStart struct {
 	EventEnvelope
 	Mode   string `json:"mode"`
 	Source string `json:"source"`
+	DryRun bool   `json:"dry_run,omitempty"`
 }
 
 // RunEnd is the typed payload of a "run_end" event. Twincut emits exactly
