@@ -104,6 +104,10 @@ type RunEnd struct {
 	Missing       int64  `json:"missing,omitempty"`
 	Unrecoverable int64  `json:"unrecoverable,omitempty"`
 	Errors        int64  `json:"errors,omitempty"`
+	Moved         int64  `json:"moved,omitempty"`
+	Deleted       int64  `json:"deleted,omitempty"`
+	Cancelled     bool   `json:"cancelled,omitempty"`
+	ManifestPath  string `json:"manifest_path,omitempty"`
 }
 
 // Warn is the typed payload of a "warn" event (non-fatal warning).

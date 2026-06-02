@@ -69,6 +69,17 @@ func roundtripFixtures() []fixtureCase {
 			},
 		},
 		{
+			file:     "run_end__crosscheck.ndjson",
+			wantType: EventRunEnd,
+			want: RunEnd{
+				EventEnvelope: EventEnvelope{Type: EventRunEnd, TS: 1747934400, RunID: "r_test"},
+				Status:        "succeeded",
+				Total:         42,
+				Moved:         3,
+				ManifestPath:  "/q/_manifest.tsv",
+			},
+		},
+		{
 			file:     "warn__io_error.ndjson",
 			wantType: EventWarn,
 			want: Warn{

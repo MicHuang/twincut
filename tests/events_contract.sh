@@ -44,6 +44,10 @@ run_case "run_start basic" "run_start__basic.ndjson" \
 run_case "run_end succeeded" "run_end__succeeded.ndjson" \
   emit_run_end --status succeeded --duration-ms 1234 --total 42 --applied 30 --skipped 12
 
+run_case "run_end crosscheck" "run_end__crosscheck.ndjson" \
+  emit_run_end --status succeeded --total 42 --moved 3 --deleted 0 \
+    --manifest-path /q/_manifest.tsv --cancelled false
+
 # === warn ===
 run_case "warn io_error" "warn__io_error.ndjson" \
   emit_warn --code io_error --path /img/IMG.JPG --detail "mv failed"

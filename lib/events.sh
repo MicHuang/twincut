@@ -105,6 +105,7 @@ emit_run_end(){
   $JSON_EVENTS || return 0
   local status="" duration_ms="" total="" applied="" skipped="" run_id=""
   local restored="" missing="" unrecoverable="" errors=""
+  local moved="" deleted="" manifest_path="" cancelled=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --status)          status="$2"; shift 2 ;;
@@ -117,6 +118,10 @@ emit_run_end(){
       --missing)         missing="$2"; shift 2 ;;
       --unrecoverable)   unrecoverable="$2"; shift 2 ;;
       --errors)          errors="$2"; shift 2 ;;
+      --moved)           moved="$2"; shift 2 ;;
+      --deleted)         deleted="$2"; shift 2 ;;
+      --manifest-path)   manifest_path="$2"; shift 2 ;;
+      --cancelled)       cancelled="$2"; shift 2 ;;
       *) echo "emit_run_end: unknown arg $1" >&2; return 0 ;;
     esac
   done
@@ -133,6 +138,14 @@ emit_run_end(){
   [[ -n "$missing" ]]        && out+=',"missing":'"$(_emit_num missing "$missing")"
   [[ -n "$unrecoverable" ]]  && out+=',"unrecoverable":'"$(_emit_num unrecoverable "$unrecoverable")"
   [[ -n "$errors" ]]         && out+=',"errors":'"$(_emit_num errors "$errors")"
+  [[ -n "$moved" ]]          && out+=',"moved":'"$(_emit_num moved "$moved")"
+  [[ -n "$deleted" ]]        && out+=',"deleted":'"$(_emit_num deleted "$deleted")"
+  [[ -n "$manifest_path" ]]  && out+=',"manifest_path":"'"$(json_escape "$manifest_path")"'"'
+  case "$cancelled" in
+    true|false) out+=',"cancelled":'"$cancelled" ;;
+    "") ;;
+    *) echo "emit_run_end: --cancelled must be true|false" >&2 ;;
+  esac
   out+='}'
   _emit_write "$out"
 }

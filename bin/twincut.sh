@@ -956,7 +956,8 @@ do_restore(){
     --skipped "$skipped_exists" \
     --missing "$missing" \
     --unrecoverable "$unrecoverable" \
-    --errors "$errors"
+    --errors "$errors" \
+    --cancelled false
 
   if [[ "$errors" -gt 0 ]]; then exit 3; fi
   exit 0
