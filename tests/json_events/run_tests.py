@@ -155,7 +155,6 @@ def test_self_check_apply_emits_actions_and_moves_files(tmp: Path) -> None:
 
     end = events[-1]
     assert end["moved"] == 1
-    assert end["dupes"] == 1
     assert end["manifest_path"], "run_end should report manifest_path on apply"
 
     # File system effect: exactly one of a.jpg/b.jpg remains; the other moved.

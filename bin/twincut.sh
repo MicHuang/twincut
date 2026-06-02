@@ -174,39 +174,6 @@ EXCLUDE_PATHS=()
 APPLY_LIST=""
 
 # ------------------------------ Small helpers --------------------------------
-# JSON string escaper. Handles backslash, quote, control chars, newline, tab,
-# carriage return. Output is bare (no surrounding quotes) so callers can
-# compose object literals.
-# Emit a single NDJSON event line on stdout if --json-events is enabled.
-# Usage: emit_event TYPE [k=v ...]
-#   v starts with @ → raw JSON value (numbers, bools, nested literals)
-#   otherwise        → JSON-escaped string
-# Adds run_id and ts automatically.
-emit_event(){
-  $JSON_EVENTS || return 0
-  local type="$1"; shift
-  local ts; ts=$(_emit_now_ts)
-  local out='{"type":"'"$type"'","ts":'"$ts"
-  if [[ -n "${RUN_ID:-}" ]]; then out+=',"run_id":"'"$(json_escape "$RUN_ID")"'"'; fi
-  local kv k v
-  for kv in "$@"; do
-    k="${kv%%=*}"; v="${kv#*=}"
-    if [[ "$v" == @* ]]; then
-      out+=',"'"$k"'":'"${v#@}"
-    else
-      out+=',"'"$k"'":"'"$(json_escape "$v")"'"'
-    fi
-  done
-  out+='}'
-  # fd 3 is the saved real stdout when --json-events is active (set in the
-  # CLI-parse epilogue). Falls back to current stdout when fd 3 is closed
-  # so unit tests can run emit_event without the redirect dance.
-  if { true >&3; } 2>/dev/null; then
-    printf '%s\n' "$out" >&3
-  else
-    printf '%s\n' "$out"
-  fi
-}
 
 # Look up a row from a .video_meta_index.csv. Echoes "dur w h fps bps" for the
 # given path, or empty if not found. Numeric fields default to 0 in callers.
@@ -232,26 +199,11 @@ emit_similar_video_group(){
   local _ksz _kmt _rsz _rmt
   _ksz="$(fsize "$_keep")"; _kmt="$(mtime "$_keep")"
   _rsz="$(fsize "$_rm")";   _rmt="$(mtime "$_rm")"
-  emit_event dup_group \
-    group_id=@"$SIM_GROUP_ID" \
-    match_reason="$_reason" \
-    algo=video_fast \
-    keep_path="$_keep" \
-    keep_size=@"${_ksz:-0}" \
-    keep_mtime=@"${_kmt:-0}" \
-    keep_duration=@"${_kdur:-0}" \
-    keep_width=@"${_kw:-0}" \
-    keep_height=@"${_kh:-0}" \
-    keep_fps=@"${_kfps:-0}" \
-    keep_bitrate=@"${_kbps:-0}" \
-    remove_path="$_rm" \
-    remove_size=@"${_rsz:-0}" \
-    remove_mtime=@"${_rmt:-0}" \
-    remove_duration=@"${_ddur:-0}" \
-    remove_width=@"${_dw:-0}" \
-    remove_height=@"${_dh:-0}" \
-    remove_fps=@"${_dfps:-0}" \
-    remove_bitrate=@"${_dbps:-0}"
+  emit_dup_group --group-id "$SIM_GROUP_ID" --match-reason "$_reason" \
+    --keep-path "$_keep" --keep-size "${_ksz:-0}" --keep-mtime "${_kmt:-0}" \
+    --keep-duration "${_kdur:-0}" --keep-width "${_kw:-0}" --keep-height "${_kh:-0}" \
+    --keep-fps "${_kfps:-0}" --keep-bitrate "${_kbps:-0}" \
+    --remove-json "$(dup_remove_json "$_rm" "${_rsz:-0}" "${_rmt:-0}" "${_ddur:-0}" "${_dw:-0}" "${_dh:-0}" "${_dfps:-0}" "${_dbps:-0}")"
 }
 
 # True if path was passed via --exclude-path. Compared by exact string match
@@ -1050,7 +1002,7 @@ done
 #   stdout becomes the pure NDJSON event stream; existing human-readable
 #   chatter is re-routed to stderr (where the Web UI captures it as the
 #   raw log panel). Implementation: save real stdout as fd 3, redirect
-#   fd 1 to fd 2. emit_event writes to fd 3.
+#   fd 1 to fd 2. The typed emit_* helpers (lib/events.sh) write to fd 3.
 if $JSON_EVENTS; then
   exec 3>&1 1>&2
   RUN_ID="${TWINCUT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
@@ -1153,24 +1105,7 @@ if $JSON_EVENTS; then
       fi
     fi
   fi
-  _bk_json="["
-  _first=true
-  for _b in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
-    $_first || _bk_json+=","
-    _bk_json+='"'"$(json_escape "$_b")"'"'
-    _first=false
-  done
-  _bk_json+="]"
-  emit_event run_start mode="$_mode" \
-    source="${SOURCE_DIR:-}" \
-    backups=@"$_bk_json" \
-    quarantine="$QUAR_DIR" \
-    algo="$ALGO" \
-    min_size="$MIN_SIZE" \
-    dry_run=@"$DRY_RUN" \
-    video_fast=@"$VIDEO_FAST" \
-    video_fast_strict=@"$VIDEO_FAST_STRICT" \
-    exact=@"$EXACT"
+  emit_run_start --mode "$_mode" --source "${SOURCE_DIR:-}" --dry-run "$DRY_RUN"
 fi
 
 # Early rebuild of video-meta if requested (non-destructive; honored even in dry-run)
@@ -1464,17 +1399,9 @@ while IFS= read -r -d '' f; do
       DUPES=$((DUPES+1))
       _sz_keep="$(fsize "$MATCHED_PATH")"; _mt_keep="$(mtime "$MATCHED_PATH")"
       _sz_rm="$(fsize "$f")"; _mt_rm="$(mtime "$f")"
-      emit_event dup_group \
-        group_id=@"$DUPES" \
-        match_reason=md5 \
-        algo="$ALGO" \
-        hash="$H" \
-        keep_path="$MATCHED_PATH" \
-        keep_size=@"${_sz_keep:-0}" \
-        keep_mtime=@"${_mt_keep:-0}" \
-        remove_path="$f" \
-        remove_size=@"${_sz_rm:-0}" \
-        remove_mtime=@"${_mt_rm:-0}"
+      emit_dup_group --group-id "$DUPES" --match-reason md5 --hash "$H" \
+        --keep-path "$MATCHED_PATH" --keep-size "${_sz_keep:-0}" --keep-mtime "${_mt_keep:-0}" \
+        --remove-json "$(dup_remove_json "$f" "${_sz_rm:-0}" "${_mt_rm:-0}")"
       case "$DEST_ACTION" in
         list) echo "[DUPE] $f  ~~  $MATCHED_PATH" ;;
         delete)
@@ -1659,27 +1586,17 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
 
         _GROUP_ID=$((_GROUP_ID+1))
         if $JSON_EVENTS; then
-          # Build JSON array of remove[] entries (one per non-keep file)
-          _rm_json="["
-          _rm_first=true
+          # Build remove[] entries (one per non-keep file) as --remove-json args.
+          _rm_args=()
           while IFS= read -r _rp; do
             [[ -z "$_rp" || "$_rp" == "$KEEP_SPATH" ]] && continue
             _rsz="$(fsize "$_rp")"; _rmt="$(mtime "$_rp")"
-            $_rm_first || _rm_json+=","
-            _rm_json+='{"path":"'"$(json_escape "$_rp")"'","size":'"${_rsz:-0}"',"mtime":'"${_rmt:-0}"'}'
-            _rm_first=false
+            _rm_args+=( --remove-json "$(dup_remove_json "$_rp" "${_rsz:-0}" "${_rmt:-0}")" )
           done < "$SMAP_FILE"
-          _rm_json+="]"
           _ksz="$(fsize "$KEEP_SPATH")"; _kmt="$(mtime "$KEEP_SPATH")"
-          emit_event dup_group \
-            group_id=@"$_GROUP_ID" \
-            match_reason=md5 \
-            algo="$ALGO" \
-            hash="$sh" \
-            keep_path="$KEEP_SPATH" \
-            keep_size=@"${_ksz:-0}" \
-            keep_mtime=@"${_kmt:-0}" \
-            remove=@"$_rm_json"
+          emit_dup_group --group-id "$_GROUP_ID" --match-reason md5 --hash "$sh" \
+            --keep-path "$KEEP_SPATH" --keep-size "${_ksz:-0}" --keep-mtime "${_kmt:-0}" \
+            ${_rm_args[@]+"${_rm_args[@]}"}
         fi
 
         # Process all except KEEP_SPATH
@@ -1749,18 +1666,9 @@ fi
 echo "===================="
 $DO_THUMB && thumb_print_summary
 
-emit_event run_end \
-  total=@"${TOTAL:-0}" \
-  dupes=@"${DUPES:-0}" \
-  moved=@"${MOVED:-0}" \
-  deleted=@"${DELETED:-0}" \
-  similar=@"${SIMILAR_CNT:-0}" \
-  source_internal_dupes=@"${SRC_DUPE_CNT:-0}" \
-  backup_internal_dupes=@"${BK_DUPE_CNT:-0}" \
-  skipped_hardlink=@"${SKIPPED_HARDLINK:-0}" \
-  skipped_symlink=@"${SKIPPED_SYMLINK:-0}" \
-  manifest_path="${MANIFEST_FILE:-}" \
-  cancelled=@false
+emit_run_end --status succeeded --total "${TOTAL:-0}" \
+  --moved "${MOVED:-0}" --deleted "${DELETED:-0}" \
+  --manifest-path "${MANIFEST_FILE:-}" --cancelled false
 
 # Exit code policy:
 #   0 = normal
