@@ -120,7 +120,7 @@ func TestBuildResults_CrossCheckShape(t *testing.T) {
 		`{"type":"run_start","ts":1,"run_id":"x","mode":"cross_check","source":"/src"}`,
 		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"md5","hash":"def",
 		 "keep_path":"/bk/a.jpg","keep_size":1024,"keep_mtime":100,
-		 "remove_path":"/src/a.jpg","remove_size":1024,"remove_mtime":200}`,
+		 "remove":[{"path":"/src/a.jpg","size":1024,"mtime":200}]}`,
 		`{"type":"run_end","ts":3,"run_id":"x","total":1,"dupes":1,"moved":0,"cancelled":false}`,
 	})
 	view, err := BuildResults(r)
@@ -165,8 +165,8 @@ func TestBuildResults_SimilarVideoSurfacesMetadata(t *testing.T) {
 		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"video_fast",
 		 "keep_path":"/v/a.mp4","keep_size":4200000,"keep_mtime":100,
 		 "keep_duration":45.5,"keep_width":1920,"keep_height":1080,"keep_fps":29.97,"keep_bitrate":5000000,
-		 "remove_path":"/v/b.mp4","remove_size":3900000,"remove_mtime":200,
-		 "remove_duration":45.5,"remove_width":1920,"remove_height":1080,"remove_fps":29.97,"remove_bitrate":4700000}`,
+		 "remove":[{"path":"/v/b.mp4","size":3900000,"mtime":200,
+		 "duration":45.5,"width":1920,"height":1080,"fps":29.97,"bitrate":4700000}]}`,
 		`{"type":"run_end","ts":3,"run_id":"x","total":2,"dupes":0,"moved":0,"cancelled":false}`,
 	})
 	view, err := BuildResults(r)
@@ -353,7 +353,7 @@ func TestResultsTemplate_SelfCheckUsesSelfCheckApplyURL(t *testing.T) {
 func TestBuildResults_StampsGroupModeCrossCheck(t *testing.T) {
 	r := runFromEvents(t, []string{
 		`{"type":"run_start","ts":1,"run_id":"x","mode":"cross_check","source":"/src"}`,
-		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"md5","hash":"x","keep_path":"/bk/a.jpg","keep_size":100,"keep_mtime":1,"remove_path":"/src/a.jpg","remove_size":100,"remove_mtime":1}`,
+		`{"type":"dup_group","ts":2,"run_id":"x","group_id":1,"match_reason":"md5","hash":"x","keep_path":"/bk/a.jpg","keep_size":100,"keep_mtime":1,"remove":[{"path":"/src/a.jpg","size":100,"mtime":1}]}`,
 		`{"type":"run_end","ts":3,"run_id":"x","total":1,"dupes":1,"moved":0,"cancelled":false}`,
 	})
 	// Simulate the Run.Mode being set to cross_check_preview (as StartOptions would set it)
