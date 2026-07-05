@@ -27,6 +27,7 @@
 
 ### Next up
 - Review draft PR #15: https://github.com/MicHuang/twincut/pull/15
+- Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15.
 - Optional follow-up: install Pillow/imagehash locally if full pHash smoke coverage is needed outside CI.
 
 ### How to claim
@@ -46,6 +47,12 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-05 `[codex]@macmini-yiqi` — reviewer-claude dispatch blocker for PR #15
+- Context: attempted to send draft PR #15 to `reviewer-claude` through the required `agent-dispatch reviewer-claude < prompt` wrapper.
+- Observed failures: the normal wrapper path ended with `TEAM_RESULT=ERROR unknown`; one path surfaced a Honcho SessionEnd hook permission error opening `~/.honcho/claude-context.md`; escalated retry hit `Hook cancelled`; `HONCHO_ENABLED=false` still returned an empty `TEAM_RESULT=ERROR unknown`; `CLAUDE_CODE_SAFE_MODE=1` and `CLAUDE_CODE_SIMPLE=1` avoided hooks but made `--agent reviewer-claude` unavailable.
+- Policy note: raw `claude -p --agent reviewer-claude` diagnostics were not used because they would bypass the agent-team wrapper envelope.
+- Agent-team improvement signal: classify Claude wrapper failures as hook failure, missing agent, or unknown with captured stderr/stdout summary; provide a hook-safe Claude mode that still loads user agents; make `agent-team collect <repo>` able to preserve project-local dispatch blocker notes beyond counting Handoff Log entries.
 
 ### 2026-07-05 `[codex]@macmini-yiqi` — sync, restamp, docs hygiene
 - Preserved pre-sync stamp edits in stash `codex-pre-sync-stamp`, fetched origin, and created branch `codex/sync-restamp-hygiene` from `origin/main`.
