@@ -28,9 +28,10 @@ To build the Web UI binary first:
 make build              # → bin/twincut-ui
 ```
 
-Runtime deps: `bash`, `ffprobe` / `ffmpeg`, standard coreutils. The Web UI
-additionally needs nothing — it embeds its assets and shells out to
-`twincut.sh` for all matching.
+Runtime deps: `bash`, `ffprobe` / `ffmpeg`, `jq`, and standard coreutils. The
+Web UI additionally needs nothing at runtime — it embeds its assets and shells
+out to `twincut.sh` for all matching. Optional thumbnail pHash pairing uses
+Python with Pillow and imagehash.
 
 ## Use it
 
@@ -70,6 +71,9 @@ make test                # runs the bash json_events suite + go test ./...
 make build               # builds bin/twincut-ui
 make install             # builds + installs symlinks
 ```
+
+CI also runs the bash smoke suites for event contracts, P0 file-moving
+behavior, Stage 11 event shapes, and macOS thumbnail detection.
 
 The Web UI design lives in
 [`docs/superpowers/specs/2026-05-15-twincut-web-ui-design.md`](docs/superpowers/specs/2026-05-15-twincut-web-ui-design.md).
