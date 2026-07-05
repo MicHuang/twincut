@@ -4,11 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository overview
 
-`twincut` is a bash-only media de-duplication tool. It compares a "source" directory against one or more "backup" directories (cross-check) and/or scans either side for internal duplicates (self-check), removing/quarantining matches in the source.
+`twincut` is a media de-duplication tool with a bash CLI and an optional local Go web UI. It compares a "source" directory against one or more "backup" directories (cross-check) and/or scans either side for internal duplicates (self-check), removing/quarantining matches in the source.
 
-The repo is tiny:
-- `bin/twincut.sh` — the main script (~1000 lines, single file, all logic).
+Main areas:
+- `bin/twincut.sh` — the main bash CLI and matching/quarantine engine.
 - `bin/vid_eq.sh` — helper invoked by twincut for video equivalence checks (uses `ffprobe`).
+- `lib/events.sh` / `lib/thumb.sh` — typed NDJSON emitters and thumbnail-detect helpers.
+- `ui/` — optional local Go web UI that shells out to `twincut.sh`.
+- `tests/` — bash smoke/contract tests plus JSON-events validation fixtures.
+- `Makefile` — build/test/install entrypoints.
 - `installers/install.sh` / `uninstall.sh` — symlink `bin/twincut.sh` → `~/.local/bin/twincut` and `bin/vid_eq.sh` → `~/.local/bin/vid_eq`.
 
 External runtime deps: `bash`, `ffprobe`/`ffmpeg`, standard coreutils, `md5`/`sha1` tooling, `jq` (for Stage 9 apply `--json-in` mode). Optional for L1 perceptual-hash pairing (P1 wave 2): `python3 ≥ 3.8`, `Pillow ≥ 9.0`, `imagehash ≥ 4.3` — install via `pip3 install --user pillow imagehash`. Without them, L1 falls back to flat suspect-list behavior.
@@ -36,7 +40,12 @@ bin/twincut.sh --self-check <DIR> --include-similar-video   # opt-in similar-vid
 bin/twincut.sh --restore <DIR>/_QUARANTINE/_manifest-<RUN_ID>.tsv  # roll back
 ```
 
-There is no build system, no test suite, and no linter configured. When changing `twincut.sh`, validate by running with `--dry-run` against a scratch directory.
+`make test` runs the core bash JSON-events suite plus Go tests. CI also runs
+the shell smoke suites (`tests/events_contract.sh`, `tests/p0_smoke.sh`,
+`tests/p1_stage9_smoke.sh`, `tests/p1_stage11_smoke.sh`) and macOS thumbnail
+smokes. When changing `twincut.sh`, add a focused smoke or fixture when
+possible and still validate risky file-moving behavior with `--dry-run`
+against a scratch directory.
 
 ## Architecture notes
 
@@ -100,6 +109,27 @@ When the deliverable would be that large:
 
 ### NDJSON / schema naming follows the codebase, not the spec
 
-Every NDJSON event emitted by `bin/twincut.sh` (and `lib/*.sh` via the `emit_event` helper) uses `"type":"<name>"` as the discriminator key — never `"event":"<name>"`. Before adding a new event kind to a spec or plan, `grep '"type":' bin/*.sh lib/*.sh ui/server/events.go` to confirm the schema and adopt it. The Go-side parser (`ui/server/events.go`) is keyed on `"type"`.
+Every NDJSON event emitted by `bin/twincut.sh` and `lib/*.sh` uses
+`"type":"<name>"` as the discriminator key — never `"event":"<name>"`.
+Stage 11 removed the generic `emit_event` helper; new event output should go
+through a typed helper in `lib/events.sh` and a matching Go struct/fixture.
+Before adding a new event kind to a spec or plan, `grep '"type":' bin/*.sh
+lib/*.sh ui/server/events.go` to confirm the schema and adopt it. The Go-side
+parser (`ui/server/events.go`) is keyed on `"type"`.
 
 The same principle applies to other naming (struct fields, routes, helpers): search the codebase first, then write the spec.
+
+<!-- agent-team:handoff:start -->
+<!-- agent-team:handoff:version=2026-06-28-u1 -->
+## Agent-Team Peer Handoff
+
+At the start of every session in this repo:
+
+1. Run `agent-team handoff-check` — a fail-closed preflight (sync state, not on main, clean tree); add `--ff` to also fast-forward `main`. It does not replace `git-sync`/`git pull --ff-only`, which also move un-pushed peer work.
+2. Read PROGRESS.md, especially the Status Board, before choosing work.
+3. Before claiming, run `agent-team handoff-check <task-slug>` to catch an existing claim branch; then set the task owner + in-progress in PROGRESS.md and push the claim branch.
+4. Before stopping, update Status Board and append a Handoff Log entry.
+
+If a SessionStart hook injects the Status Board, still treat PROGRESS.md as the source of truth and refresh it before editing.
+Always read PROGRESS.md directly when the injected context may be stale.
+<!-- agent-team:handoff:end -->
