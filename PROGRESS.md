@@ -10,12 +10,15 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** Sync/restamp and documentation hygiene.
+**Current milestone:** Remediation of 2026-07-05 full-repo assessment findings (plan ready, execution NOT started).
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
+| R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | — | pending | Plan: `docs/superpowers/plans/2026-07-05-twincut-remediation.md` Tasks 1-2. DoD: `bash tests/vid_eq_smoke.sh` + `bash tests/backup_selfcheck_smoke.sh` green, `make test` green, Tier-1 reviewer-gemini pass on PR. Execute via superpowers:subagent-driven-development. |
+| R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | — | pending | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
+| R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | — | pending | Plan Tasks 5-7, **in order, after W1 merges** (CI list references W1 smokes). DoD: CI runs run_tests.py + all smokes; `shellcheck --severity=warning` clean; Tier-1 review pass. |
 | T1 | Sync to Stage 11 baseline | codex@macmini-yiqi | done | Preserved earlier stamp in stash `codex-pre-sync-stamp`, fetched origin, and created branch `codex/sync-restamp-hygiene` from `origin/main`. |
 | T2 | Re-apply agent-team stamp | codex@macmini-yiqi | done | Re-ran `agent-team stamp-handoff /Users/zhabs/Tools/twincut` on Stage 11; generated `PROGRESS.md`, `AGENTS.md`, and updated `CLAUDE.md`. |
 | T3 | Refresh stale project docs | codex@macmini-yiqi | done | Updated `CLAUDE.md`, `README.md`, and `AGENTS.md` so they reflect the Go UI, Makefile/test suite, and Stage 11 typed event contract. |
@@ -26,7 +29,7 @@
 - Blocked entries must include the blocking reason, verified facts, next suggested command, and whether user input is required.
 
 ### Next up
-- Review draft PR #15: https://github.com/MicHuang/twincut/pull/15
+- **Execute remediation plan** `docs/superpowers/plans/2026-07-05-twincut-remediation.md` (Wave 1 first; user decision 2026-07-05: subagent-driven execution, do NOT start until user green-lights). Read the plan's Global Constraints before touching anything — bash 3.2 compat, Go-owned event contract, no new features.
 - Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15.
 - Optional follow-up: install Pillow/imagehash locally if full pHash smoke coverage is needed outside CI.
 
@@ -47,6 +50,13 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-05 `[claude]@mac-joyce` — full-repo assessment + remediation plan (execution deferred)
+- Ran a full no-new-features assessment of `main@5917d06`. Highest-severity verified findings: (1) `bin/vid_eq.sh` reads ffprobe duration/size into swapped vars → similar-video only ever matches byte-identical sizes, and w/h are never compared (single `read` on 3-line output); (2) `EQUAL:yes` is never emitted → `--video-fast-strict` can confirm zero pairs; (3) `--report/--fix-backup-dupes` crashes (exit 1, no `run_end`) on any non-video file — `read < <(empty awk lookup)` under `set -e`, lookup precedes the `is_video_ext` guard; (4) Go UI has no Origin/Host guard on state-changing endpoints incl. `POST /api/runs` (arbitrary bash argv); (5) CI never runs `tests/json_events/run_tests.py`; (6) assorted dead code / O(N²) loops / doc drift.
+- Wrote the full TDD remediation plan: `docs/superpowers/plans/2026-07-05-twincut-remediation.md` — 3 PR waves, 7 tasks, every fix lands with a red-first regression test; verified-fact appendix included (fixture sizes, ffprobe field order, shellcheck baseline). Deferred items are listed explicitly in the plan to prevent scope creep.
+- User decision: execute via superpowers:subagent-driven-development, **but do not start yet** — UI work is mid-flight; remediation waits for the user's go signal. Wave 1/2 are independent; Wave 3 requires Wave 1 merged.
+- Also this session: added twincut to bidirectional git-sync (mac-joyce `~/Playground/twincut` ↔ mac-yiqi `~/Tools/twincut`; note the non-default path on mac-yiqi).
+- Verification: `make test` green at assessment start (bash 12/12 + Go ok); no product code touched — this handoff adds only the plan + this PROGRESS update.
 
 ### 2026-07-05 `[codex]@macmini-yiqi` — reviewer-claude dispatch blocker for PR #15
 - Context: attempted to send draft PR #15 to `reviewer-claude` through the required `agent-dispatch reviewer-claude < prompt` wrapper.
