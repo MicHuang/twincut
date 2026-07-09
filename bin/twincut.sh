@@ -194,8 +194,8 @@ emit_similar_video_group(){
   local _reason="$1" _keep="$2" _kcsv="$3" _rm="$4" _rcsv="$5"
   SIM_GROUP_ID=$((SIM_GROUP_ID+1))
   local _kdur _kw _kh _kfps _kbps _ddur _dw _dh _dfps _dbps
-  read -r _kdur _kw _kh _kfps _kbps < <(_video_meta_lookup "$_kcsv" "$_keep")
-  read -r _ddur _dw _dh _dfps _dbps < <(_video_meta_lookup "$_rcsv" "$_rm")
+  read -r _kdur _kw _kh _kfps _kbps < <(_video_meta_lookup "$_kcsv" "$_keep") || true
+  read -r _ddur _dw _dh _dfps _dbps < <(_video_meta_lookup "$_rcsv" "$_rm") || true
   local _ksz _kmt _rsz _rmt
   _ksz="$(fsize "$_keep")"; _kmt="$(mtime "$_keep")"
   _rsz="$(fsize "$_rm")";   _rmt="$(mtime "$_rm")"
@@ -1221,12 +1221,13 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
 
     build_name_predicate
     while IFS= read -r -d '' bf; do
+      is_video_ext "$bf" || continue
 
       if ${BAD_VIDEO_DETECT:-true}; then
-        read s_bad < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $11; exit}' "${VMETA_FILE:-/dev/null}" )
+        read s_bad < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $11; exit}' "${VMETA_FILE:-/dev/null}" ) || true
         if [[ -z "${s_bad:-}" ]]; then
           # fallback quick check using direct ffprobe fields if meta missing
-          read bcod bw bh bdur < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $4,$5,$6,$3; exit}' "${VMETA_FILE:-/dev/null}" )
+          read bcod bw bh bdur < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $4,$5,$6,$3; exit}' "${VMETA_FILE:-/dev/null}" ) || true
           if [[ -z "${bcod:-}" || -z "${bw:-}" || -z "${bh:-}" || "${bw:-0}" -eq 0 || "${bh:-0}" -eq 0 || "${bdur:-0}" == "0" ]]; then
             s_bad=1
           else
@@ -1239,15 +1240,14 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
         fi
       fi
 
-      is_video_ext "$bf" || continue
       # Load/append meta row for bf
-      read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "${VMETA_FILE:-/dev/null}" )
+      read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "${VMETA_FILE:-/dev/null}" ) || true
       if [[ -z "${bsz:-}" ]]; then
         append_video_meta "$VMETA_FILE" "$bf"
-        read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$VMETA_FILE" )
+        read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$VMETA_FILE" ) || true
       fi
       # read fps/bitrate for strict checks (columns 9/10)
-      read bfps bbps < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $9,$10; exit}' "${VMETA_FILE:-/dev/null}" )
+      read bfps bbps < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $9,$10; exit}' "${VMETA_FILE:-/dev/null}" ) || true
       # Scan candidates in the same BDIR meta, exclude self
       while IFS= read -r cand; do
         [[ -z "$cand" || "$cand" == "$bf" ]] && continue
@@ -1425,7 +1425,7 @@ while IFS= read -r -d '' f; do
     # Load source meta from CSV (append if missing)
     read s_size s_dur s_codec s_w s_h s_mtime s_dbuck < <(
       awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "${SVMETA_FILE:-/dev/null}"
-    )
+    ) || true
     if [[ -z "${s_size:-}" ]]; then
       SVMETA_FILE="${SVMETA_FILE:-"$SOURCE_DIR/$VIDEO_META_NAME"}"
       if [[ ! -f "$SVMETA_FILE" ]]; then
@@ -1435,13 +1435,13 @@ while IFS= read -r -d '' f; do
       append_video_meta "$SVMETA_FILE" "$f"
       read s_size s_dur s_codec s_w s_h s_mtime s_dbuck < <(
         awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$SVMETA_FILE"
-      )
+      ) || true
     fi
     # source fps/bitrate (columns 9/10)
-    read s_fps s_bps < <( awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $9,$10; exit}' "${SVMETA_FILE:-/dev/null}" )
+    read s_fps s_bps < <( awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $9,$10; exit}' "${SVMETA_FILE:-/dev/null}" ) || true
 
       if ${BAD_VIDEO_DETECT:-true}; then
-        read s_bad < <( awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $11; exit}' "${SVMETA_FILE:-/dev/null}" )
+        read s_bad < <( awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $11; exit}' "${SVMETA_FILE:-/dev/null}" ) || true
         if [[ -z "${s_bad:-}" ]]; then
           # Use the already-loaded source meta fields as fallback
           if [[ -z "${s_codec:-}" || -z "${s_w:-}" || -z "${s_h:-}" || "${s_w:-0}" -eq 0 || "${s_h:-0}" -eq 0 || "${s_dur:-0}" == "0" ]]; then
@@ -1500,7 +1500,10 @@ while IFS= read -r -d '' f; do
             # event stream and the qmove decision happen exactly once.
             if [[ "$f" < "$b" ]]; then _pa="$f"; _pb="$b"; else _pa="$b"; _pb="$f"; fi
             _pkey="${_pa}"$'\x1f'"${_pb}"
-            case ":${_SOURCE_SIM_SEEN:-}:" in *":${_pkey}:"*) break ;; esac
+            # Pair already handled from the other side — skip this candidate
+            # but keep scanning the rest (break abandoned the remaining
+            # candidates for $f entirely).
+            case ":${_SOURCE_SIM_SEEN:-}:" in *":${_pkey}:"*) continue ;; esac
             _SOURCE_SIM_SEEN="${_SOURCE_SIM_SEEN:-}:${_pkey}"
             emit_similar_video_group "$_sim_reason" "$KEEP" "$SVMETA_FILE" "$MOVE" "$SVMETA_FILE"
             if $REPORT_SOURCE_DUPES; then
