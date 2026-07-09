@@ -174,7 +174,7 @@ thumb_run_l2(){
     while IFS= read -r p; do
       [[ -z "$p" || ! -e "$p" ]] && continue
       local w h px
-      read -r _ w h _ < <(awk -F'\t' -v pp="$p" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE")
+      read -r _ w h _ < <(awk -F'\t' -v pp="$p" '$1==pp{print $0; exit}' "$THUMB_INDEX_FILE") || true
       if [[ -z "$w" ]]; then
         local dims; dims="$(thumb_dimensions "$p")" || continue
         read -r w h <<<"$dims"

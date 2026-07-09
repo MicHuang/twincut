@@ -65,7 +65,7 @@ Things that are non-obvious from skimming a single function:
 - **Video matching has three tiers**, controlled by `VIDEO_FAST` / `VIDEO_FAST_STRICT` / `EXACT`:
   1. `--exact`: hash-only (disables fast).
   2. Default fast: join candidates by size window (`SIZE_PCT`, ±0.5%) and duration bucket (`DUR_SEC`, 0.3s steps via `duration_bucket`).
-  3. `--video-fast-strict`: tightens windows (size 0.2%, dur 0.15s), additionally compares fps/bitrate, and runs `vid_eq.sh` for a final check. Strict defaults are reapplied at startup (lines ~92–95).
+  3. `--video-fast-strict`: tightens windows (size 0.2%, dur 0.15s), additionally compares fps/bitrate, and re-verifies via `vid_eq.sh`'s metadata-level EQUAL check. Strict defaults are reapplied at startup (lines ~92–95).
   Video metadata (size/dur/fps/bitrate/codec/wh) is cached in `<dir>/.video_meta_index.csv` (TSV despite the extension). `--rebuild-video-meta` forces rebuild.
 
 - **`vid_eq.sh` is located via `V_EQ_BIN`**, resolved at startup in this order: env override → sibling `vid_eq` → sibling `vid_eq.sh` → `PATH`. Script aborts immediately if not found. Both fast helpers share the same `SIZE_PCT` / `DUR_SEC` env knobs.

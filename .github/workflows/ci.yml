@@ -41,6 +41,8 @@ jobs:
           bash tests/p1_stage9_smoke.sh
           bash tests/p0_smoke.sh
           bash tests/p1_stage11_smoke.sh
+          bash tests/vid_eq_smoke.sh
+          bash tests/backup_selfcheck_smoke.sh
 
   # macOS-only: exercises the sips-dependent thumbnail detect + pHash suites
   # that cannot run on Linux. TWINCUT_REQUIRE_TOOLS=1 turns a missing tool into

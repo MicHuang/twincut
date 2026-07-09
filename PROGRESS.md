@@ -16,7 +16,7 @@
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | — | pending | Plan: `docs/superpowers/plans/2026-07-05-twincut-remediation.md` Tasks 1-2. DoD: `bash tests/vid_eq_smoke.sh` + `bash tests/backup_selfcheck_smoke.sh` green, `make test` green, Tier-1 reviewer-gemini pass on PR. Execute via superpowers:subagent-driven-development. |
+| R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | in-review | PR #16 open, all DoD met: both new smokes + `make test` green, Tier-1 reviewer-gemini OK (findings fixed in f5047d6). Awaiting user merge decision incl. one deferred plan-level finding (see Handoff Log 2026-07-09). |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | — | pending | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
 | R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | — | pending | Plan Tasks 5-7, **in order, after W1 merges** (CI list references W1 smokes). DoD: CI runs run_tests.py + all smokes; `shellcheck --severity=warning` clean; Tier-1 review pass. |
 | T1 | Sync to Stage 11 baseline | codex@macmini-yiqi | done | Preserved earlier stamp in stash `codex-pre-sync-stamp`, fetched origin, and created branch `codex/sync-restamp-hygiene` from `origin/main`. |
@@ -50,6 +50,14 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-09 `[claude]@mac-joyce` — R-W1 executed, PR #16 open (in-review)
+- Executed remediation Wave 1 (plan Tasks 1-2) via superpowers:subagent-driven-development on branch `claude/remediation-wave1`: fresh implementer subagent per task, per-task spec+quality review, final whole-branch review, then Tier-1 `reviewer-gemini` on the PR diff.
+- Commits: `21bbf57` vid_eq.sh rewrite (ffprobe field swap, WxH compare, EQUAL mode, export SIZE_PCT/DUR_SEC) + `tests/vid_eq_smoke.sh`; `50e8373` crash-class fix (12× `read < <()` `|| true`, is_video_ext guard reorder, seen-pair break→continue) + `tests/backup_selfcheck_smoke.sh`; `f5047d6` Tier-1 findings (probe helpers now emit `:no` instead of aborting when ffprobe fails on an existing file; header comment de-confused). Both smokes wired into CI.
+- Verification: TDD red→green per task; `make test` bash 12/12 + Go ok; p0 25/25; stage9 full-run (Pillow present); stage11 6/6; both new smokes green; vid_eq verified under real bash 3.2.57.
+- Tier-1 `reviewer-gemini`: TEAM_RESULT=OK, no BLOCKER/MAJOR; its MINOR+NIT fixed in `f5047d6`.
+- **Open decision for user before merge:** final whole-branch review flagged one Important plan-level finding, deferred (reviewer judged merge-safe, strictly better than the crash it replaces): `bin/twincut.sh` backup loop's newly-reachable bad-video fallback can move a good video to `_bad_video` when its meta row is missing (mid-run file-add race); self-heal append runs after the check. Fix idea: self-heal before condemning. Options: fix on this branch pre-merge, or merge and fold into Wave 3. Minor Wave-3 candidates also recorded in `.superpowers/sdd/progress.md` (redundant strict re-verify = 2 extra ffprobe calls/pair; `--size-pct` as last arg trips `set -u`).
+- R-W2 remains independent/unclaimed; R-W3 waits for this merge.
 
 ### 2026-07-05 `[claude]@mac-joyce` — full-repo assessment + remediation plan (execution deferred)
 - Ran a full no-new-features assessment of `main@5917d06`. Highest-severity verified findings: (1) `bin/vid_eq.sh` reads ffprobe duration/size into swapped vars → similar-video only ever matches byte-identical sizes, and w/h are never compared (single `read` on 3-line output); (2) `EQUAL:yes` is never emitted → `--video-fast-strict` can confirm zero pairs; (3) `--report/--fix-backup-dupes` crashes (exit 1, no `run_end`) on any non-video file — `read < <(empty awk lookup)` under `set -e`, lookup precedes the `is_video_ext` guard; (4) Go UI has no Origin/Host guard on state-changing endpoints incl. `POST /api/runs` (arbitrary bash argv); (5) CI never runs `tests/json_events/run_tests.py`; (6) assorted dead code / O(N²) loops / doc drift.
