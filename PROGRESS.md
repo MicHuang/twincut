@@ -16,7 +16,7 @@
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | — | pending | Plan: `docs/superpowers/plans/2026-07-05-twincut-remediation.md` Tasks 1-2. DoD: `bash tests/vid_eq_smoke.sh` + `bash tests/backup_selfcheck_smoke.sh` green, `make test` green, Tier-1 reviewer-gemini pass on PR. Execute via superpowers:subagent-driven-development. |
+| R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | in-progress | Plan: `docs/superpowers/plans/2026-07-05-twincut-remediation.md` Tasks 1-2. DoD: `bash tests/vid_eq_smoke.sh` + `bash tests/backup_selfcheck_smoke.sh` green, `make test` green, Tier-1 reviewer-gemini pass on PR. Execute via superpowers:subagent-driven-development. |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | — | pending | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
 | R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | — | pending | Plan Tasks 5-7, **in order, after W1 merges** (CI list references W1 smokes). DoD: CI runs run_tests.py + all smokes; `shellcheck --severity=warning` clean; Tier-1 review pass. |
 | T1 | Sync to Stage 11 baseline | codex@macmini-yiqi | done | Preserved earlier stamp in stash `codex-pre-sync-stamp`, fetched origin, and created branch `codex/sync-restamp-hygiene` from `origin/main`. |
