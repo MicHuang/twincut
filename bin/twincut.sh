@@ -784,7 +784,7 @@ Notes:
   - During --dry-run, a source-side cache (<source>/.source_hashindex.txt) is created/updated.
   - After a successful non-dry run, the source cache is removed unless --keep-source-cache.
   - Default video-fast is enabled (size±0.5%, dur±0.3s). Use --exact for hash-only.
-  - In --video-fast-strict, join also compares fps/bitrate (if present) and does a full vid_eq check.
+  - In --video-fast-strict, join also compares fps/bitrate (if present) and re-verifies via vid_eq's metadata-level EQUAL check.
   - Symlinks are NOT followed by default. Use --follow-symlinks to opt in.
   - Every action (move/delete) is recorded in <quarantine>/_manifest-<RUN_ID>.tsv.
     Use --restore <manifest> to roll back a previous run.
@@ -1089,6 +1089,9 @@ fi
 
 # Re-apply strict thresholds after CLI is parsed (parser runs after initial defaults)
 if $VIDEO_FAST_STRICT; then SIZE_PCT=0.2; DUR_SEC=0.15; fi
+# vid_eq.sh runs as a child process; export so --size-pct/--dur-sec (and the
+# strict-tightened values above) actually reach it.
+export SIZE_PCT DUR_SEC
 
 # Resolved-mode emission for the Web UI. One concise event with the active
 # mode + the most relevant flags. Goes out before any disk-heavy work.
