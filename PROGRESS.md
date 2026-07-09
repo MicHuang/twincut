@@ -16,9 +16,9 @@
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | in-review | PR #16 open, all DoD met: both new smokes + `make test` green, Tier-1 reviewer-gemini OK (findings fixed in f5047d6). Awaiting user merge decision incl. one deferred plan-level finding (see Handoff Log 2026-07-09). |
+| R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | — | pending | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
-| R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | — | pending | Plan Tasks 5-7, **in order, after W1 merges** (CI list references W1 smokes). DoD: CI runs run_tests.py + all smokes; `shellcheck --severity=warning` clean; Tier-1 review pass. |
+| R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | — | pending | **Unblocked** (W1 merged 2026-07-09). Plan Tasks 5-7 in order. DoD: CI runs run_tests.py + all smokes; `shellcheck --severity=warning` clean; Tier-1 review pass. Note for Task 6: Wave-1 final review left two candidates to fold in — vid_eq strict re-verify is redundant (fast/full same checks ⇒ 2 wasted ffprobe calls/pair) and `--size-pct` as last CLI arg trips `set -u`. |
 | T1 | Sync to Stage 11 baseline | codex@macmini-yiqi | done | Preserved earlier stamp in stash `codex-pre-sync-stamp`, fetched origin, and created branch `codex/sync-restamp-hygiene` from `origin/main`. |
 | T2 | Re-apply agent-team stamp | codex@macmini-yiqi | done | Re-ran `agent-team stamp-handoff /Users/zhabs/Tools/twincut` on Stage 11; generated `PROGRESS.md`, `AGENTS.md`, and updated `CLAUDE.md`. |
 | T3 | Refresh stale project docs | codex@macmini-yiqi | done | Updated `CLAUDE.md`, `README.md`, and `AGENTS.md` so they reflect the Go UI, Makefile/test suite, and Stage 11 typed event contract. |
@@ -29,7 +29,7 @@
 - Blocked entries must include the blocking reason, verified facts, next suggested command, and whether user input is required.
 
 ### Next up
-- **Execute remediation plan** `docs/superpowers/plans/2026-07-05-twincut-remediation.md` (Wave 1 first; user decision 2026-07-05: subagent-driven execution, do NOT start until user green-lights). Read the plan's Global Constraints before touching anything — bash 3.2 compat, Go-owned event contract, no new features.
+- **Remediation Waves 2 & 3** per `docs/superpowers/plans/2026-07-05-twincut-remediation.md` (Wave 1 merged 2026-07-09 as PR #16). R-W2 (Go UI, Tasks 3-4) and R-W3 (CI/hygiene, Tasks 5-7) are both claimable now; they are independent of each other. Read the plan's Global Constraints first — bash 3.2 compat, Go-owned event contract, no new features.
 - Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15.
 - Optional follow-up: install Pillow/imagehash locally if full pHash smoke coverage is needed outside CI.
 
@@ -50,6 +50,12 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-09 `[claude]@mac-joyce` — R-W1 closed: PR #16 merged (`9cf6928`)
+- Supersedes the open decision in the previous entry: user chose **fix-before-merge**, so the bad-video-fallback race was fixed on-branch (`d0e0a4b`: load/append meta row before the bad-video verdict, fallback uses loaded fields, mirroring the source path) + smoke comment de-overstated per review (`3b2b9d6`). Re-review (sonnet) Approved; incremental Tier-1 via **grok-4.5** `TEAM_RESULT=OK` ("ship the engine change").
+- Mid-review infra detour: both Tier-1 wrappers hit upstream model-ID rot (`gemini-2.5-flash` 404, `grok-build` removed). Fixed in agent-team PR #47 (gemini default → `gemini-flash-latest`, grok reviewer → `grok-4.5`, executor stays `grok-composer-2.5-fast`); user authorized the grok substitution for the pending review per TEAM.md fail-closed policy.
+- CI green on merge head (go / shell / macOS thumbnail). Board: R-W1 → done; R-W3 unblocked (plus two Wave-1 review leftovers noted in its row for Task 6); R-W2 unclaimed and independent.
+- Wave-1 review-finding triage records live in `.superpowers/sdd/progress.md` (gitignored scratch, this machine only).
 
 ### 2026-07-09 `[claude]@mac-joyce` — R-W1 executed, PR #16 open (in-review)
 - Executed remediation Wave 1 (plan Tasks 1-2) via superpowers:subagent-driven-development on branch `claude/remediation-wave1`: fresh implementer subagent per task, per-task spec+quality review, final whole-branch review, then Tier-1 `reviewer-gemini` on the PR diff.
