@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -130,7 +132,39 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /debug", s.handleDebug)
 	mux.HandleFunc("GET /debug/run/{id}", s.handleDebugRun)
 
-	return mux
+	return originGuard(mux)
+}
+
+// loopbackHost reports whether host (no port) is a loopback name we serve.
+func loopbackHost(host string) bool {
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
+}
+
+// originGuard rejects (a) requests whose Host is not loopback (DNS-rebinding
+// defense — we only ever bind 127.0.0.1) and (b) state-changing requests
+// bearing a non-loopback Origin (CSRF defense; browsers attach Origin to
+// cross-site POSTs, while curl/CLI send none and stay allowed).
+func originGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if !loopbackHost(host) {
+			http.Error(w, "forbidden: non-loopback Host", http.StatusForbidden)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if o := r.Header.Get("Origin"); o != "" {
+				u, err := url.Parse(o)
+				if err != nil || !loopbackHost(u.Hostname()) {
+					http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ----------------------------------------------------------------------------
