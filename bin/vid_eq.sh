@@ -5,8 +5,9 @@
 #   --fast (fast prefilter)  → prints CANDIDATE:yes|no, exit 0|1
 #   default (full check)     → prints EQUAL:yes|no,     exit 0|1
 #
-# "Full" is a stricter-threshold METADATA verification (size window,
-# duration window, codec, WxH). This tool never decodes frames.
+# Fast and full run the same METADATA checks (size window, duration window,
+# codec, WxH); "strictness" comes from the SIZE_PCT/DUR_SEC values the caller
+# exports (twincut tightens them under --video-fast-strict). Never decodes frames.
 # twincut.sh --video-fast-strict calls the bare form and greps EQUAL:yes,
 # so the default mode MUST stay full/EQUAL.
 #
@@ -23,10 +24,13 @@ MODE="full"
 _fsize(){ stat -c %s -- "$1" 2>/dev/null || stat -f %z -- "$1" 2>/dev/null || echo 0; }
 # One value per call — avoids depending on ffprobe's canonical field order,
 # which bit us before (duration prints before size regardless of request order).
-_probe_dur(){ ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 -- "$1" 2>/dev/null | head -n1; }
+# || true: ffprobe failing on an existing-but-unreadable file must yield an
+# empty value (→ compare fails → ":no"), not abort under set -e/pipefail
+# before the contract line is printed.
+_probe_dur(){ ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 -- "$1" 2>/dev/null | head -n1 || true; }
 # codec,width,height on ONE line via csv (a 3-line default=nw=1 output would
 # need three reads; one read used to silently drop width/height).
-_probe_cwh(){ ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0:s=, -- "$1" 2>/dev/null | head -n1; }
+_probe_cwh(){ ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0:s=, -- "$1" 2>/dev/null | head -n1 || true; }
 
 vid_eq(){
   local A="$1" B="$2"
