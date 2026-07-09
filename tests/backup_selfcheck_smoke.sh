@@ -15,9 +15,11 @@ printf 'AAA' > "$bk/a.jpg"
 printf 'AAA' > "$bk/b.jpg"     # exact dupe of a.jpg
 printf 'CCC' > "$bk/c.jpg"     # unique
 
-# A real, good video: guards against the backup similar-video loop
-# wrongly condemning it as "bad" (regression guard for the meta-row
-# self-heal-before-bad-video-verdict ordering fix).
+# A real, good video: integration guard that the backup similar-video loop
+# never condemns it as "bad". Note: this exercises the happy path only — the
+# meta-row-missing race behind the self-heal-before-verdict ordering fix is
+# not reproducible black-box (ensure_video_meta_index populates the row
+# before the loop), so this assertion also passes on pre-fix code.
 vid_src="$ROOT/tests/fixtures/video/clip_high.mp4"
 vid_path="$bk/good.mp4"
 cp "$vid_src" "$vid_path"
