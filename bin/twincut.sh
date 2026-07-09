@@ -1223,11 +1223,20 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
     while IFS= read -r -d '' bf; do
       is_video_ext "$bf" || continue
 
+      # Load/append meta row for bf (must happen before the bad-video verdict below,
+      # so the fallback never re-queries a row that may still be missing mid-run)
+      read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "${VMETA_FILE:-/dev/null}" ) || true
+      if [[ -z "${bsz:-}" ]]; then
+        append_video_meta "$VMETA_FILE" "$bf"
+        read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$VMETA_FILE" ) || true
+      fi
+      # read fps/bitrate for strict checks (columns 9/10)
+      read bfps bbps < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $9,$10; exit}' "${VMETA_FILE:-/dev/null}" ) || true
+
       if ${BAD_VIDEO_DETECT:-true}; then
         read s_bad < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $11; exit}' "${VMETA_FILE:-/dev/null}" ) || true
         if [[ -z "${s_bad:-}" ]]; then
-          # fallback quick check using direct ffprobe fields if meta missing
-          read bcod bw bh bdur < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $4,$5,$6,$3; exit}' "${VMETA_FILE:-/dev/null}" ) || true
+          # Use the already-loaded meta fields as fallback (self-healed above)
           if [[ -z "${bcod:-}" || -z "${bw:-}" || -z "${bh:-}" || "${bw:-0}" -eq 0 || "${bh:-0}" -eq 0 || "${bdur:-0}" == "0" ]]; then
             s_bad=1
           else
@@ -1239,15 +1248,6 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
           continue
         fi
       fi
-
-      # Load/append meta row for bf
-      read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "${VMETA_FILE:-/dev/null}" ) || true
-      if [[ -z "${bsz:-}" ]]; then
-        append_video_meta "$VMETA_FILE" "$bf"
-        read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$VMETA_FILE" ) || true
-      fi
-      # read fps/bitrate for strict checks (columns 9/10)
-      read bfps bbps < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $9,$10; exit}' "${VMETA_FILE:-/dev/null}" ) || true
       # Scan candidates in the same BDIR meta, exclude self
       while IFS= read -r cand; do
         [[ -z "$cand" || "$cand" == "$bf" ]] && continue

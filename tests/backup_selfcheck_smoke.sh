@@ -15,6 +15,13 @@ printf 'AAA' > "$bk/a.jpg"
 printf 'AAA' > "$bk/b.jpg"     # exact dupe of a.jpg
 printf 'CCC' > "$bk/c.jpg"     # unique
 
+# A real, good video: guards against the backup similar-video loop
+# wrongly condemning it as "bad" (regression guard for the meta-row
+# self-heal-before-bad-video-verdict ordering fix).
+vid_src="$ROOT/tests/fixtures/video/clip_high.mp4"
+vid_path="$bk/good.mp4"
+cp "$vid_src" "$vid_path"
+
 events="$work/events.ndjson"
 if ! TWINCUT_RUN_ID=r_bkself \
     "$TC" --backup "$bk" --report-backup-dupes \
@@ -28,5 +35,10 @@ grep -q 'BACKUP-DUPE' "$work/stderr.log" || fail "expected [BACKUP-DUPE] report 
 grep -q '===== SUMMARY =====' "$work/stderr.log" || fail "run died before SUMMARY"
 grep -q '"type":"run_end"' "$events" || fail "no run_end event emitted"
 grep -q '"status":"succeeded"' "$events" || fail "run_end not succeeded"
+
+[[ -f "$vid_path" ]] || fail "good video was moved/removed from its original path"
+if find "$work/q" -type d -iname '_bad_video' 2>/dev/null | grep -q .; then
+  fail "good video was quarantined under _bad_video"
+fi
 
 echo "backup_selfcheck_smoke: all ok"
