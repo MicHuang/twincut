@@ -293,6 +293,7 @@ E2E_PREVIEW="$TMP/e2e_preview.ndjson"
   >"$E2E_PREVIEW" 2>/dev/null || true
 
 # The real candidate path the detector reported (verify the move against it).
+# shellcheck disable=SC2034  # read via eval inside assert()'s quoted condition strings below
 E2E_CAND="$(jq -rs 'map(select(.type=="thumb_candidate")) | (.[0].path // "")' "$E2E_PREVIEW")"
 assert "E2E: detector reported a thumb_candidate path on disk" \
   '[[ -n "$E2E_CAND" && -e "$E2E_CAND" ]]'

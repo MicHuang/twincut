@@ -17,7 +17,9 @@ FAIL=0
 # shellcheck source=../lib/events.sh
 source "$ROOT/lib/events.sh"
 
+# shellcheck disable=SC2034  # JSON_EVENTS: consumed by lib/events.sh (sourced above)
 JSON_EVENTS=true    # required: helpers gate on $JSON_EVENTS
+# shellcheck disable=SC2034  # RUN_ID: consumed by lib/events.sh (sourced above)
 RUN_ID="r_test"
 export TWINCUT_TEST_TS=1747934400
 

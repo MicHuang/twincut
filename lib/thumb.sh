@@ -254,6 +254,7 @@ thumb_run_l3(){
 
     # candidates = bigger images (l1=ok) in the same dir
     local matched=""
+    # shellcheck disable=SC2034  # cw/ch: positional TSV placeholders
     while IFS=$'\t' read -r cand cw ch ccls; do
       [[ "$ccls" != "ok" ]] && continue
       [[ "$(dirname -- "$cand")" != "$dir" ]] && continue
@@ -646,6 +647,7 @@ thumb_detect_run(){
   # If thumbnail-detect is the only mode running, point the manifest at THUMB_DIR
   # so the rollback file lives next to the thumbnails (not in ./_QUARANTINE).
   if ! $DO_CROSS && ! $DO_BACKUP_SELF && ! $DO_SOURCE_SELF && ! $MANIFEST_INITED; then
+    # shellcheck disable=SC2034  # consumed by bin/twincut.sh (sourcing script)
     QUAR_DIR="$THUMB_DIR"
   fi
 

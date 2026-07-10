@@ -106,7 +106,13 @@ assert_not_file "$SRC/._a.jpg"
 assert_file "$QUAR/_appledouble/._a.jpg"
 
 # Real manifest exists and contains expected rows
-REAL_MF=$(ls "$QUAR"/_manifest-*.tsv 2>/dev/null | grep -v dryrun | head -n1 || true)
+REAL_MF=""
+for _mf in "$QUAR"/_manifest-*.tsv; do
+  [[ -e "$_mf" ]] || continue
+  [[ "$_mf" == *dryrun* ]] && continue
+  REAL_MF="$_mf"
+  break
+done
 [[ -n "$REAL_MF" ]] && ok "real manifest exists: $(basename "$REAL_MF")" || bad "no real manifest"
 grep -q $'\tcross_hash\t' "$REAL_MF"  && ok "manifest has cross_hash row"  || bad "no cross_hash row"
 grep -q $'\tappledouble\t' "$REAL_MF" && ok "manifest has appledouble row" || bad "no appledouble row"
@@ -131,6 +137,8 @@ cp "$BK/a.jpg" "$SRC/a.jpg.keep"  # different name; ensure restore safe path
 "$TWINCUT" --source "$SRC" --backup "$BK" --quarantine "$QUAR" \
   --ext "jpg" --exact --assume-yes --no-bad-video --appledouble-action ignore \
   >/tmp/twincut_run2.log 2>&1 || true
+# shellcheck disable=SC2010  # mtime-sorted selection; a portable non-ls-|-grep
+# rewrite would need a full mtime-sort helper, which is out of scope here
 REAL_MF2=$(ls -t "$QUAR"/_manifest-*.tsv 2>/dev/null | grep -v dryrun | head -n1)
 # Put a blocker at original path
 echo "blocker" > "$SRC/a.jpg"

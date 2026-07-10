@@ -1023,13 +1023,18 @@ while [[ $# -gt 0 ]]; do
     --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
     --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
 
-    --thumbnail-detect)        THUMB_DETECT=true; DO_THUMB=true; shift;;
-    --thumb-action)            THUMB_ACTION="${2:-}"; shift 2;;
-    --thumb-dir)               THUMB_DIR="${2:-}"; shift 2;;
-    --thumb-max-edge)          THUMB_MAX_EDGE="${2:-}"; shift 2;;
-    --thumb-maybe-max-edge)    THUMB_MAYBE_MAX_EDGE="${2:-}"; shift 2;;
-    --thumb-require-exif-match) THUMB_REQUIRE_EXIF_MATCH=true; shift;;
-    --thumb-review-csv)        THUMB_REVIEW_CSV="${2:-}"; shift 2;;
+    --thumbnail-detect|--thumb-action|--thumb-dir|--thumb-max-edge|--thumb-maybe-max-edge|--thumb-require-exif-match|--thumb-review-csv)
+      # shellcheck disable=SC2034  # thumb globals below are consumed by lib/thumb.sh (sourced above), not read in this file
+      case "$1" in
+        --thumbnail-detect)        THUMB_DETECT=true; DO_THUMB=true; shift;;
+        --thumb-action)            THUMB_ACTION="${2:-}"; shift 2;;
+        --thumb-dir)               THUMB_DIR="${2:-}"; shift 2;;
+        --thumb-max-edge)          THUMB_MAX_EDGE="${2:-}"; shift 2;;
+        --thumb-maybe-max-edge)    THUMB_MAYBE_MAX_EDGE="${2:-}"; shift 2;;
+        --thumb-require-exif-match) THUMB_REQUIRE_EXIF_MATCH=true; shift;;
+        --thumb-review-csv)        THUMB_REVIEW_CSV="${2:-}"; shift 2;;
+      esac
+      ;;
 
     -h|--help) usage 0;;
     *) echo "Unknown option: $1" >&2; usage 2;;
@@ -1263,9 +1268,11 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
 
       # Load/append meta row for bf (must happen before the bad-video verdict below,
       # so the fallback never re-queries a row that may still be missing mid-run)
+      # shellcheck disable=SC2034  # bmt: positional TSV placeholder
       read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "${VMETA_FILE:-/dev/null}" ) || true
       if [[ -z "${bsz:-}" ]]; then
         append_video_meta "$VMETA_FILE" "$bf"
+        # shellcheck disable=SC2034  # bmt: positional TSV placeholder
         read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$VMETA_FILE" ) || true
       fi
       # read fps/bitrate for strict checks (columns 9/10)
@@ -1448,6 +1455,7 @@ while IFS= read -r -d '' f; do
         vmeta_write_header "$SVMETA_FILE"
       fi
       append_video_meta "$SVMETA_FILE" "$f"
+      # shellcheck disable=SC2034  # s_mtime: positional TSV placeholder
       read s_size s_dur s_codec s_w s_h s_mtime s_dbuck < <(
         awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$SVMETA_FILE"
       ) || true

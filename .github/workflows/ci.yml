@@ -46,6 +46,19 @@ jobs:
           bash tests/vid_eq_smoke.sh
           bash tests/backup_selfcheck_smoke.sh
 
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (warning severity)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck --severity=warning \
+            bin/twincut.sh bin/vid_eq.sh \
+            lib/events.sh lib/thumb.sh \
+            installers/install.sh installers/uninstall.sh \
+            tests/*.sh
+
   # macOS-only: exercises the sips-dependent thumbnail detect + pHash suites
   # that cannot run on Linux. TWINCUT_REQUIRE_TOOLS=1 turns a missing tool into
   # a hard failure so the suites can never silently skip on the very platform
