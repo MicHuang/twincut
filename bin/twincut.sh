@@ -1244,15 +1244,18 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
       while IFS= read -r h; do
         MAP_FILE="$(mktemp)"
         grep -v '^#' "$TMP_CACHE" | awk -F '\t' -v hh="$h" '$1==hh{print $2}' > "$MAP_FILE"
-        # Keep policy: prefer oldest mtime
-        KEEP_PATH=""; KEEP_MT=""
+        # Keep policy: prefer oldest mtime; break mtime ties by path
+        # byte-order (LC_ALL=C), NOT find(1) traversal order — directory
+        # enumeration order is filesystem-dependent (ext4 htree vs APFS), so
+        # first-wins silently picked a different keep file per OS. Mirrors the
+        # source-self tie-break below.
+        MAP_KEYED="$(mktemp)"
         while IFS= read -r p; do
           [[ -z "$p" ]] && continue
-          mt="$(mtime "$p")"
-          if [[ -z "$KEEP_PATH" || "$mt" -lt "$KEEP_MT" ]]; then
-            KEEP_PATH="$p"; KEEP_MT="$mt"
-          fi
-        done < "$MAP_FILE"
+          printf '%s\t%s\n' "$(mtime "$p")" "$p"
+        done < "$MAP_FILE" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2 > "$MAP_KEYED"
+        KEEP_PATH="$(head -n1 "$MAP_KEYED" | cut -f2-)"
+        rm -f "$MAP_KEYED" 2>/dev/null || true
         # Move/report all duplicates except the chosen KEEP_PATH
         while IFS= read -r dp; do
           [[ -z "$dp" || "$dp" == "$KEEP_PATH" ]] && continue
