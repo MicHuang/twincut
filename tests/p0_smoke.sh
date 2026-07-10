@@ -161,6 +161,28 @@ set -e
 assert_eq "$RC" "0" "exit code 0 without --exit-code-on-dupes"
 
 # ----------------------------------------------------------------------------
+note "6. TSV-breaking sidecar name doesn't abort the run (hygiene regression)"
+# handle_appledouble's move/delete arms call qmove/qdelete as their last bare
+# command inside an unguarded while loop; under set -euo pipefail a qmove
+# skip (nonzero from the tab/newline TSV guard) must not kill the whole run.
+TAB_SRC="$TMP/srcTab"; TAB_BK="$TMP/bkTab"; TAB_QUAR="$TMP/quarTab"
+mkdir -p "$TAB_SRC" "$TAB_BK"
+echo "eta-content" > "$TAB_BK/e.jpg"; cp "$TAB_BK/e.jpg" "$TAB_SRC/e.jpg"
+TAB_SIDECAR_NAME="$(printf '._tab%bafter.jpg' '\t')"
+printf '\x00\x05\x16\x07AppleDouble' > "$TAB_SRC/$TAB_SIDECAR_NAME"
+set +e
+"$TWINCUT" --source "$TAB_SRC" --backup "$TAB_BK" --quarantine "$TAB_QUAR" \
+  --ext "jpg" --exact --assume-yes \
+  --no-bad-video --appledouble-action move \
+  >/tmp/twincut_tab_sidecar.log 2>&1
+RC=$?
+set -e
+assert_eq "$RC" "0" "run with TSV-breaking sidecar name exits 0 (not aborted)"
+assert_file "$TAB_SRC/$TAB_SIDECAR_NAME"
+grep -q "skip (tab/newline in path)" /tmp/twincut_tab_sidecar.log \
+  && ok "tab/newline sidecar skip logged" || bad "no tab/newline skip log"
+
+# ----------------------------------------------------------------------------
 echo
 echo "===== RESULT: $PASS passed, $FAIL failed ====="
 [[ $FAIL -eq 0 ]] || exit 1

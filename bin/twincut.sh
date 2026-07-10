@@ -733,8 +733,8 @@ handle_bad_video(){
   emit_warn --code bad_video --path "$f" --detail "ffprobe failed or zero metadata"
   case "$BAD_VIDEO_ACTION" in
     list)   echo "[BAD-VIDEO] $f" ;;
-    delete) qdelete "$f" "" "" "bad_video" ;;
-    move)   qmove   "$f" "$QUAR_DIR/$BAD_VIDEO_SUBDIR" "" "" "bad_video" ;;
+    delete) qdelete "$f" "" "" "bad_video" || true ;;
+    move)   qmove   "$f" "$QUAR_DIR/$BAD_VIDEO_SUBDIR" "" "" "bad_video" || true ;;
     ignore) : ;;
   esac
 }
@@ -745,8 +745,8 @@ handle_appledouble(){
   emit_warn --code appledouble --path "$f" --detail "AppleDouble sidecar"
   case "$APPLEDOUBLE_ACTION" in
     list)   echo "[APPLEDOUBLE] $f" ;;
-    delete) qdelete "$f" "" "" "appledouble" ;;
-    move)   qmove   "$f" "$QUAR_DIR/$APPLEDOUBLE_SUBDIR" "" "" "appledouble" ;;
+    delete) qdelete "$f" "" "" "appledouble" || true ;;
+    move)   qmove   "$f" "$QUAR_DIR/$APPLEDOUBLE_SUBDIR" "" "" "appledouble" || true ;;
     ignore) : ;;
   esac
 }
