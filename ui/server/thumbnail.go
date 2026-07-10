@@ -42,7 +42,7 @@ func (s *Server) handleThumbnailsPreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	args := []string{"--thumbnail-detect", "--source", source, "--dry-run", "--json-events"}
+	args := []string{"--thumbnail-detect", "--source", source, "--dry-run"}
 	if v := strings.TrimSpace(r.FormValue("max_edge")); v != "" {
 		args = append(args, "--thumb-max-edge", v)
 	}

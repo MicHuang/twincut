@@ -1,7 +1,6 @@
 package server
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -70,6 +69,3 @@ func LocateTwincut(override string) (string, error) {
 
 	return "", fmt.Errorf("could not locate twincut.sh; tried: %v", tried)
 }
-
-// ErrTwincutNotFound is returned when LocateTwincut exhausts all candidates.
-var ErrTwincutNotFound = errors.New("twincut.sh not found")

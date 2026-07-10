@@ -238,7 +238,3 @@ type ApplyCommand struct {
 	Decision string `json:"decision"`
 }
 
-// IsTerminal reports whether the event type ends a run.
-func (e Event) IsTerminal() bool {
-	return e.Type == EventRunEnd || e.Type == EventError
-}

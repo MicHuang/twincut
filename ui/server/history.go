@@ -237,8 +237,12 @@ func (s *Server) handleHistoryPreview(w http.ResponseWriter, r *http.Request) {
 	// Load the entry so we can display folder + moved count.
 	ndjsonPath := filepath.Join(s.opts.StateDir, "runs", id+".ndjson")
 	entry, ok, err := loadHistoryEntry(ndjsonPath)
-	if err != nil || !ok {
-		http.Error(w, "load history entry: "+err.Error(), http.StatusNotFound)
+	if err != nil {
+		http.Error(w, "load history entry: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "run has nothing to restore", http.StatusNotFound)
 		return
 	}
 

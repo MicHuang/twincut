@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -135,11 +134,24 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "preview run not found", http.StatusNotFound)
 		return
 	}
+	prevSnap := previewRun.Snapshot()
+	if prevSnap.Mode != "self_check_preview" {
+		http.Error(w, "preview_run_id refers to a non-self-check-preview run (mode="+prevSnap.Mode+")", http.StatusUnprocessableEntity)
+		return
+	}
+	if prevSnap.Status == RunStatusRunning {
+		http.Error(w, "preview run is still in progress; wait for it to finish before applying", http.StatusConflict)
+		return
+	}
+	if prevSnap.Status != RunStatusSucceeded {
+		http.Error(w, "preview run did not succeed (status="+string(prevSnap.Status)+"); cannot apply", http.StatusUnprocessableEntity)
+		return
+	}
 	// Derive folder from the preview run's args, not the submitted form.
 	// Trusting the form would let an attacker pair preview_run_id of /A
 	// with folder=/B and have /A's quarantine selections move files into
 	// /B's tree.
-	folder, ok := extractArgValue(previewRun.Snapshot().Args, "--self-check")
+	folder, ok := extractArgValue(prevSnap.Args, "--self-check")
 	if !ok || folder == "" {
 		http.Error(w, "preview run is missing --self-check arg", http.StatusInternalServerError)
 		return
@@ -267,15 +279,5 @@ func (s *Server) handleFsList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "dir_listing.html", listing); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-// handleTabPlaceholder serves a "coming soon" panel for tabs not yet built.
-func (s *Server) handleTabPlaceholder(name string) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<section class="tab-section">
-  <header class="tab-section-header"><h2>%s</h2><p class="subtitle">Coming in a later stage.</p></header>
-</section>`, name)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -155,6 +156,52 @@ func TestHandleCrossCheckPreview_RejectsNoBackups(t *testing.T) {
 	srv.handleCrossCheckPreview(rec, req)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleCrossCheckApply_RejectsWrongModePreview(t *testing.T) {
+	srv := newCrossCheckTestServer(t)
+	srcPath := os.Getenv("HOME")
+	bkPath := os.TempDir()
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"prev-wrongmode","mode":"self_check_preview","source":"` + srcPath + `"}`,
+		`{"type":"run_end","ts":2,"run_id":"prev-wrongmode","cancelled":false}`,
+	})
+	r.Mode = "self_check_preview" // not a cross_check_preview
+	r.Args = []string{"--source", srcPath, "--backup", bkPath, "--dry-run"}
+	storeRun(srv.runs, "prev-wrongmode", r)
+
+	form := url.Values{"preview_run_id": {"prev-wrongmode"}}
+	req := httptest.NewRequest("POST", "/api/cross-check/apply", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleCrossCheckApply(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("wrong-mode preview: got %d, want 422", w.Code)
+	}
+}
+
+func TestHandleCrossCheckApply_RejectsRunningPreview(t *testing.T) {
+	srv := newCrossCheckTestServer(t)
+	srcPath := os.Getenv("HOME")
+	bkPath := os.TempDir()
+	// Construct a Run directly so we can pin status to running.
+	r := &Run{
+		ID:     "prev-running",
+		Mode:   "cross_check_preview",
+		Args:   []string{"--source", srcPath, "--backup", bkPath, "--dry-run"},
+		status: RunStatusRunning,
+		done:   make(chan struct{}),
+	}
+	storeRun(srv.runs, "prev-running", r)
+
+	form := url.Values{"preview_run_id": {"prev-running"}}
+	req := httptest.NewRequest("POST", "/api/cross-check/apply", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleCrossCheckApply(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("running preview: got %d, want 409", w.Code)
 	}
 }
 

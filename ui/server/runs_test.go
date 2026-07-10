@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -146,5 +148,19 @@ func TestStart_AcceptsValidCallerID(t *testing.T) {
 	journalPath := filepath.Join(mgr.stateDir, "runs", id+".ndjson")
 	if _, err := os.Stat(journalPath); err != nil {
 		t.Errorf("journal not created at expected path %q: %v", journalPath, err)
+	}
+}
+
+func TestScanCRorLFSplitsCarriageReturns(t *testing.T) {
+	in := "a\rbb\rccc\nlast"
+	sc := bufio.NewScanner(strings.NewReader(in))
+	sc.Split(scanCRorLF)
+	var got []string
+	for sc.Scan() {
+		got = append(got, sc.Text())
+	}
+	want := []string{"a", "bb", "ccc", "last"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

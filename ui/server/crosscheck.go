@@ -129,11 +129,24 @@ func (s *Server) handleCrossCheckApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "preview run not found: "+previewID, http.StatusNotFound)
 		return
 	}
+	prevSnap := previewRun.Snapshot()
+	if prevSnap.Mode != "cross_check_preview" {
+		http.Error(w, "preview_run_id refers to a non-cross-check-preview run (mode="+prevSnap.Mode+")", http.StatusUnprocessableEntity)
+		return
+	}
+	if prevSnap.Status == RunStatusRunning {
+		http.Error(w, "preview run is still in progress; wait for it to finish before applying", http.StatusConflict)
+		return
+	}
+	if prevSnap.Status != RunStatusSucceeded {
+		http.Error(w, "preview run did not succeed (status="+string(prevSnap.Status)+"); cannot apply", http.StatusUnprocessableEntity)
+		return
+	}
 	// Derive source + backups from the preview run's args, not the
 	// submitted form. Trusting the form would let an attacker pair a
 	// benign preview run with malicious source/backup paths and apply
 	// the preview's selections under a different tree.
-	previewArgs := previewRun.Snapshot().Args
+	previewArgs := prevSnap.Args
 	source, ok := extractArgValue(previewArgs, "--source")
 	if !ok || source == "" {
 		http.Error(w, "preview run is missing --source arg", http.StatusInternalServerError)

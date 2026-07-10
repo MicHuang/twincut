@@ -62,24 +62,6 @@ func TestParseEvent_Invalid(t *testing.T) {
 	}
 }
 
-func TestEvent_IsTerminal(t *testing.T) {
-	cases := map[EventType]bool{
-		EventRunStart: false,
-		EventProgress: false,
-		EventDupGroup: false,
-		EventAction:   false,
-		EventWarn:     false,
-		EventError:    true,
-		EventRunEnd:   true,
-	}
-	for typ, want := range cases {
-		ev := Event{Type: typ}
-		if got := ev.IsTerminal(); got != want {
-			t.Errorf("%s: IsTerminal() = %v, want %v", typ, got, want)
-		}
-	}
-}
-
 func TestParseThumbCandidate_L2(t *testing.T) {
 	line := `{"type":"thumb_candidate","ts":1700000010,"run_id":"r1","decision":"thumb_l2_exif","path":"/src/small.jpg","keeper":"/src/big.jpg","group_id":"aabbccdd","width":200,"height":150,"size_bytes":4096}`
 	ev, err := ParseEvent([]byte(line))
