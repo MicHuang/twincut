@@ -10,7 +10,7 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** Remediation of 2026-07-05 full-repo assessment findings (plan ready, execution NOT started).
+**Current milestone:** ✅ COMPLETE — Remediation of 2026-07-05 full-repo assessment findings. All three waves merged (PRs #16/#17/#18) 2026-07-09..10, subagent-driven with per-task + final + Tier-1 review each. No active remediation work; see "Next up" for recorded follow-ups.
 
 ### Task table
 
@@ -18,7 +18,7 @@
 |---|------|-------|--------|------|
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | done | PR #17 merged (`a780610`, 2026-07-10). originGuard mux-wide + wiring pin; apply preview validation; nil-deref → 404; \r-aware stderr drain; dead code out. Tier-1 gemini OK. | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
-| R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | claude@mac-joyce | in-review | PR #18 open, CI all-green (go/shell/shellcheck/macOS-thumb). Wiring run_tests.py into CI surfaced 2 pre-existing GNU/BSD bugs (hash backslash-escape, find-order keep tie-break) — fixed `01b7c9a`; grok Medium (backup-path same tie-break) fixed `f5c9115`. All DoD met. **Awaiting user merge.** Plan Tasks 5-7 in order. DoD: CI runs run_tests.py + all smokes; `shellcheck --severity=warning` clean; Tier-1 review pass. Note for Task 6: Wave-1 final review left two candidates to fold in — vid_eq strict re-verify is redundant (fast/full same checks ⇒ 2 wasted ffprobe calls/pair) and `--size-pct` as last CLI arg trips `set -u`. |
+| R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | claude@mac-joyce | done | PR #18 merged (`aa010ff`, 2026-07-10). CI now runs run_tests.py + all smokes + shellcheck job; `make test-smoke`; bash hygiene + TSV guard; shellcheck warning-clean. Wiring run_tests.py into CI surfaced & fixed 2 pre-existing GNU/BSD bugs (hash backslash-escape, find-order keep tie-break, both source+backup paths); Wave-1 vid_eq arg-guard leftover folded in. Tier-1 grok-4.5 (gemini BLOCKED network, not substituted). |
 | T1 | Sync to Stage 11 baseline | codex@macmini-yiqi | done | Preserved earlier stamp in stash `codex-pre-sync-stamp`, fetched origin, and created branch `codex/sync-restamp-hygiene` from `origin/main`. |
 | T2 | Re-apply agent-team stamp | codex@macmini-yiqi | done | Re-ran `agent-team stamp-handoff /Users/zhabs/Tools/twincut` on Stage 11; generated `PROGRESS.md`, `AGENTS.md`, and updated `CLAUDE.md`. |
 | T3 | Refresh stale project docs | codex@macmini-yiqi | done | Updated `CLAUDE.md`, `README.md`, and `AGENTS.md` so they reflect the Go UI, Makefile/test suite, and Stage 11 typed event contract. |
@@ -29,9 +29,15 @@
 - Blocked entries must include the blocking reason, verified facts, next suggested command, and whether user input is required.
 
 ### Next up
-- **Remediation Wave 3 (final wave)** per `docs/superpowers/plans/2026-07-05-twincut-remediation.md`: Tasks 5-7 **in order** (CI runs full suite + make test-smoke → bash hygiene → shellcheck gate). Waves 1-2 merged (PRs #16/#17). Task 6 also folds in the Wave-1 leftovers noted in the R-W3 row; a future hygiene candidate beyond the plan: `gofmt -l` flags 8 pre-existing files in ui/server (observed during W2, not in plan scope).
-- Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15.
-- Optional follow-up: install Pillow/imagehash locally if full pHash smoke coverage is needed outside CI.
+- **Remediation plan fully executed** (Waves 1-3 merged). No plan work remains. Recorded follow-ups, none blocking, pick up when convenient:
+  - **KEEP-policy determinism, remaining sites**: similar-video equal-mtime tie-break still uses scan order (`bin/twincut.sh` ~1322, grok Low); source/backup `-k2,2` sort truncates a path at its first embedded tab (grok Low).
+  - **TSV/path robustness**: extend the tab/newline guard to the manifest `matched` column, hash-index writes, and `\r`; newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort (accepted residual).
+  - **vid_eq**: strict re-verify is redundant (fast/full run identical checks ⇒ 2 wasted ffprobe calls/pair) — needs a design decision, not hygiene; usage string duplicated 3×.
+  - **Go**: `gofmt -w` on 8 pre-existing unformatted `ui/server` files (fold into the next Go-touching PR); apply-endpoint 422 error strings echo raw `prevSnap.Mode` (low-risk info pattern).
+  - **Tests**: stage9 D1/D1b never assert `run_end` status (pre-existing coverage gap).
+  - The plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
+- Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15; wrappers could map upstream "model no longer available" 404s to `BLOCKED not-configured` (seen when gemini/grok model IDs rotted mid-session, fixed in agent-team PR #47).
+- Optional follow-up: install Pillow/imagehash locally if full pHash smoke coverage is needed outside CI (CI installs them).
 
 ### How to claim
 - Run `agent-team handoff-check <task-slug>` first (sync state + existing-claim check), then branch `<handle>/<task>` off synced main, set owner + in-progress, commit `chore(progress): claim <task>`, and push the branch before working. See agent-team/docs/peer-handoff.md §3.
@@ -50,6 +56,13 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-10 `[claude]@mac-joyce` — R-W3 closed: PR #18 merged (`aa010ff`) — remediation milestone COMPLETE
+- User merged Wave 3; board updated (R-W3 → done, milestone marked complete), local branch pruned, synced to mac-yiqi.
+- **All three remediation waves now merged**: W1 #16 (`9cf6928`, engine correctness), W2 #17 (`a780610`, Go UI security), W3 #18 (`aa010ff`, CI/hygiene/shellcheck). The 2026-07-05 full-repo assessment is fully remediated.
+- Wave-3 highlight beyond plan: wiring `tests/json_events/run_tests.py` into CI ran it on Linux for the first time and caught 2 genuine pre-existing GNU/BSD portability bugs (GNU hasher `\`-prefix on backslash filenames corrupting hash extraction; find-order equal-mtime keep tie-break) — both fixed in-PR on source and backup paths, Tier-1 verified.
+- Process note: agent-team gemini/grok review wrappers hit upstream model-ID rot during this milestone (gemini-2.5-flash 404, grok-build removed); fixed in agent-team PR #47 (→ gemini-flash-latest, grok-4.5). gemini later had transient network BLOCKs; grok-4.5 carried Tier-1 where gemini was down, per fail-closed policy (no silent substitution).
+- Follow-ups (none blocking) live in the Status Board "Next up". No active twincut work remains.
 
 ### 2026-07-10 `[claude]@mac-joyce` — R-W3 executed, PR #18 open (in-review, awaiting user merge)
 - Wave 3 (plan Tasks 5-7, sequential) subagent-driven on `claude/remediation-wave3`. Commits: `b70b38c` CI full suite + `make test-smoke` + seam-test adoption; `39e5362` hygiene (dead code, TMP_CACHE trap, vmeta helper dedup, thumb.sh shared stat helpers, EXTS↔VIDEO_EXTS alignment, TSV-path guard at qmove/qdelete, vid_eq missing-arg guard, seam echo reword); `fce57f1` shellcheck 17→0 + CI gate (nested THUMB case for scoped disable); `87e8b5a` final-review fix (TSV-guard skip no longer aborts run via sidecar dispatchers; p0 25→28); `015c8fd` Tier-1 fix (nested case fails closed on future drift).
