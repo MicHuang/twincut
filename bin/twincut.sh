@@ -1033,6 +1033,9 @@ while [[ $# -gt 0 ]]; do
         --thumb-maybe-max-edge)    THUMB_MAYBE_MAX_EDGE="${2:-}"; shift 2;;
         --thumb-require-exif-match) THUMB_REQUIRE_EXIF_MATCH=true; shift;;
         --thumb-review-csv)        THUMB_REVIEW_CSV="${2:-}"; shift 2;;
+        # Unreachable while the outer pattern list mirrors the arms above;
+        # without it, a future drift between the two would loop forever (no shift).
+        *) echo "Unknown option: $1" >&2; usage 2;;
       esac
       ;;
 
