@@ -31,4 +31,4 @@ if ! grep -q '"ts":1747934400' <<<"$first_line"; then
   exit 1
 fi
 
-echo "ok: legacy emit_event honors TWINCUT_TEST_TS"
+echo "ok: twincut.sh honors TWINCUT_TEST_TS on run_start"

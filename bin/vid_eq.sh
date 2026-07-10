@@ -60,8 +60,18 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --fast) MODE="fast"; shift;;
-      --size-pct) SIZE_PCT="$2"; shift 2;;
-      --dur-sec) DUR_SEC="$2"; shift 2;;
+      --size-pct)
+        if [[ $# -lt 2 ]]; then
+          echo "Usage: $(basename "$0") [--fast] [--size-pct N] [--dur-sec SEC] <fileA> <fileB>" >&2
+          exit 2
+        fi
+        SIZE_PCT="$2"; shift 2;;
+      --dur-sec)
+        if [[ $# -lt 2 ]]; then
+          echo "Usage: $(basename "$0") [--fast] [--size-pct N] [--dur-sec SEC] <fileA> <fileB>" >&2
+          exit 2
+        fi
+        DUR_SEC="$2"; shift 2;;
       *) ARGS+=("$1"); shift;;
     esac
   done
