@@ -126,7 +126,9 @@ assert "traversal attempt: source file still at original location" \
 assert "traversal attempt: escape target dir is empty" \
   '[[ -z "$(ls -A "$ESCAPE_TARGET" 2>/dev/null)" ]]'
 
-# === D1. tab-in-path — NUL-delim parser must preserve literal \t ===
+# === D1. tab-in-path — NUL-delim parser must preserve literal \t; the
+# qmove TSV guard (hygiene Step 7) must then safely refuse to move it
+# (a raw tab in the manifest TSV would corrupt --restore for that row). ===
 TAB_NAME="$(printf 'tab%bafter' '\t')"   # tab character embedded in name
 TAB_SRC="$TMP/srcD1"; mkdir -p "$TAB_SRC"
 cp "$SRC/keeper.jpg" "$TAB_SRC/keeper.jpg"
@@ -145,16 +147,20 @@ APPLY_TAB_NDJSON="$TMP/apply_tab_result.ndjson"
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$TAB_SRC" \
   >"$APPLY_TAB_NDJSON" 2>/dev/null < "$APPLY_TAB" || true
 
-assert "D1: tab-in-path apply emits action kind=move" \
-  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_TAB_NDJSON") -eq 1 ]]'
+assert "D1: tab-in-path apply emits no action kind=move (TSV guard blocks it)" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_TAB_NDJSON") -eq 0 ]]'
 
-assert "D1: tab-in-path: quarantine file with tab in name exists" \
-  '[[ -e "$TAB_QUAR/$TAB_NAME.jpg" ]]'
+assert "D1: tab-in-path apply emits warn io_error (path correctly parsed with literal tab)" \
+  '[[ $(grep -c "\"type\":\"warn\".*\"code\":\"io_error\"" "$APPLY_TAB_NDJSON") -eq 1 ]]'
 
-assert "D1: tab-in-path: original source file removed" \
-  '[[ ! -e "$TAB_SRC/$TAB_NAME.jpg" ]]'
+assert "D1: tab-in-path: quarantine file with tab in name does not exist" \
+  '[[ ! -e "$TAB_QUAR/$TAB_NAME.jpg" ]]'
 
-# === D1b. newline-in-path — @base64 parser must preserve literal \n ===
+assert "D1: tab-in-path: original source file left untouched" \
+  '[[ -e "$TAB_SRC/$TAB_NAME.jpg" ]]'
+
+# === D1b. newline-in-path — @base64 parser must preserve literal \n; same
+# qmove TSV guard must safely refuse to move it. ===
 NL_NAME="$(printf 'line1\nline2')"
 NL_SRC="$TMP/srcD1b"; mkdir -p "$NL_SRC"
 cp "$SRC/keeper.jpg" "$NL_SRC/keeper.jpg"
@@ -172,14 +178,17 @@ APPLY_NL_NDJSON="$TMP/apply_nl_result.ndjson"
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$NL_SRC" \
   >"$APPLY_NL_NDJSON" 2>/dev/null < "$APPLY_NL" || true
 
-assert "D1b: newline-in-path apply emits action kind=move" \
-  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_NL_NDJSON") -eq 1 ]]'
+assert "D1b: newline-in-path apply emits no action kind=move (TSV guard blocks it)" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_NL_NDJSON") -eq 0 ]]'
 
-assert "D1b: newline-in-path: quarantine file exists" \
-  '[[ -e "$NL_QUAR/$NL_NAME.jpg" ]]'
+assert "D1b: newline-in-path apply emits warn io_error (path correctly parsed with literal newline)" \
+  '[[ $(grep -c "\"type\":\"warn\".*\"code\":\"io_error\"" "$APPLY_NL_NDJSON") -eq 1 ]]'
 
-assert "D1b: newline-in-path: original source file removed" \
-  '[[ ! -e "$NL_SRC/$NL_NAME.jpg" ]]'
+assert "D1b: newline-in-path: quarantine file does not exist" \
+  '[[ ! -e "$NL_QUAR/$NL_NAME.jpg" ]]'
+
+assert "D1b: newline-in-path: original source file left untouched" \
+  '[[ -e "$NL_SRC/$NL_NAME.jpg" ]]'
 
 # === D2. zero-command apply — empty stdin is a no-op success ===
 ZERO_SRC="$TMP/srcD2"; mkdir -p "$ZERO_SRC"
@@ -284,6 +293,7 @@ E2E_PREVIEW="$TMP/e2e_preview.ndjson"
   >"$E2E_PREVIEW" 2>/dev/null || true
 
 # The real candidate path the detector reported (verify the move against it).
+# shellcheck disable=SC2034  # read via eval inside assert()'s quoted condition strings below
 E2E_CAND="$(jq -rs 'map(select(.type=="thumb_candidate")) | (.[0].path // "")' "$E2E_PREVIEW")"
 assert "E2E: detector reported a thumb_candidate path on disk" \
   '[[ -n "$E2E_CAND" && -e "$E2E_CAND" ]]'

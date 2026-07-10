@@ -254,6 +254,7 @@ thumb_run_l3(){
 
     # candidates = bigger images (l1=ok) in the same dir
     local matched=""
+    # shellcheck disable=SC2034  # cw/ch: positional TSV placeholders
     while IFS=$'\t' read -r cand cw ch ccls; do
       [[ "$ccls" != "ok" ]] && continue
       [[ "$(dirname -- "$cand")" != "$dir" ]] && continue
@@ -311,7 +312,6 @@ thumb_run_l3(){
 #   THUMB_PHASH_KEEPER_FILE   TSV: suspect_path TAB keeper_path
 #   THUMB_PHASH_GROUP_FILE    TSV: suspect_path TAB group_id
 #   THUMB_PHASH_DIST_FILE     TSV: suspect_path TAB hamming_distance
-#   THUMB_PHASH_LIVE_INDEX    temp copy of the in-memory index (path TAB mtime TAB size TAB hash)
 
 thumb_run_l1_phash(){
   : "${THUMB_PHASH_ENABLED:=true}"
@@ -385,9 +385,9 @@ thumb_run_l1_phash(){
   local _f _w _h _cls _live_mt _live_sz _cached_mt _cached_sz _cached_h
   while IFS=$'\t' read -r _f _w _h _cls; do
     [[ -e "$_f" ]] || continue
-    _live_mt="$(stat -c '%Y' -- "$_f" 2>/dev/null || stat -f '%m' -- "$_f" 2>/dev/null || echo "")"
-    _live_sz="$(stat -c '%s' -- "$_f" 2>/dev/null || stat -f '%z' -- "$_f" 2>/dev/null || echo "")"
-    [[ -z "$_live_mt" || -z "$_live_sz" ]] && continue
+    _live_mt="$(mtime "$_f")"
+    _live_sz="$(fsize "$_f")"
+    [[ "$_live_mt" == 0 || "$_live_sz" == 0 ]] && continue
     # lookup in live_index_file
     _cached_mt=""; _cached_sz=""; _cached_h=""
     if [[ -s "$live_index_file" ]]; then
@@ -439,9 +439,9 @@ thumb_run_l1_phash(){
     local _p2 _h2 _mt2 _sz2
     while IFS=$'\t' read -r _p2 _h2; do
       [[ -z "$_p2" || -z "$_h2" ]] && continue
-      _mt2="$(stat -c '%Y' -- "$_p2" 2>/dev/null || stat -f '%m' -- "$_p2" 2>/dev/null || echo "")"
-      _sz2="$(stat -c '%s' -- "$_p2" 2>/dev/null || stat -f '%z' -- "$_p2" 2>/dev/null || echo "")"
-      [[ -z "$_mt2" || -z "$_sz2" ]] && continue
+      _mt2="$(mtime "$_p2")"
+      _sz2="$(fsize "$_p2")"
+      [[ "$_mt2" == 0 || "$_sz2" == 0 ]] && continue
       printf '%s\t%s\t%s\t%s\n' "$_p2" "$_mt2" "$_sz2" "$_h2" >> "$new_entries_file"
     done < "$hash_out"
     rm -f "$hash_out"
@@ -478,9 +478,6 @@ thumb_run_l1_phash(){
   fi
 
   echo "[*] thumbnail-detect L1-pHash: cache hits $cache_hits, recomputed $cold (cold or modified)" >&2
-
-  # Expose the live index for T3's pairing pass.
-  THUMB_PHASH_LIVE_INDEX="$live_index_file"
 
   # --- Step F: pairing pass (delegated to phash.py --pair) ---
   local hamming_max="$THUMB_PHASH_HAMMING"
@@ -526,7 +523,6 @@ thumb_run_l1_phash(){
     cat "$phash_err" >&2 || true
     rm -f "$pair_input" "$pair_output" "$phash_err" "$live_index_file" \
           "$THUMB_PHASH_KEEPER_FILE" "$THUMB_PHASH_GROUP_FILE" "$THUMB_PHASH_DIST_FILE"
-    THUMB_PHASH_LIVE_INDEX=""
     THUMB_PHASH_KEEPER_FILE=""
     THUMB_PHASH_GROUP_FILE=""
     THUMB_PHASH_DIST_FILE=""
@@ -550,7 +546,6 @@ thumb_run_l1_phash(){
   done < "$pair_output"
 
   rm -f "$pair_input" "$pair_output" "$phash_err" "$live_index_file"
-  THUMB_PHASH_LIVE_INDEX=""
 
   echo "[*] thumbnail-detect L1-pHash: $paired/$total_suspects suspects paired with keeper (Hamming ≤ $hamming_max)" >&2
 }
@@ -652,6 +647,7 @@ thumb_detect_run(){
   # If thumbnail-detect is the only mode running, point the manifest at THUMB_DIR
   # so the rollback file lives next to the thumbnails (not in ./_QUARANTINE).
   if ! $DO_CROSS && ! $DO_BACKUP_SELF && ! $DO_SOURCE_SELF && ! $MANIFEST_INITED; then
+    # shellcheck disable=SC2034  # consumed by bin/twincut.sh (sourcing script)
     QUAR_DIR="$THUMB_DIR"
   fi
 

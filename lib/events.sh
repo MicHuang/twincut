@@ -7,7 +7,8 @@
 # drift.
 #
 # Convention: helpers accept --key value long-options only. Unknown args
-# are fatal (return 2). Test seams:
+# log to stderr and the event is dropped (return 0 — an emit bug must never
+# kill a run). Test seams:
 #   TWINCUT_TEST_TS  — override the ts field
 #   RUN_ID           — provides run_id (existing global)
 
@@ -413,7 +414,8 @@ dup_remove_json(){
   local dur="${4:-0}" w="${5:-0}" h="${6:-0}" fps="${7:-0}" bps="${8:-0}"
   [[ "$dur" =~ ^[0-9]+(\.[0-9]+)?$ ]] || dur=0
   [[ "$fps" =~ ^[0-9]+(\.[0-9]+)?$ ]] || fps=0
-  local o='{"path":"'"$(json_escape "$path")"'"'
+  local o
+  o='{"path":"'"$(json_escape "$path")"'"'
   o+=',"size":'"$(_emit_num size "$size")"
   o+=',"mtime":'"$(_emit_num mtime "$mtime")"
   [[ "$dur" != 0 ]]            && o+=',"duration":'"$dur"
@@ -488,11 +490,11 @@ emit_dup_group(){
 #   --current-path VAL   what's currently being processed
 emit_progress(){
   $JSON_EVENTS || return 0
-  local phase="" done="" total="" current_path="" run_id=""
+  local phase="" done_cnt="" total="" current_path="" run_id=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --phase)         phase="$2"; shift 2 ;;
-      --done)          done="$2"; shift 2 ;;
+      --done)          done_cnt="$2"; shift 2 ;;
       --total)         total="$2"; shift 2 ;;
       --current-path)  current_path="$2"; shift 2 ;;
       --run-id)        run_id="$2"; shift 2 ;;
@@ -504,7 +506,7 @@ emit_progress(){
   local out='{"type":"progress","ts":'"$ts"
   [[ -n "$run_id" ]] && out+=',"run_id":"'"$(json_escape "$run_id")"'"'
   out+=',"phase":"'"$(json_escape "$phase")"'"'
-  [[ -n "$done" ]]         && out+=',"done":'"$(_emit_num done "$done")"
+  [[ -n "$done_cnt" ]]     && out+=',"done":'"$(_emit_num "done" "$done_cnt")"
   [[ -n "$total" ]]        && out+=',"total":'"$(_emit_num total "$total")"
   [[ -n "$current_path" ]] && out+=',"current_path":"'"$(json_escape "$current_path")"'"'
   out+='}'

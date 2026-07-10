@@ -27,7 +27,10 @@ out="$("$VE" --fast "$HI" "$HI")" || fail "self-compare exited nonzero"
 [[ "$out" == "CANDIDATE:yes" ]] || fail "self-compare: got '$out'"
 
 # 2. 4.37% size delta → rejected at default 0.5%, accepted at 5%.
-out="$("$VE" --fast "$HI" "$LO" || true)"
+# (SIZE_PCT=0.5 pinned explicitly so this assertion is isolated from any
+# SIZE_PCT the caller's environment may have exported — e.g. a spot-check
+# run as `SIZE_PCT=5 bash tests/vid_eq_smoke.sh` must not leak in here.)
+out="$(SIZE_PCT=0.5 "$VE" --fast "$HI" "$LO" || true)"
 [[ "$out" == "CANDIDATE:no" ]] || fail "default SIZE_PCT should reject 4.37% delta: got '$out'"
 out="$(SIZE_PCT=5 "$VE" --fast "$HI" "$LO")" || fail "SIZE_PCT=5 exited nonzero"
 [[ "$out" == "CANDIDATE:yes" ]] || fail "SIZE_PCT=5 should accept: got '$out'"
@@ -43,7 +46,7 @@ fi
 # 4. Full mode (bare call): EQUAL label, honors env.
 out="$(SIZE_PCT=5 "$VE" "$HI" "$LO")" || fail "full mode exited nonzero"
 [[ "$out" == "EQUAL:yes" ]] || fail "full SIZE_PCT=5: got '$out'"
-out="$("$VE" "$HI" "$LO" || true)"
+out="$(SIZE_PCT=0.5 "$VE" "$HI" "$LO" || true)"
 [[ "$out" == "EQUAL:no" ]] || fail "full default should reject: got '$out'"
 
 # 5. End-to-end: twincut similar-video actually detects a non-byte-identical
@@ -56,5 +59,14 @@ SIZE_PCT=5 DUR_SEC=0.3 TWINCUT_RUN_ID=r_videq_e2e \
   >"$events" 2>"$work/stderr.log" || fail "twincut e2e exited nonzero (see $work/stderr.log)"
 grep -q '"type":"dup_group"' "$events" || fail "e2e: no dup_group emitted"
 grep -q '"match_reason":"video_fast"' "$events" || fail "e2e: no video_fast match"
+
+# 6. --size-pct / --dur-sec as the last argument must print usage and exit 2,
+#    not crash on an unbound $2 under `set -u`.
+rc=0; err="$("$VE" --size-pct 2>&1)" || rc=$?
+[[ $rc -eq 2 ]] || fail "--size-pct with no value should exit 2: got rc=$rc"
+[[ "$err" == Usage:* ]] || fail "--size-pct with no value should print usage: got '$err'"
+rc=0; err="$("$VE" --dur-sec 2>&1)" || rc=$?
+[[ $rc -eq 2 ]] || fail "--dur-sec with no value should exit 2: got rc=$rc"
+[[ "$err" == Usage:* ]] || fail "--dur-sec with no value should print usage: got '$err'"
 
 echo "vid_eq_smoke: all ok"

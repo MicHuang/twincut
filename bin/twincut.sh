@@ -13,9 +13,8 @@ QUAR_DIR="./_QUARANTINE"
 
 ALGO="md5"                      # md5 | sha1
 MIN_SIZE="0k"                   # e.g. 300k / 1M
-EXTS="jpg,jpeg,png,dng,mp4,mov,avi,mkv,webm,mp3,wav,flac,aac,ogg,m4a,heic,heif,rmvb"
+EXTS="jpg,jpeg,png,dng,mp4,mov,m4v,avi,mkv,webm,3gp,mts,m2ts,hevc,h265,mp3,wav,flac,aac,ogg,m4a,heic,heif,rmvb"
 
-USE_CACHE=true
 CACHE_FILE=".backup_hashindex.txt"
 DRY_RUN=false
 PROG_STEP=${PROG_STEP:-200}
@@ -45,6 +44,7 @@ DO_SOURCE_SELF=false
 
 # Counters and temp files
 TMP_CACHE="$(mktemp)"
+trap 'rm -f "$TMP_CACHE"' EXIT
 TOTAL=0
 DUPES=0
 MOVED=0
@@ -101,12 +101,6 @@ if [[ -z "${V_EQ_BIN:-}" ]]; then
   else
     echo "ERROR: vid_eq helper not found. Re-run installers/install.sh or set V_EQ_BIN." >&2; exit 1
   fi
-fi
-
-# In strict mode, tighten defaults further (user minimums: size±0.3%, dur±0.15s)
-if ${VIDEO_FAST_STRICT:-false}; then
-  SIZE_PCT=0.2   # stricter than requested min (0.3)
-  DUR_SEC=0.15
 fi
 
 # Video meta index (TSV content, filename kept as .csv for compatibility)
@@ -471,6 +465,12 @@ qmove(){
     emit_action_skip --src "$src" --reason excluded --decision "$dec"
     return 1
   fi
+  case "$src$dir" in
+    *$'\t'*|*$'\n'*)
+      emit_warn --code io_error --path "$src" --detail "path contains tab/newline; unsafe for manifest TSV — skipped"
+      echo "[!] skip (tab/newline in path): $src" >&2
+      return 2 ;;
+  esac
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
@@ -512,6 +512,12 @@ qdelete(){
     emit_action_skip --src "$src" --reason excluded --decision "$dec"
     return 1
   fi
+  case "$src" in
+    *$'\t'*|*$'\n'*)
+      emit_warn --code io_error --path "$src" --detail "path contains tab/newline; unsafe for manifest TSV — skipped"
+      echo "[!] skip (tab/newline in path): $src" >&2
+      return 2 ;;
+  esac
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
@@ -538,17 +544,30 @@ move_unique(){ qmove "$1" "$2" "" "" "legacy_move" >/dev/null || true; }
 
 # Hashers
 hash_file(){
+  local h
   case "$ALGO" in
     md5)
-      if command -v md5 >/dev/null 2>&1;     then md5 -q "$1"
-      elif command -v md5sum >/dev/null 2>&1; then md5sum "$1" | awk '{print $1}'
+      if command -v md5 >/dev/null 2>&1;     then h="$(md5 -q -- "$1")"
+      elif command -v md5sum >/dev/null 2>&1; then h="$(md5sum -- "$1" | awk '{print $1}')"
       else echo "NO_MD5_TOOL"; return 1; fi;;
     sha1)
-      if command -v shasum >/dev/null 2>&1;   then shasum "$1" | awk '{print $1}'
-      elif command -v sha1sum >/dev/null 2>&1; then sha1sum "$1" | awk '{print $1}'
+      if command -v shasum >/dev/null 2>&1;   then h="$(shasum -- "$1" | awk '{print $1}')"
+      elif command -v sha1sum >/dev/null 2>&1; then h="$(sha1sum -- "$1" | awk '{print $1}')"
       else echo "NO_SHA1_TOOL"; return 1; fi;;
     *) echo "BAD_ALGO"; return 1;;
   esac
+  # {md5,sha1}sum (GNU coreutils) and shasum (Perl Digest::SHA, shipped on
+  # both macOS and Linux) prefix the *entire output line* with a backslash
+  # when the filename contains a backslash or newline, doubling each such
+  # character within the printed filename, so the line stays losslessly
+  # recoverable (documented escaping convention shared by GNU checksum
+  # tools and Digest::SHA). There is no whitespace between that marker and
+  # the hex digest, so `awk '{print $1}'` folds it into "$1", silently
+  # corrupting the hash for any path containing a backslash. `md5 -q`
+  # (BSD) never echoes the filename, so it never emits this marker. Strip
+  # it unconditionally: a bare hex digest never legitimately starts with
+  # '\'.
+  printf '%s\n' "${h#\\}"
 }
 
 # EXTS → find predicate (sanitised)
@@ -611,6 +630,45 @@ prune_cache_missing(){ # keep header + live files only
 
 # ------------------------------ Video meta TSV -------------------------------
 duration_bucket(){ awk -v d="$1" -v step="$DUR_SEC" 'BEGIN{ if(step<=0){step=0.3} print int((d + step/2.0)/step) }'; }
+
+# vmeta_write_header FILE — (re)create a video-meta TSV with meta + column header.
+vmeta_write_header(){
+  printf '# vmeta: size_pct=%s; dur_sec=%s; created=%s\n' \
+    "$SIZE_PCT" "$DUR_SEC" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$1"
+  printf 'path\tsize\tduration\tcodec\twidth\theight\tmtime\tdur_bucket\tfps\tbitrate\tbad\n' >> "$1"
+}
+
+# vmeta_join_candidates META SELF CODEC W H DBUCK SIZE FPS BPS
+# Prints candidate paths from META matching codec/WxH/duration-bucket and the
+# SIZE_PCT window; in strict mode additionally filters by fps/bitrate windows.
+# SELF (may be empty) is excluded from candidates.
+vmeta_join_candidates(){
+  local meta="$1" self="$2" cc="$3" w="$4" h="$5" db="$6" ssz="$7" sfps="$8" sbps="$9"
+  awk -F'\t' -v cc="$cc" -v w="$w" -v h="$h" -v db="$db" -v spct="$SIZE_PCT" -v ssz="$ssz" \
+      -v strict="$VIDEO_FAST_STRICT" -v sfps="$sfps" -v sbps="$sbps" -v sp="$self" \
+      -v fps_pct="$FPS_PCT" -v fps_min="$FPS_ABS_MIN" -v bps_pct="$BPS_PCT" '
+    NR<=2{next}
+    (sp=="" || $1!=sp) && $4==cc && $5==w && $6==h && $8==db {
+      bsz=$2+0; diff=(bsz>ssz?bsz-ssz:ssz-bsz)
+      ok=(diff*100 <= spct*ssz)
+      if (ok && strict=="true") {
+        cfps=$9+0;
+        if (sfps!="" && cfps>0) {
+          fps_tol = (sfps>0 ? sfps*(fps_pct/100.0) : fps_min);
+          if (fps_tol < fps_min) fps_tol=fps_min;
+          d=cfps-sfps; if (d<0) d=-d;
+          if (d > fps_tol) ok=0;
+        }
+        cbps=$10+0;
+        if (sbps!="" && cbps>0 && sbps+0>0) {
+          rel = (cbps>sbps ? cbps-sbps : sbps-cbps) / sbps;
+          if (rel > (bps_pct/100.0)) ok=0;
+        }
+      }
+      if (ok) print $1
+    }' "$meta"
+}
+
 append_video_meta(){
   local csv="$1" f="$2"; [[ -f "$f" ]] || return 0
 
@@ -658,8 +716,7 @@ ensure_video_meta_index(){
   $REBUILD_VMETA && [[ -f "$vcsv" ]] && rm -f "$vcsv"
 
   if [[ ! -f "$vcsv" ]]; then
-    printf '%s\n' "$meta" > "$vcsv"
-    echo -e "path\tsize\tduration\tcodec\twidth\theight\tmtime\tdur_bucket\tfps\tbitrate\tbad" >> "$vcsv"
+    vmeta_write_header "$vcsv"
   fi
   if ! head -n1 "$vcsv" | grep -q '^# vmeta:'; then
     tmp="$(mktemp)"; printf '%s\n' "$meta" > "$tmp"; awk '1' "$vcsv" >> "$tmp"; mv "$tmp" "$vcsv"
@@ -689,8 +746,8 @@ handle_bad_video(){
   emit_warn --code bad_video --path "$f" --detail "ffprobe failed or zero metadata"
   case "$BAD_VIDEO_ACTION" in
     list)   echo "[BAD-VIDEO] $f" ;;
-    delete) qdelete "$f" "" "" "bad_video" ;;
-    move)   qmove   "$f" "$QUAR_DIR/$BAD_VIDEO_SUBDIR" "" "" "bad_video" ;;
+    delete) qdelete "$f" "" "" "bad_video" || true ;;
+    move)   qmove   "$f" "$QUAR_DIR/$BAD_VIDEO_SUBDIR" "" "" "bad_video" || true ;;
     ignore) : ;;
   esac
 }
@@ -701,16 +758,10 @@ handle_appledouble(){
   emit_warn --code appledouble --path "$f" --detail "AppleDouble sidecar"
   case "$APPLEDOUBLE_ACTION" in
     list)   echo "[APPLEDOUBLE] $f" ;;
-    delete) qdelete "$f" "" "" "appledouble" ;;
-    move)   qmove   "$f" "$QUAR_DIR/$APPLEDOUBLE_SUBDIR" "" "" "appledouble" ;;
+    delete) qdelete "$f" "" "" "appledouble" || true ;;
+    move)   qmove   "$f" "$QUAR_DIR/$APPLEDOUBLE_SUBDIR" "" "" "appledouble" || true ;;
     ignore) : ;;
   esac
-}
-
-is_bad_video_row(){ # echo 1 if bad; else 0
-  local meta="$1" f="$2" bad
-  bad="$(awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $11; exit}' "$meta" 2>/dev/null || true)"
-  [[ -z "$bad" ]] && echo 0 || echo "$bad"
 }
 
 # ------------------------------ CLI / Usage ----------------------------------
@@ -926,7 +977,7 @@ while [[ $# -gt 0 ]]; do
     --min-size) MIN_SIZE="${2:-}"; shift 2;;
     --ext) EXTS="${2:-}"; shift 2;;
 
-    --use-cache) USE_CACHE=true; REBUILD_CACHE=false; shift;;
+    --use-cache) REBUILD_CACHE=false; shift;;
     --rebuild-cache) REBUILD_CACHE=true; shift;;
     --force-use-cache) FORCE_USE_CACHE=true; shift;;
     --cache-file) CACHE_FILE="${2:-}"; shift 2;;
@@ -985,13 +1036,21 @@ while [[ $# -gt 0 ]]; do
     --restore)         RESTORE_MODE=true; RESTORE_MANIFEST="${2:-}"; shift 2;;
     --restore-dry-run) RESTORE_DRY_RUN=true; shift;;
 
-    --thumbnail-detect)        THUMB_DETECT=true; DO_THUMB=true; shift;;
-    --thumb-action)            THUMB_ACTION="${2:-}"; shift 2;;
-    --thumb-dir)               THUMB_DIR="${2:-}"; shift 2;;
-    --thumb-max-edge)          THUMB_MAX_EDGE="${2:-}"; shift 2;;
-    --thumb-maybe-max-edge)    THUMB_MAYBE_MAX_EDGE="${2:-}"; shift 2;;
-    --thumb-require-exif-match) THUMB_REQUIRE_EXIF_MATCH=true; shift;;
-    --thumb-review-csv)        THUMB_REVIEW_CSV="${2:-}"; shift 2;;
+    --thumbnail-detect|--thumb-action|--thumb-dir|--thumb-max-edge|--thumb-maybe-max-edge|--thumb-require-exif-match|--thumb-review-csv)
+      # shellcheck disable=SC2034  # thumb globals below are consumed by lib/thumb.sh (sourced above), not read in this file
+      case "$1" in
+        --thumbnail-detect)        THUMB_DETECT=true; DO_THUMB=true; shift;;
+        --thumb-action)            THUMB_ACTION="${2:-}"; shift 2;;
+        --thumb-dir)               THUMB_DIR="${2:-}"; shift 2;;
+        --thumb-max-edge)          THUMB_MAX_EDGE="${2:-}"; shift 2;;
+        --thumb-maybe-max-edge)    THUMB_MAYBE_MAX_EDGE="${2:-}"; shift 2;;
+        --thumb-require-exif-match) THUMB_REQUIRE_EXIF_MATCH=true; shift;;
+        --thumb-review-csv)        THUMB_REVIEW_CSV="${2:-}"; shift 2;;
+        # Unreachable while the outer pattern list mirrors the arms above;
+        # without it, a future drift between the two would loop forever (no shift).
+        *) echo "Unknown option: $1" >&2; usage 2;;
+      esac
+      ;;
 
     -h|--help) usage 0;;
     *) echo "Unknown option: $1" >&2; usage 2;;
@@ -1185,15 +1244,18 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
       while IFS= read -r h; do
         MAP_FILE="$(mktemp)"
         grep -v '^#' "$TMP_CACHE" | awk -F '\t' -v hh="$h" '$1==hh{print $2}' > "$MAP_FILE"
-        # Keep policy: prefer oldest mtime
-        KEEP_PATH=""; KEEP_MT=""
+        # Keep policy: prefer oldest mtime; break mtime ties by path
+        # byte-order (LC_ALL=C), NOT find(1) traversal order — directory
+        # enumeration order is filesystem-dependent (ext4 htree vs APFS), so
+        # first-wins silently picked a different keep file per OS. Mirrors the
+        # source-self tie-break below.
+        MAP_KEYED="$(mktemp)"
         while IFS= read -r p; do
           [[ -z "$p" ]] && continue
-          mt="$(mtime "$p")"
-          if [[ -z "$KEEP_PATH" || "$mt" -lt "$KEEP_MT" ]]; then
-            KEEP_PATH="$p"; KEEP_MT="$mt"
-          fi
-        done < "$MAP_FILE"
+          printf '%s\t%s\n' "$(mtime "$p")" "$p"
+        done < "$MAP_FILE" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2 > "$MAP_KEYED"
+        KEEP_PATH="$(head -n1 "$MAP_KEYED" | cut -f2-)"
+        rm -f "$MAP_KEYED" 2>/dev/null || true
         # Move/report all duplicates except the chosen KEEP_PATH
         while IFS= read -r dp; do
           [[ -z "$dp" || "$dp" == "$KEEP_PATH" ]] && continue
@@ -1225,9 +1287,11 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
 
       # Load/append meta row for bf (must happen before the bad-video verdict below,
       # so the fallback never re-queries a row that may still be missing mid-run)
+      # shellcheck disable=SC2034  # bmt: positional TSV placeholder
       read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "${VMETA_FILE:-/dev/null}" ) || true
       if [[ -z "${bsz:-}" ]]; then
         append_video_meta "$VMETA_FILE" "$bf"
+        # shellcheck disable=SC2034  # bmt: positional TSV placeholder
         read bsz bdur bcod bw bh bmt bdb < <( awk -F'\t' -v p="$bf" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$VMETA_FILE" ) || true
       fi
       # read fps/bitrate for strict checks (columns 9/10)
@@ -1276,29 +1340,7 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
           fi
           break
         fi
-      done < <(
-        awk -F'\t' -v cc="$bcod" -v w="$bw" -v h="$bh" -v db="$bdb" -v spct="$SIZE_PCT" -v ssz="$bsz" -v strict="$VIDEO_FAST_STRICT" -v sfps="$bfps" -v sbps="$bbps" -v fps_pct="$FPS_PCT" -v fps_min="$FPS_ABS_MIN" -v bps_pct="$BPS_PCT" '
-          NR<=2{next}
-          $4==cc && $5==w && $6==h && $8==db {
-            bsz=$2+0; diff=(bsz>ssz?bsz-ssz:ssz-bsz)
-            ok=(diff*100 <= spct*ssz)
-            if (ok && strict=="true") {
-              cfps=$9+0;
-              if (sfps!="" && cfps>0) {
-                fps_tol = (sfps>0 ? sfps*(fps_pct/100.0) : fps_min);
-                if (fps_tol < fps_min) fps_tol=fps_min;
-                d=cfps-sfps; if (d<0) d=-d;
-                if (d > fps_tol) ok=0;
-              }
-              cbps=$10+0;
-              if (sbps!="" && cbps>0 && sbps+0>0) {
-                rel = (cbps>sbps ? cbps-sbps : sbps-cbps) / sbps;
-                if (rel > (bps_pct/100.0)) ok=0;
-              }
-            }
-            if (ok) print $1
-          }' "$VMETA_FILE"
-      )
+      done < <( vmeta_join_candidates "$VMETA_FILE" "$bf" "$bcod" "$bw" "$bh" "$bdb" "$bsz" "$bfps" "$bbps" )
     done < <(find $FIND_FOLLOW "$BDIR" -type f \( "${NAME_PREDICATE[@]}" \) -size +"$MIN_SIZE" -print0)
   fi
 done
@@ -1429,10 +1471,10 @@ while IFS= read -r -d '' f; do
     if [[ -z "${s_size:-}" ]]; then
       SVMETA_FILE="${SVMETA_FILE:-"$SOURCE_DIR/$VIDEO_META_NAME"}"
       if [[ ! -f "$SVMETA_FILE" ]]; then
-        printf '# vmeta: size_pct=%s; dur_sec=%s; created=%s\n' "$SIZE_PCT" "$DUR_SEC" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$SVMETA_FILE"
-        echo -e "path\tsize\tduration\tcodec\twidth\theight\tmtime\tdur_bucket\tfps\tbitrate\tbad" >> "$SVMETA_FILE"
+        vmeta_write_header "$SVMETA_FILE"
       fi
       append_video_meta "$SVMETA_FILE" "$f"
+      # shellcheck disable=SC2034  # s_mtime: positional TSV placeholder
       read s_size s_dur s_codec s_w s_h s_mtime s_dbuck < <(
         awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "$SVMETA_FILE"
       ) || true
@@ -1519,29 +1561,7 @@ while IFS= read -r -d '' f; do
           fi
           break
         fi
-      done < <(
-        awk -F'\t' -v cc="$s_codec" -v w="$s_w" -v h="$s_h" -v db="$s_dbuck" -v spct="$SIZE_PCT" -v ssz="$s_size" -v strict="$VIDEO_FAST_STRICT" -v sfps="$s_fps" -v sbps="$s_bps" -v sp="$f" -v fps_pct="$FPS_PCT" -v fps_min="$FPS_ABS_MIN" -v bps_pct="$BPS_PCT" '
-          NR<=2{next}
-          ($1!=sp) && $4==cc && $5==w && $6==h && $8==db {
-            bsz=$2+0; diff=(bsz>ssz?bsz-ssz:ssz-bsz)
-            ok=(diff*100 <= spct*ssz)
-            if (ok && strict=="true") {
-              cfps=$9+0;
-              if (sfps!="" && cfps>0) {
-                fps_tol = (sfps>0 ? sfps*(fps_pct/100.0) : fps_min);
-                if (fps_tol < fps_min) fps_tol=fps_min;
-                d=cfps-sfps; if (d<0) d=-d;
-                if (d > fps_tol) ok=0;
-              }
-              cbps=$10+0;
-              if (sbps!="" && cbps>0 && sbps+0>0) {
-                rel = (cbps>sbps ? cbps-sbps : sbps-cbps) / sbps;
-                if (rel > (bps_pct/100.0)) ok=0;
-              }
-            }
-            if (ok) print $1
-          }' "$CAND_META_FILE"
-      )
+      done < <( vmeta_join_candidates "$CAND_META_FILE" "$f" "$s_codec" "$s_w" "$s_h" "$s_dbuck" "$s_size" "$s_fps" "$s_bps" )
     fi
   fi
 
@@ -1580,15 +1600,22 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
         SMAP_FILE="$(mktemp)"
         awk -F '\t' -v hh="$sh" '$1==hh{print $2}' "$SRC_FILTERED" > "$SMAP_FILE"
 
-        # Keep policy: prefer oldest mtime within SOURCE_DIR
-        KEEP_SPATH=""; KEEP_SMT=""
+        # Keep policy: prefer oldest mtime within SOURCE_DIR. Ties (common —
+        # fixtures/bulk copies often land in the same mtime second) are
+        # broken by path, byte-order (LC_ALL=C), NOT by "whichever the
+        # find(1) traversal visited first": directory-enumeration order is
+        # unspecified by POSIX and differs by filesystem (e.g. ext4's
+        # htree-hashed order on Linux vs APFS's creation-order-ish listing
+        # on macOS), so the old first-wins tie-break silently picked a
+        # different "keep" file depending on OS, changing which files were
+        # eligible for removal.
+        SMAP_KEYED="$(mktemp)"
         while IFS= read -r sp; do
           [[ -z "$sp" ]] && continue
-          smt="$(mtime "$sp")"
-          if [[ -z "$KEEP_SPATH" || "$smt" -lt "$KEEP_SMT" ]]; then
-            KEEP_SPATH="$sp"; KEEP_SMT="$smt"
-          fi
-        done < "$SMAP_FILE"
+          printf '%s\t%s\n' "$(mtime "$sp")" "$sp"
+        done < "$SMAP_FILE" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2 > "$SMAP_KEYED"
+        KEEP_SPATH="$(head -n1 "$SMAP_KEYED" | cut -f2-)"
+        rm -f "$SMAP_KEYED" 2>/dev/null || true
 
         _GROUP_ID=$((_GROUP_ID+1))
         if $JSON_EVENTS; then

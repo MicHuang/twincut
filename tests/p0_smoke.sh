@@ -106,7 +106,13 @@ assert_not_file "$SRC/._a.jpg"
 assert_file "$QUAR/_appledouble/._a.jpg"
 
 # Real manifest exists and contains expected rows
-REAL_MF=$(ls "$QUAR"/_manifest-*.tsv 2>/dev/null | grep -v dryrun | head -n1 || true)
+REAL_MF=""
+for _mf in "$QUAR"/_manifest-*.tsv; do
+  [[ -e "$_mf" ]] || continue
+  [[ "$_mf" == *dryrun* ]] && continue
+  REAL_MF="$_mf"
+  break
+done
 [[ -n "$REAL_MF" ]] && ok "real manifest exists: $(basename "$REAL_MF")" || bad "no real manifest"
 grep -q $'\tcross_hash\t' "$REAL_MF"  && ok "manifest has cross_hash row"  || bad "no cross_hash row"
 grep -q $'\tappledouble\t' "$REAL_MF" && ok "manifest has appledouble row" || bad "no appledouble row"
@@ -131,6 +137,8 @@ cp "$BK/a.jpg" "$SRC/a.jpg.keep"  # different name; ensure restore safe path
 "$TWINCUT" --source "$SRC" --backup "$BK" --quarantine "$QUAR" \
   --ext "jpg" --exact --assume-yes --no-bad-video --appledouble-action ignore \
   >/tmp/twincut_run2.log 2>&1 || true
+# shellcheck disable=SC2010  # mtime-sorted selection; a portable non-ls-|-grep
+# rewrite would need a full mtime-sort helper, which is out of scope here
 REAL_MF2=$(ls -t "$QUAR"/_manifest-*.tsv 2>/dev/null | grep -v dryrun | head -n1)
 # Put a blocker at original path
 echo "blocker" > "$SRC/a.jpg"
@@ -151,6 +159,28 @@ set +e
 RC=$?
 set -e
 assert_eq "$RC" "0" "exit code 0 without --exit-code-on-dupes"
+
+# ----------------------------------------------------------------------------
+note "6. TSV-breaking sidecar name doesn't abort the run (hygiene regression)"
+# handle_appledouble's move/delete arms call qmove/qdelete as their last bare
+# command inside an unguarded while loop; under set -euo pipefail a qmove
+# skip (nonzero from the tab/newline TSV guard) must not kill the whole run.
+TAB_SRC="$TMP/srcTab"; TAB_BK="$TMP/bkTab"; TAB_QUAR="$TMP/quarTab"
+mkdir -p "$TAB_SRC" "$TAB_BK"
+echo "eta-content" > "$TAB_BK/e.jpg"; cp "$TAB_BK/e.jpg" "$TAB_SRC/e.jpg"
+TAB_SIDECAR_NAME="$(printf '._tab%bafter.jpg' '\t')"
+printf '\x00\x05\x16\x07AppleDouble' > "$TAB_SRC/$TAB_SIDECAR_NAME"
+set +e
+"$TWINCUT" --source "$TAB_SRC" --backup "$TAB_BK" --quarantine "$TAB_QUAR" \
+  --ext "jpg" --exact --assume-yes \
+  --no-bad-video --appledouble-action move \
+  >/tmp/twincut_tab_sidecar.log 2>&1
+RC=$?
+set -e
+assert_eq "$RC" "0" "run with TSV-breaking sidecar name exits 0 (not aborted)"
+assert_file "$TAB_SRC/$TAB_SIDECAR_NAME"
+grep -q "skip (tab/newline in path)" /tmp/twincut_tab_sidecar.log \
+  && ok "tab/newline sidecar skip logged" || bad "no tab/newline skip log"
 
 # ----------------------------------------------------------------------------
 echo
