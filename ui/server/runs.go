@@ -445,6 +445,9 @@ func drainStderr(runID string, stderr io.ReadCloser) {
 			log.Printf("[%s/stderr] %s", shortID(runID), line)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("run %s: stderr scan: %v", runID, err)
+	}
 }
 
 // ----------------------------------------------------------------------------

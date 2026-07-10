@@ -77,6 +77,32 @@ func TestOriginGuardAllowsBracketedIPv6LoopbackHostNoPort(t *testing.T) {
 	}
 }
 
+// TestServerHandler_OriginGuardWired pins that Server.Handler() actually
+// wraps its mux with originGuard (return originGuard(mux) in http.go). All
+// other tests in this file exercise originGuard directly against a synthetic
+// echo handler, so a silent unwrap at the Handler() call site would still
+// pass CI without this. This test passes against current code — its value
+// is as a regression pin, not as new red/green TDD.
+func TestServerHandler_OriginGuardWired(t *testing.T) {
+	srv := newThumbTestServer(t)
+	h := srv.Handler()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://evil.example.com/tab/self-check", nil)
+	req.Host = "evil.example.com"
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("foreign Host via Handler(): got %d, want 403 (originGuard not wired?)", rr.Code)
+	}
+
+	rr2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("GET", "http://127.0.0.1:7681/tab/self-check", nil)
+	h.ServeHTTP(rr2, req2)
+	if rr2.Code == http.StatusForbidden {
+		t.Fatalf("loopback Host via Handler(): got 403, want the mux to be reached")
+	}
+}
+
 func TestOriginGuardRejectsMalformedOriginOnPOST(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "http://127.0.0.1:7681/api/runs", strings.NewReader("{}"))
