@@ -297,3 +297,38 @@ func TestCollectHistory_ExcludesThumbnailPreview(t *testing.T) {
 		t.Errorf("want 0 entries (preview excluded), got %d: %+v", len(got), got)
 	}
 }
+
+func TestHandleHistoryPreview_ZeroMoveRunReturns404NotPanic(t *testing.T) {
+	state := t.TempDir()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scratch, err := os.MkdirTemp(home, ".twincut-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(scratch) })
+	manifest := filepath.Join(scratch, "_manifest-r1.tsv")
+	if err := os.WriteFile(manifest, []byte("# twincut manifest v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Journal: apply run whose run_end has a manifest but moved=0 →
+	// resolveManifest succeeds, loadHistoryEntry returns ok=false, err=nil.
+	// The old code called err.Error() on that path and panicked.
+	writeNDJSON(t, filepath.Join(state, "runs", "r1.ndjson"),
+		`{"type":"run_start","ts":1,"run_id":"r1","mode":"self_check","source":"`+scratch+`","dry_run":false}`,
+		`{"type":"run_end","ts":2,"run_id":"r1","status":"succeeded","moved":0,"manifest_path":"`+manifest+`"}`,
+	)
+
+	s := newHistoryTestServer(t, state)
+	req := httptest.NewRequest("GET", "/history/r1/preview", nil)
+	req.SetPathValue("id", "r1")
+	w := httptest.NewRecorder()
+	s.handleHistoryPreview(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("got %d, want 404 (and no panic)", w.Code)
+	}
+}

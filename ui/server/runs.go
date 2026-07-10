@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -417,13 +418,35 @@ func (m *RunManager) pump(r *Run, stdout io.ReadCloser) {
 	}
 }
 
+// scanCRorLF splits on \r or \n so twincut's \r progress spinner can't
+// accumulate into one giant "line" and overflow the scanner (which would
+// stop draining stderr and eventually deadlock the child on a full pipe).
+func scanCRorLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
+		return i + 1, data[:i], nil
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}
+
 // drainStderr forwards stderr to the server log with a per-run prefix. In
 // later stages this also feeds the "Show log ▾" panel.
 func drainStderr(runID string, stderr io.ReadCloser) {
 	scanner := bufio.NewScanner(stderr)
 	scanner.Buffer(make([]byte, 4096), 256*1024)
+	scanner.Split(scanCRorLF)
 	for scanner.Scan() {
-		log.Printf("[%s/stderr] %s", shortID(runID), scanner.Text())
+		if line := scanner.Text(); line != "" {
+			log.Printf("[%s/stderr] %s", shortID(runID), line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("run %s: stderr scan: %v", runID, err)
 	}
 }
 

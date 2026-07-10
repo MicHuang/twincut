@@ -1,7 +1,11 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +89,51 @@ func TestResolveSimilarVideo(t *testing.T) {
 					gotOn, gotPct, tc.wantOn, tc.wantSizePct)
 			}
 		})
+	}
+}
+
+func TestHandleSelfCheckApply_RejectsWrongModePreview(t *testing.T) {
+	srv := newThumbTestServer(t)
+	srcPath := os.Getenv("HOME")
+	r := runFromEvents(t, []string{
+		`{"type":"run_start","ts":1,"run_id":"prev-wrongmode","mode":"thumbnail_detect_preview","source":"` + srcPath + `"}`,
+		`{"type":"run_end","ts":2,"run_id":"prev-wrongmode","cancelled":false}`,
+	})
+	r.Mode = "thumbnail_detect_preview" // not a self_check_preview
+	r.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run"}
+	storeRun(srv.runs, "prev-wrongmode", r)
+
+	form := url.Values{"preview_run_id": {"prev-wrongmode"}}
+	req := httptest.NewRequest("POST", "/api/self-check/apply", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleSelfCheckApply(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("wrong-mode preview: got %d, want 422", w.Code)
+	}
+}
+
+func TestHandleSelfCheckApply_RejectsRunningPreview(t *testing.T) {
+	srv := newThumbTestServer(t)
+	srcPath := os.Getenv("HOME")
+	// Construct a Run directly (in-package, same idiom as thumbnail_test.go)
+	// so we can pin status to running.
+	r := &Run{
+		ID:     "prev-running",
+		Mode:   "self_check_preview",
+		Args:   []string{"--self-check", srcPath, "--dry-run"},
+		status: RunStatusRunning,
+		done:   make(chan struct{}),
+	}
+	storeRun(srv.runs, "prev-running", r)
+
+	form := url.Values{"preview_run_id": {"prev-running"}}
+	req := httptest.NewRequest("POST", "/api/self-check/apply", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleSelfCheckApply(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("running preview: got %d, want 409", w.Code)
 	}
 }
 

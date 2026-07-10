@@ -17,7 +17,7 @@
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
-| R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | — | pending | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
+| R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | in-review | PR #17 open, all DoD met: `go test ./...` + `go vet` + `make test` green incl. new origin/history/apply tests + Handler()-wiring pin; final review "with fixes" → fixed; Tier-1 gemini OK (1 MINOR fail-closed edge accepted). **Awaiting user merge.** | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
 | R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | — | pending | **Unblocked** (W1 merged 2026-07-09). Plan Tasks 5-7 in order. DoD: CI runs run_tests.py + all smokes; `shellcheck --severity=warning` clean; Tier-1 review pass. Note for Task 6: Wave-1 final review left two candidates to fold in — vid_eq strict re-verify is redundant (fast/full same checks ⇒ 2 wasted ffprobe calls/pair) and `--size-pct` as last CLI arg trips `set -u`. |
 | T1 | Sync to Stage 11 baseline | codex@macmini-yiqi | done | Preserved earlier stamp in stash `codex-pre-sync-stamp`, fetched origin, and created branch `codex/sync-restamp-hygiene` from `origin/main`. |
 | T2 | Re-apply agent-team stamp | codex@macmini-yiqi | done | Re-ran `agent-team stamp-handoff /Users/zhabs/Tools/twincut` on Stage 11; generated `PROGRESS.md`, `AGENTS.md`, and updated `CLAUDE.md`. |
@@ -50,6 +50,13 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-09 `[claude]@mac-joyce` — R-W2 executed, PR #17 open (in-review, awaiting user merge)
+- Executed Wave 2 (plan Tasks 3-4) subagent-driven on `claude/remediation-wave2`. Commits: `f69fd0b`+`9e79da2` originGuard middleware (mux-wide Host/Origin guard, IPv6 bracket fix found by task review); `6616b34`+`f790774` robustness bundle (history-preview nil-deref → 404, apply preview validation 422/409/422 on self+cross-check, healthz writeJSON, `\r`-aware stderr drain, dead code, duplicated `--json-events` dropped in BOTH thumbnail handlers — apply-path instance was found beyond the brief and sanctioned in-loop); `7d8098d` final-review gate (Handler()-wiring pin test, mutation-verified + drainStderr scanner.Err logging).
+- Reviews: per-task Approved (Task 3 after one fix loop); final whole-branch (fable) "with fixes" → fixed; Tier-1 `reviewer-gemini` OK — no BLOCKER/MAJOR, accepted-as-is: trailing-dot Host 403 (fails closed), CRLF empty-token (filtered). Note `/healthz` now 403s for non-loopback Host — intentional, documented in PR body.
+- Verification: TDD red→green per behavior fix; `cd ui && go test ./... -count=1` + `go vet` green; `make test` green on branch; CI green on `7d8098d`.
+- Merge blocked for agent (auto-mode classifier requires human merge, same as PR #16) — user to merge, then: PROGRESS → done, git-sync, R-W3 remains (Tasks 5-7, sequential, folds in Wave-1 leftovers noted in its row).
+- Pre-existing observation for a future hygiene pass (NOT this wave): `gofmt -l` flags 8 unformatted files in ui/server.
 
 ### 2026-07-09 `[claude]@mac-joyce` — R-W1 closed: PR #16 merged (`9cf6928`)
 - Supersedes the open decision in the previous entry: user chose **fix-before-merge**, so the bad-video-fallback race was fixed on-branch (`d0e0a4b`: load/append meta row before the bad-video verdict, fallback uses loaded fields, mirroring the source path) + smoke comment de-overstated per review (`3b2b9d6`). Re-review (sonnet) Approved; incremental Tier-1 via **grok-4.5** `TEAM_RESULT=OK` ("ship the engine change").
