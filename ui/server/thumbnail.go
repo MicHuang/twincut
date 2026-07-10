@@ -145,7 +145,6 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 	applyRunID := newRunID()
 	args := []string{
 		"--thumbnail-detect-apply",
-		"--json-events",
 		"--json-in",
 		"--source", source,
 	}
