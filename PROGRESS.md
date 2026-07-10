@@ -17,7 +17,7 @@
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
-| R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | in-review | PR #17 open, all DoD met: `go test ./...` + `go vet` + `make test` green incl. new origin/history/apply tests + Handler()-wiring pin; final review "with fixes" → fixed; Tier-1 gemini OK (1 MINOR fail-closed edge accepted). **Awaiting user merge.** | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
+| R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | done | PR #17 merged (`a780610`, 2026-07-10). originGuard mux-wide + wiring pin; apply preview validation; nil-deref → 404; \r-aware stderr drain; dead code out. Tier-1 gemini OK. | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
 | R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | — | pending | **Unblocked** (W1 merged 2026-07-09). Plan Tasks 5-7 in order. DoD: CI runs run_tests.py + all smokes; `shellcheck --severity=warning` clean; Tier-1 review pass. Note for Task 6: Wave-1 final review left two candidates to fold in — vid_eq strict re-verify is redundant (fast/full same checks ⇒ 2 wasted ffprobe calls/pair) and `--size-pct` as last CLI arg trips `set -u`. |
 | T1 | Sync to Stage 11 baseline | codex@macmini-yiqi | done | Preserved earlier stamp in stash `codex-pre-sync-stamp`, fetched origin, and created branch `codex/sync-restamp-hygiene` from `origin/main`. |
 | T2 | Re-apply agent-team stamp | codex@macmini-yiqi | done | Re-ran `agent-team stamp-handoff /Users/zhabs/Tools/twincut` on Stage 11; generated `PROGRESS.md`, `AGENTS.md`, and updated `CLAUDE.md`. |
@@ -29,7 +29,7 @@
 - Blocked entries must include the blocking reason, verified facts, next suggested command, and whether user input is required.
 
 ### Next up
-- **Remediation Waves 2 & 3** per `docs/superpowers/plans/2026-07-05-twincut-remediation.md` (Wave 1 merged 2026-07-09 as PR #16). R-W2 (Go UI, Tasks 3-4) and R-W3 (CI/hygiene, Tasks 5-7) are both claimable now; they are independent of each other. Read the plan's Global Constraints first — bash 3.2 compat, Go-owned event contract, no new features.
+- **Remediation Wave 3 (final wave)** per `docs/superpowers/plans/2026-07-05-twincut-remediation.md`: Tasks 5-7 **in order** (CI runs full suite + make test-smoke → bash hygiene → shellcheck gate). Waves 1-2 merged (PRs #16/#17). Task 6 also folds in the Wave-1 leftovers noted in the R-W3 row; a future hygiene candidate beyond the plan: `gofmt -l` flags 8 pre-existing files in ui/server (observed during W2, not in plan scope).
 - Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15.
 - Optional follow-up: install Pillow/imagehash locally if full pHash smoke coverage is needed outside CI.
 
@@ -50,6 +50,9 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-10 `[claude]@mac-joyce` — R-W2 closed: PR #17 merged (`a780610`)
+- User merged; board updated (R-W2 → done), local branch pruned, synced to mac-yiqi via git-sync. Remaining: R-W3 only (Tasks 5-7 sequential; leftovers listed in its row). Details of the wave in the previous entry.
 
 ### 2026-07-09 `[claude]@mac-joyce` — R-W2 executed, PR #17 open (in-review, awaiting user merge)
 - Executed Wave 2 (plan Tasks 3-4) subagent-driven on `claude/remediation-wave2`. Commits: `f69fd0b`+`9e79da2` originGuard middleware (mux-wide Host/Origin guard, IPv6 bracket fix found by task review); `6616b34`+`f790774` robustness bundle (history-preview nil-deref → 404, apply preview validation 422/409/422 on self+cross-check, healthz writeJSON, `\r`-aware stderr drain, dead code, duplicated `--json-events` dropped in BOTH thumbnail handlers — apply-path instance was found beyond the brief and sanctioned in-loop); `7d8098d` final-review gate (Handler()-wiring pin test, mutation-verified + drainStderr scanner.Err logging).
