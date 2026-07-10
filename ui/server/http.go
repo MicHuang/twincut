@@ -150,6 +150,7 @@ func originGuard(next http.Handler) http.Handler {
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
 		}
+		host = strings.Trim(host, "[]")
 		if !loopbackHost(host) {
 			http.Error(w, "forbidden: non-loopback Host", http.StatusForbidden)
 			return
