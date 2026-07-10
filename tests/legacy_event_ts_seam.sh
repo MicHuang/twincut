@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# tests/legacy_event_ts_seam.sh — verify that the legacy emit_event helper
-# in bin/twincut.sh honors the TWINCUT_TEST_TS seam (P1 #4 from Stage 9
-# reviewer-gemini). Runs a cross-check against two empty tempdirs; the
-# cross-check entry path fires a legacy emit_event run_start before any I/O.
+# tests/legacy_event_ts_seam.sh — end-to-end check that the real twincut.sh
+# honors the TWINCUT_TEST_TS seam on its first emitted event (run_start).
+# Complements tests/events_contract.sh, which exercises the lib/events.sh
+# emitters in isolation rather than through the full CLI entry path.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

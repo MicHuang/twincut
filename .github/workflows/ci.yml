@@ -37,7 +37,9 @@ jobs:
         # listing them here would be an illusory green. p1_stage9_smoke covers
         # the detect→apply seam on Linux via Pillow fixtures.
         run: |
+          python3 tests/json_events/run_tests.py
           bash tests/events_contract.sh
+          bash tests/legacy_event_ts_seam.sh
           bash tests/p1_stage9_smoke.sh
           bash tests/p0_smoke.sh
           bash tests/p1_stage11_smoke.sh
