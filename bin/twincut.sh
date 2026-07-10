@@ -544,17 +544,30 @@ move_unique(){ qmove "$1" "$2" "" "" "legacy_move" >/dev/null || true; }
 
 # Hashers
 hash_file(){
+  local h
   case "$ALGO" in
     md5)
-      if command -v md5 >/dev/null 2>&1;     then md5 -q "$1"
-      elif command -v md5sum >/dev/null 2>&1; then md5sum "$1" | awk '{print $1}'
+      if command -v md5 >/dev/null 2>&1;     then h="$(md5 -q -- "$1")"
+      elif command -v md5sum >/dev/null 2>&1; then h="$(md5sum -- "$1" | awk '{print $1}')"
       else echo "NO_MD5_TOOL"; return 1; fi;;
     sha1)
-      if command -v shasum >/dev/null 2>&1;   then shasum "$1" | awk '{print $1}'
-      elif command -v sha1sum >/dev/null 2>&1; then sha1sum "$1" | awk '{print $1}'
+      if command -v shasum >/dev/null 2>&1;   then h="$(shasum -- "$1" | awk '{print $1}')"
+      elif command -v sha1sum >/dev/null 2>&1; then h="$(sha1sum -- "$1" | awk '{print $1}')"
       else echo "NO_SHA1_TOOL"; return 1; fi;;
     *) echo "BAD_ALGO"; return 1;;
   esac
+  # {md5,sha1}sum (GNU coreutils) and shasum (Perl Digest::SHA, shipped on
+  # both macOS and Linux) prefix the *entire output line* with a backslash
+  # when the filename contains a backslash or newline, doubling each such
+  # character within the printed filename, so the line stays losslessly
+  # recoverable (documented escaping convention shared by GNU checksum
+  # tools and Digest::SHA). There is no whitespace between that marker and
+  # the hex digest, so `awk '{print $1}'` folds it into "$1", silently
+  # corrupting the hash for any path containing a backslash. `md5 -q`
+  # (BSD) never echoes the filename, so it never emits this marker. Strip
+  # it unconditionally: a bare hex digest never legitimately starts with
+  # '\'.
+  printf '%s\n' "${h#\\}"
 }
 
 # EXTS → find predicate (sanitised)
@@ -1584,15 +1597,22 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
         SMAP_FILE="$(mktemp)"
         awk -F '\t' -v hh="$sh" '$1==hh{print $2}' "$SRC_FILTERED" > "$SMAP_FILE"
 
-        # Keep policy: prefer oldest mtime within SOURCE_DIR
-        KEEP_SPATH=""; KEEP_SMT=""
+        # Keep policy: prefer oldest mtime within SOURCE_DIR. Ties (common —
+        # fixtures/bulk copies often land in the same mtime second) are
+        # broken by path, byte-order (LC_ALL=C), NOT by "whichever the
+        # find(1) traversal visited first": directory-enumeration order is
+        # unspecified by POSIX and differs by filesystem (e.g. ext4's
+        # htree-hashed order on Linux vs APFS's creation-order-ish listing
+        # on macOS), so the old first-wins tie-break silently picked a
+        # different "keep" file depending on OS, changing which files were
+        # eligible for removal.
+        SMAP_KEYED="$(mktemp)"
         while IFS= read -r sp; do
           [[ -z "$sp" ]] && continue
-          smt="$(mtime "$sp")"
-          if [[ -z "$KEEP_SPATH" || "$smt" -lt "$KEEP_SMT" ]]; then
-            KEEP_SPATH="$sp"; KEEP_SMT="$smt"
-          fi
-        done < "$SMAP_FILE"
+          printf '%s\t%s\n' "$(mtime "$sp")" "$sp"
+        done < "$SMAP_FILE" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2 > "$SMAP_KEYED"
+        KEEP_SPATH="$(head -n1 "$SMAP_KEYED" | cut -f2-)"
+        rm -f "$SMAP_KEYED" 2>/dev/null || true
 
         _GROUP_ID=$((_GROUP_ID+1))
         if $JSON_EVENTS; then
