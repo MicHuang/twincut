@@ -10,12 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** ✅ COMPLETE — Remediation of 2026-07-05 full-repo assessment findings. All three waves merged (PRs #16/#17/#18) 2026-07-09..10, subagent-driven with per-task + final + Tier-1 review each. No active remediation work; see "Next up" for recorded follow-ups.
+**Current milestone:** Follow-up hygiene wave (F-H1) — clearing the non-blocking follow-ups recorded after the 2026-07-05 remediation milestone (which is ✅ COMPLETE: PRs #16/#17/#18 merged 2026-07-09..10).
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
+| F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | in-progress | Branch `claude/followup-hygiene`. Scope = "Next up" items 1-4 (NOT vid_eq design decision, NOT trigger-gated perf deferrals). DoD: `make test` + all smokes green; new/changed behavior covered red-first where feasible; `gofmt -l ui/server` empty; Tier-1 review per TEAM.md §2 before merge. Blocked = wrapper BLOCKED without user-authorized substitution. |
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | done | PR #17 merged (`a780610`, 2026-07-10). originGuard mux-wide + wiring pin; apply preview validation; nil-deref → 404; \r-aware stderr drain; dead code out. Tier-1 gemini OK. | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
 | R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | claude@mac-joyce | done | PR #18 merged (`aa010ff`, 2026-07-10). CI now runs run_tests.py + all smokes + shellcheck job; `make test-smoke`; bash hygiene + TSV guard; shellcheck warning-clean. Wiring run_tests.py into CI surfaced & fixed 2 pre-existing GNU/BSD bugs (hash backslash-escape, find-order keep tie-break, both source+backup paths); Wave-1 vid_eq arg-guard leftover folded in. Tier-1 grok-4.5 (gemini BLOCKED network, not substituted). |
