@@ -16,7 +16,7 @@
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | in-progress | Branch `claude/followup-hygiene`. Scope = "Next up" items 1-4 (NOT vid_eq design decision, NOT trigger-gated perf deferrals). DoD: `make test` + all smokes green; new/changed behavior covered red-first where feasible; `gofmt -l ui/server` empty; Tier-1 review per TEAM.md §2 before merge. Blocked = wrapper BLOCKED without user-authorized substitution. |
+| F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | in-review | Branch `claude/followup-hygiene`, 4 task commits `1aecff3..65d2d5d`. All DoD met: `make test` + all smokes green on tip; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean. Per-task reviews Approved ×4; final whole-branch (fable) "Yes — ready to merge", zero Critical/Important. Awaiting Tier-1 + user merge. |
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | done | PR #17 merged (`a780610`, 2026-07-10). originGuard mux-wide + wiring pin; apply preview validation; nil-deref → 404; \r-aware stderr drain; dead code out. Tier-1 gemini OK. | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
 | R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | claude@mac-joyce | done | PR #18 merged (`aa010ff`, 2026-07-10). CI now runs run_tests.py + all smokes + shellcheck job; `make test-smoke`; bash hygiene + TSV guard; shellcheck warning-clean. Wiring run_tests.py into CI surfaced & fixed 2 pre-existing GNU/BSD bugs (hash backslash-escape, find-order keep tie-break, both source+backup paths); Wave-1 vid_eq arg-guard leftover folded in. Tier-1 grok-4.5 (gemini BLOCKED network, not substituted). |
@@ -30,13 +30,13 @@
 - Blocked entries must include the blocking reason, verified facts, next suggested command, and whether user input is required.
 
 ### Next up
-- **Remediation plan fully executed** (Waves 1-3 merged). No plan work remains. Recorded follow-ups, none blocking, pick up when convenient:
-  - **KEEP-policy determinism, remaining sites**: similar-video equal-mtime tie-break still uses scan order (`bin/twincut.sh` ~1322, grok Low); source/backup `-k2,2` sort truncates a path at its first embedded tab (grok Low).
-  - **TSV/path robustness**: extend the tab/newline guard to the manifest `matched` column, hash-index writes, and `\r`; newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort (accepted residual).
+- **F-H1 (in-review) cleared the first four former follow-ups** (KEEP determinism remainder, TSV-guard extension incl. `\r`, stage9 D1/D1b `run_end` asserts, gofmt ui). Remaining recorded follow-ups, none blocking:
+  - **vmeta-index path guard** (NEW, from F-H1 final review): `ensure_video_meta_index` (`bin/twincut.sh` ~730-762) still writes tab/CR-named video paths unguarded into the vmeta TSV and re-appends a corrupt row every run (liveness check never matches). Bounded: qmove guards prevent any file action; worst case a failed `mv` on a truncated path. Same fix shape as F-H1 Task 2 (`tsv_path_safe` skip + warn at the walk).
   - **vid_eq**: strict re-verify is redundant (fast/full run identical checks ⇒ 2 wasted ffprobe calls/pair) — needs a design decision, not hygiene; usage string duplicated 3×.
-  - **Go**: `gofmt -w` on 8 pre-existing unformatted `ui/server` files (fold into the next Go-touching PR); apply-endpoint 422 error strings echo raw `prevSnap.Mode` (low-risk info pattern).
-  - **Tests**: stage9 D1/D1b never assert `run_end` status (pre-existing coverage gap).
-  - The plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
+  - **Go**: apply-endpoint 422 error strings echo raw `prevSnap.Mode` (low-risk info pattern).
+  - **Optional test/comment polish** (F-H1 final review, none justify a re-spin): K3 could also assert `dup_group.keep_path` JSON; `tests/keep_policy_smoke.sh` could note the equal-mtime pin has most discriminating power on ext4 (APFS find order coincides with byte order); `pick_keep` comment says "same comparator" where "same ordering" is precise; apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir).
+  - **Accepted residuals**: newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort; `emit_warn --path` blames the action target even when matched/dir is the offending field (convention).
+  - The remediation plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
 - Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15; wrappers could map upstream "model no longer available" 404s to `BLOCKED not-configured` (seen when gemini/grok model IDs rotted mid-session, fixed in agent-team PR #47).
 - Optional follow-up: install Pillow/imagehash locally if full pHash smoke coverage is needed outside CI (CI installs them).
 
@@ -57,6 +57,13 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-11 `[claude]@mac-joyce` — F-H1 executed, PR open (in-review, awaiting Tier-1 + user merge)
+- Follow-up hygiene wave (former "Next up" items 1-4) subagent-driven on `claude/followup-hygiene`. Commits: `1aecff3` pick_keep equal-mtime tie-break (LC_ALL=C path byte order at both similar-video sites) + `-k2,2`→`-k2` sort-key hygiene + new `tests/keep_policy_smoke.sh` (K1 pins the previously-untested Wave-3 hash-dupe tie-break; K2/K3 pin similar-video) wired into Makefile+CI; `6c302e4` tsv_path_safe guard extension (qmove/qdelete now cover `matched`; hash-index write loops skip unsafe paths; `\r` added everywhere) + stage9 D1c/D1d + backup-smoke hash-index test + one pre-authorized p0 stderr-text update; `72f337e` stage9 D1/D1b run_end asserts (characterized `succeeded` first); `65d2d5d` gofmt 9 ui files (verified whitespace-only).
+- Reviews: per-task Approved ×4 (zero Critical/Important across all); final whole-branch (fable) "Yes — ready to merge" — reviewer independently re-ran all 9 shell suites + shellcheck + go checks green on a branch snapshot and behaviorally probed the source-loop guard; confirmed the Wave-3 guard-abort class is closed at all 13 qmove/qdelete dispatch sites.
+- Notable: K2/K3 passed pre-fix on local APFS (find name-order coincides with byte order) — recorded per plan contingency; CI ubuntu/ext4 is where the pin discriminates. K1 asserts stderr only because the backup hash-dupe flow emits no dup_group event at all (product-forced, not test laziness).
+- New follow-up recorded in "Next up": vmeta-index unsafe-path guard gap (found by final review, same class as Task 2, bounded consequences).
+- Next: Tier-1 per TEAM.md §2 (eligible {gemini, grok}, default gemini), then user merge; after merge set F-H1 → done and git-sync.
 
 ### 2026-07-10 `[claude]@mac-joyce` — R-W3 closed: PR #18 merged (`aa010ff`) — remediation milestone COMPLETE
 - User merged Wave 3; board updated (R-W3 → done, milestone marked complete), local branch pruned, synced to mac-yiqi.
