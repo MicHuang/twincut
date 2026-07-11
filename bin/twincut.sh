@@ -456,6 +456,22 @@ process_apply_list_jsonin(){
   emit_run_end --status succeeded --total "$total" --applied "$moved" --skipped "$skipped"
 }
 
+# pick_keep A B — set KEEP/MOVE for a duplicate pair. Older mtime wins;
+# equal mtimes fall back to LC_ALL=C path byte order (the same comparator
+# as the hash-dupe MAP_KEYED/SMAP_KEYED sorts), NOT scan order — find(1)
+# enumeration order is filesystem-dependent (ext4 htree vs APFS).
+pick_keep(){
+  local a="$1" b="$2" ma mb
+  ma="$(mtime "$a")"; mb="$(mtime "$b")"
+  if (( ma < mb )); then KEEP="$a"; MOVE="$b"; return 0; fi
+  if (( mb < ma )); then KEEP="$b"; MOVE="$a"; return 0; fi
+  if [[ "$(printf '%s\n%s\n' "$a" "$b" | LC_ALL=C sort | head -n1)" == "$a" ]]; then
+    KEEP="$a"; MOVE="$b"
+  else
+    KEEP="$b"; MOVE="$a"
+  fi
+}
+
 # qmove SRC DEST_DIR MATCHED HASH DECISION
 # Centralized "move into quarantine" with hardlink check + manifest write.
 # Returns 0 on action taken, 1 on skip (e.g. hardlink), 2 on error.
@@ -1253,7 +1269,7 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
         while IFS= read -r p; do
           [[ -z "$p" ]] && continue
           printf '%s\t%s\n' "$(mtime "$p")" "$p"
-        done < "$MAP_FILE" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2 > "$MAP_KEYED"
+        done < "$MAP_FILE" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2 > "$MAP_KEYED"
         KEEP_PATH="$(head -n1 "$MAP_KEYED" | cut -f2-)"
         rm -f "$MAP_KEYED" 2>/dev/null || true
         # Move/report all duplicates except the chosen KEEP_PATH
@@ -1323,9 +1339,7 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
             echo "$out2" | grep -q "EQUAL:yes" || { continue; }
           fi
           # Keep policy: prefer oldest mtime
-          mt_bf=$(mtime "$bf")
-          mt_cd=$(mtime "$cand")
-          if (( mt_bf <= mt_cd )); then KEEP="$bf"; MOVE="$cand"; else KEEP="$cand"; MOVE="$bf"; fi
+          pick_keep "$bf" "$cand"
           _sim_reason="video_fast"; $VIDEO_FAST_STRICT && _sim_reason="video_strict"
           emit_similar_video_group "$_sim_reason" "$KEEP" "$VMETA_FILE" "$MOVE" "$VMETA_FILE"
           if $REPORT_BACKUP_DUPES; then
@@ -1534,9 +1548,7 @@ while IFS= read -r -d '' f; do
             # upstream, so the outer video-fast block is never entered and this
             # branch is only reached via the legacy --report/--fix-source-dupes
             # path or when --include-similar-video is explicitly set.
-            mt_src=$(mtime "$f")
-            mt_b=$(mtime "$b")
-            if (( mt_src <= mt_b )); then KEEP="$f"; MOVE="$b"; else KEEP="$b"; MOVE="$f"; fi
+            pick_keep "$f" "$b"
             # Each source-self pair is reachable from both sides of the outer
             # find loop; canonicalize the pair and skip duplicates so the
             # event stream and the qmove decision happen exactly once.
@@ -1613,7 +1625,7 @@ if $REPORT_SOURCE_DUPES || $FIX_SOURCE_DUPES; then
         while IFS= read -r sp; do
           [[ -z "$sp" ]] && continue
           printf '%s\t%s\n' "$(mtime "$sp")" "$sp"
-        done < "$SMAP_FILE" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2 > "$SMAP_KEYED"
+        done < "$SMAP_FILE" | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2 > "$SMAP_KEYED"
         KEEP_SPATH="$(head -n1 "$SMAP_KEYED" | cut -f2-)"
         rm -f "$SMAP_KEYED" 2>/dev/null || true
 
