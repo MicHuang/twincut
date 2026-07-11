@@ -456,9 +456,10 @@ process_apply_list_jsonin(){
   emit_run_end --status succeeded --total "$total" --applied "$moved" --skipped "$skipped"
 }
 
-# pick_keep A B — set KEEP/MOVE for a duplicate pair. Older mtime wins;
-# equal mtimes fall back to LC_ALL=C path byte order (the same comparator
-# as the hash-dupe MAP_KEYED/SMAP_KEYED sorts), NOT scan order — find(1)
+# pick_keep A B — sets the caller-scope globals KEEP/MOVE for a duplicate
+# pair (callers must not declare KEEP/MOVE local). Older mtime wins; equal
+# mtimes fall back to LC_ALL=C path byte order (the same ordering as the
+# hash-dupe MAP_KEYED/SMAP_KEYED sorts), NOT scan order — find(1)
 # enumeration order is filesystem-dependent (ext4 htree vs APFS).
 pick_keep(){
   local a="$1" b="$2" ma mb
