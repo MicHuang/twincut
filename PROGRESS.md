@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** Follow-up hygiene wave (F-H1) — clearing the non-blocking follow-ups recorded after the 2026-07-05 remediation milestone (which is ✅ COMPLETE: PRs #16/#17/#18 merged 2026-07-09..10).
+**Current milestone:** ✅ COMPLETE — Follow-up hygiene wave F-H1 merged (PR #19 → `98c30aa`, 2026-07-11), on top of the completed 2026-07-05 remediation milestone (PRs #16/#17/#18). No active work; see "Next up" for remaining recorded follow-ups (vmeta guard, vid_eq design decision, optional polish).
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | in-review | Branch `claude/followup-hygiene`, 4 task commits `1aecff3..65d2d5d`. All DoD met: `make test` + all smokes green on tip; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean. Per-task reviews Approved ×4; final whole-branch (fable) "Yes — ready to merge", zero Critical/Important. Tier-1 gemini OK (no BLOCKER/MAJOR; pick_keep comment MINOR fixed in-branch; rest recorded). Awaiting user merge. |
+| F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | done | PR #19 merged (`98c30aa`, 2026-07-11). All DoD met: `make test` + all smokes green; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean; CI green both platforms. Per-task reviews Approved ×4; final whole-branch (fable) "Yes"; Tier-1 gemini OK (pick_keep comment MINOR fixed in-branch; rest recorded in "Next up"). |
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | done | PR #17 merged (`a780610`, 2026-07-10). originGuard mux-wide + wiring pin; apply preview validation; nil-deref → 404; \r-aware stderr drain; dead code out. Tier-1 gemini OK. | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
 | R-W3 | Remediation Wave 3: CI drift + bash hygiene + shellcheck gate | claude@mac-joyce | done | PR #18 merged (`aa010ff`, 2026-07-10). CI now runs run_tests.py + all smokes + shellcheck job; `make test-smoke`; bash hygiene + TSV guard; shellcheck warning-clean. Wiring run_tests.py into CI surfaced & fixed 2 pre-existing GNU/BSD bugs (hash backslash-escape, find-order keep tie-break, both source+backup paths); Wave-1 vid_eq arg-guard leftover folded in. Tier-1 grok-4.5 (gemini BLOCKED network, not substituted). |
@@ -57,6 +57,11 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-11 `[claude]@mac-joyce` — F-H1 closed: PR #19 merged (`98c30aa`)
+- User merged (squash); board updated (F-H1 → done, milestone marked complete), local + remote claim branches pruned, synced to mac-yiqi.
+- Wave summary in the previous entry. Post-branch additions folded before merge: Tier-1 gemini OK with pick_keep comment MINOR fixed (`24591dd`), triage on the PR; CI green on both platforms including the new keep_policy_smoke on ext4.
+- Remaining recorded follow-ups live in "Next up": vmeta-index unsafe-path guard (new, same class as F-H1 Task 2), vid_eq strict re-verify design decision + usage-string dedup, Go 422 mode-echo, optional test/comment polish, accepted residuals, trigger-gated perf deferrals. No active twincut work remains.
 
 ### 2026-07-11 `[claude]@mac-joyce` — F-H1 executed, PR open (in-review, awaiting Tier-1 + user merge)
 - Follow-up hygiene wave (former "Next up" items 1-4) subagent-driven on `claude/followup-hygiene`. Commits: `1aecff3` pick_keep equal-mtime tie-break (LC_ALL=C path byte order at both similar-video sites) + `-k2,2`→`-k2` sort-key hygiene + new `tests/keep_policy_smoke.sh` (K1 pins the previously-untested Wave-3 hash-dupe tie-break; K2/K3 pin similar-video) wired into Makefile+CI; `6c302e4` tsv_path_safe guard extension (qmove/qdelete now cover `matched`; hash-index write loops skip unsafe paths; `\r` added everywhere) + stage9 D1c/D1d + backup-smoke hash-index test + one pre-authorized p0 stderr-text update; `72f337e` stage9 D1/D1b run_end asserts (characterized `succeeded` first); `65d2d5d` gofmt 9 ui files (verified whitespace-only).
