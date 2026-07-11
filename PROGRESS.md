@@ -10,12 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** ✅ COMPLETE — Follow-up hygiene wave F-H1 merged (PR #19 → `98c30aa`, 2026-07-11), on top of the completed 2026-07-05 remediation milestone (PRs #16/#17/#18). No active work; see "Next up" for remaining recorded follow-ups (vmeta guard, vid_eq design decision, optional polish).
+**Current milestone:** F-H2 vmeta-index path guard in progress (claude@mac-joyce, branch `claude/vmeta-guard`), on top of merged F-H1 (PR #19 → `98c30aa`, 2026-07-11) and the completed 2026-07-05 remediation milestone (PRs #16/#17/#18). See "Next up" for the other recorded follow-ups (vid_eq design decision, optional polish).
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
+| F-H2 | vmeta-index path guard: `tsv_path_safe` skip + warn at the `ensure_video_meta_index` walk (same class as F-H1 Task 2) | claude@mac-joyce | in-progress | Branch `claude/vmeta-guard`. DoD: red-first smoke extension in `tests/backup_selfcheck_smoke.sh` (tab-named .mp4 → skip warning on stderr, no corrupt >11-field row in `.video_meta_index.csv`, run still succeeds), `make test` + smokes green, Tier-1 review pass. Blocked-if: none foreseen (no external deps beyond ffprobe already required by tests). |
 | F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | done | PR #19 merged (`98c30aa`, 2026-07-11). All DoD met: `make test` + all smokes green; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean; CI green both platforms. Per-task reviews Approved ×4; final whole-branch (fable) "Yes"; Tier-1 gemini OK (pick_keep comment MINOR fixed in-branch; rest recorded in "Next up"). |
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | done | PR #17 merged (`a780610`, 2026-07-10). originGuard mux-wide + wiring pin; apply preview validation; nil-deref → 404; \r-aware stderr drain; dead code out. Tier-1 gemini OK. | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
@@ -31,7 +32,7 @@
 
 ### Next up
 - **F-H1 (in-review) cleared the first four former follow-ups** (KEEP determinism remainder, TSV-guard extension incl. `\r`, stage9 D1/D1b `run_end` asserts, gofmt ui). Remaining recorded follow-ups, none blocking:
-  - **vmeta-index path guard** (NEW, from F-H1 final review): `ensure_video_meta_index` (`bin/twincut.sh` ~730-762) still writes tab/CR-named video paths unguarded into the vmeta TSV and re-appends a corrupt row every run (liveness check never matches). Bounded: qmove guards prevent any file action; worst case a failed `mv` on a truncated path. Same fix shape as F-H1 Task 2 (`tsv_path_safe` skip + warn at the walk).
+  - ~~vmeta-index path guard~~ → claimed as F-H2 (in-progress, see task table).
   - **vid_eq**: strict re-verify is redundant (fast/full run identical checks ⇒ 2 wasted ffprobe calls/pair) — needs a design decision, not hygiene; usage string duplicated 3×.
   - **Go**: apply-endpoint 422 error strings echo raw `prevSnap.Mode` (low-risk info pattern).
   - **Optional test/comment polish** (F-H1 final review + Tier-1, none justify a re-spin): K3 could also assert `dup_group.keep_path` JSON; `tests/keep_policy_smoke.sh` could note the equal-mtime pin has most discriminating power on ext4 (APFS find order coincides with byte order); apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir); stage9 D1-D1d `|| true` on the apply invocations masks the CLI exit code (gemini MINOR — cleanup should touch all four sections together since D1/D1b pre-date this wave).
