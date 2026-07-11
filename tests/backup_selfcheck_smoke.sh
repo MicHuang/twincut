@@ -43,4 +43,25 @@ if find "$work/q" -type d -iname '_bad_video' 2>/dev/null | grep -q .; then
   fail "good video was quarantined under _bad_video"
 fi
 
+
+# --- hash-index guard: a tab-in-name file must not be indexed (a raw tab
+# in the hash index makes every awk -F'\t' reader mis-parse the row) ---
+tabf="$(printf 'evil%bname' '\t').jpg"
+printf 'TABTAB' > "$bk/$tabf"
+
+events2="$work/events2.ndjson"
+if ! TWINCUT_RUN_ID=r_bkself_tab \
+    "$TC" --backup "$bk" --report-backup-dupes \
+    --quarantine "$work/q" --json-events \
+    >"$events2" 2>"$work/stderr2.log"; then
+  fail "backup self-check exited nonzero with a tab-in-name file present"
+fi
+grep -q '"type":"run_end"' "$events2" || fail "tab-in-name: no run_end emitted"
+grep -q '"status":"succeeded"' "$events2" || fail "tab-in-name: run_end not succeeded"
+grep -q 'unsafe for hash index' "$work/stderr2.log" \
+  || fail "tab-in-name: expected hash-index skip warning on stderr"
+if awk -F '\t' 'NF>2 && $0 !~ /^#/ {exit 1}' "$bk/.backup_hashindex.txt"; then :; else
+  fail "tab-in-name: hash index contains a corrupt (>2 field) row"
+fi
+
 echo "backup_selfcheck_smoke: all ok"

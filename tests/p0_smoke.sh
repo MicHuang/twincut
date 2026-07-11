@@ -179,7 +179,7 @@ RC=$?
 set -e
 assert_eq "$RC" "0" "run with TSV-breaking sidecar name exits 0 (not aborted)"
 assert_file "$TAB_SRC/$TAB_SIDECAR_NAME"
-grep -q "skip (tab/newline in path)" /tmp/twincut_tab_sidecar.log \
+grep -q "skip (tab/newline/CR in path)" /tmp/twincut_tab_sidecar.log \
   && ok "tab/newline sidecar skip logged" || bad "no tab/newline skip log"
 
 # ----------------------------------------------------------------------------

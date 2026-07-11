@@ -472,6 +472,15 @@ pick_keep(){
   fi
 }
 
+# tsv_path_safe P — 0 iff P can be stored in the line-oriented TSV files
+# (manifest, hash indexes): no tab, newline, or carriage return.
+tsv_path_safe(){
+  case "$1" in
+    *$'\t'*|*$'\n'*|*$'\r'*) return 1 ;;
+  esac
+  return 0
+}
+
 # qmove SRC DEST_DIR MATCHED HASH DECISION
 # Centralized "move into quarantine" with hardlink check + manifest write.
 # Returns 0 on action taken, 1 on skip (e.g. hardlink), 2 on error.
@@ -481,12 +490,11 @@ qmove(){
     emit_action_skip --src "$src" --reason excluded --decision "$dec"
     return 1
   fi
-  case "$src$dir" in
-    *$'\t'*|*$'\n'*)
-      emit_warn --code io_error --path "$src" --detail "path contains tab/newline; unsafe for manifest TSV — skipped"
-      echo "[!] skip (tab/newline in path): $src" >&2
-      return 2 ;;
-  esac
+  if ! tsv_path_safe "$src$dir$matched"; then
+    emit_warn --code io_error --path "$src" --detail "path contains tab/newline/CR; unsafe for manifest TSV — skipped"
+    echo "[!] skip (tab/newline/CR in path): $src" >&2
+    return 2
+  fi
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
@@ -528,12 +536,11 @@ qdelete(){
     emit_action_skip --src "$src" --reason excluded --decision "$dec"
     return 1
   fi
-  case "$src" in
-    *$'\t'*|*$'\n'*)
-      emit_warn --code io_error --path "$src" --detail "path contains tab/newline; unsafe for manifest TSV — skipped"
-      echo "[!] skip (tab/newline in path): $src" >&2
-      return 2 ;;
-  esac
+  if ! tsv_path_safe "$src$matched"; then
+    emit_warn --code io_error --path "$src" --detail "path contains tab/newline/CR; unsafe for manifest TSV — skipped"
+    echo "[!] skip (tab/newline/CR in path): $src" >&2
+    return 2
+  fi
   if [[ -n "$matched" ]] && same_inode "$src" "$matched"; then
     SKIPPED_HARDLINK=$((SKIPPED_HARDLINK+1))
     echo "[=] hardlink-skip: '$src' == '$matched'"
@@ -1231,6 +1238,11 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
       (( CNT_B % PROG_STEP == 0 )) && printf "\r[=] Caching %-7d / %s (reused)" "$CNT_B" "$TOTAL_B"
       continue
     fi
+    if ! tsv_path_safe "$f"; then
+      emit_warn --code io_error --path "$f" --detail "path contains tab/newline/CR; unsafe for hash index — not indexed"
+      echo "[!] skip (unsafe for hash index): $f" >&2
+      continue
+    fi
     H=$(hash_file "$f") || continue
     printf "%s\t%s\n" "$H" "$f" >> "$LOCAL_CACHE"
     printf "%s\t%s\n" "$H" "$f" >> "$TMP_CACHE"
@@ -1427,6 +1439,12 @@ while IFS= read -r -d '' f; do
       handle_appledouble "$f"
       continue
     fi
+  fi
+
+  if ! tsv_path_safe "$f"; then
+    emit_warn --code io_error --path "$f" --detail "path contains tab/newline/CR; unsafe for hash index — skipped"
+    echo "[!] skip (unsafe for hash index): $f" >&2
+    continue
   fi
 
   # --- get/append source hash (with source cache reuse) ---
