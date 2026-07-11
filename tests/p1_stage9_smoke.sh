@@ -159,6 +159,9 @@ assert "D1: tab-in-path: quarantine file with tab in name does not exist" \
 assert "D1: tab-in-path: original source file left untouched" \
   '[[ -e "$TAB_SRC/$TAB_NAME.jpg" ]]'
 
+assert "D1: tab-in-path apply ends with run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_TAB_NDJSON"'
+
 # === D1b. newline-in-path — @base64 parser must preserve literal \n; same
 # qmove TSV guard must safely refuse to move it. ===
 NL_NAME="$(printf 'line1\nline2')"
@@ -189,6 +192,9 @@ assert "D1b: newline-in-path: quarantine file does not exist" \
 
 assert "D1b: newline-in-path: original source file left untouched" \
   '[[ -e "$NL_SRC/$NL_NAME.jpg" ]]'
+
+assert "D1b: newline-in-path apply ends with run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_NL_NDJSON"'
 
 # === D1c. tab-in-KEEPER — the matched path is written into the manifest
 # TSV `matched` column; the guard must refuse the move when the keeper
