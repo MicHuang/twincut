@@ -9,41 +9,40 @@ import (
 	"testing"
 )
 
-
 func TestResolveSimilarVideo(t *testing.T) {
 	cases := []struct {
-		name       string
-		form       url.Values
-		hasVideos  bool
-		wantOn     bool
+		name        string
+		form        url.Values
+		hasVideos   bool
+		wantOn      bool
 		wantSizePct string
 	}{
 		{
-			name:       "auto + has videos defaults on with 5%",
-			form:       url.Values{"include_similar_video": {"auto"}},
-			hasVideos:  true,
-			wantOn:     true,
+			name:        "auto + has videos defaults on with 5%",
+			form:        url.Values{"include_similar_video": {"auto"}},
+			hasVideos:   true,
+			wantOn:      true,
 			wantSizePct: "5",
 		},
 		{
-			name:       "auto + no videos stays off",
-			form:       url.Values{"include_similar_video": {"auto"}},
-			hasVideos:  false,
-			wantOn:     false,
+			name:        "auto + no videos stays off",
+			form:        url.Values{"include_similar_video": {"auto"}},
+			hasVideos:   false,
+			wantOn:      false,
 			wantSizePct: "",
 		},
 		{
-			name:       "explicit on overrides empty folder",
-			form:       url.Values{"include_similar_video": {"on"}},
-			hasVideos:  false,
-			wantOn:     true,
+			name:        "explicit on overrides empty folder",
+			form:        url.Values{"include_similar_video": {"on"}},
+			hasVideos:   false,
+			wantOn:      true,
 			wantSizePct: "5",
 		},
 		{
-			name:       "explicit off overrides video presence",
-			form:       url.Values{"include_similar_video": {"off"}},
-			hasVideos:  true,
-			wantOn:     false,
+			name:        "explicit off overrides video presence",
+			form:        url.Values{"include_similar_video": {"off"}},
+			hasVideos:   true,
+			wantOn:      false,
 			wantSizePct: "",
 		},
 		{
@@ -67,17 +66,17 @@ func TestResolveSimilarVideo(t *testing.T) {
 			wantSizePct: "2",
 		},
 		{
-			name:       "blank mode treated as auto (legacy form support)",
-			form:       url.Values{},
-			hasVideos:  true,
-			wantOn:     true,
+			name:        "blank mode treated as auto (legacy form support)",
+			form:        url.Values{},
+			hasVideos:   true,
+			wantOn:      true,
 			wantSizePct: "5",
 		},
 		{
-			name:       "legacy mode=1 treated as on",
-			form:       url.Values{"include_similar_video": {"1"}},
-			hasVideos:  false,
-			wantOn:     true,
+			name:        "legacy mode=1 treated as on",
+			form:        url.Values{"include_similar_video": {"1"}},
+			hasVideos:   false,
+			wantOn:      true,
 			wantSizePct: "5",
 		},
 	}
@@ -136,4 +135,3 @@ func TestHandleSelfCheckApply_RejectsRunningPreview(t *testing.T) {
 		t.Fatalf("running preview: got %d, want 409", w.Code)
 	}
 }
-

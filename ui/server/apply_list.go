@@ -180,4 +180,3 @@ func composeApplyCommands(groups []ResultGroup, dstDir string) []byte {
 	}
 	return buf.Bytes()
 }
-

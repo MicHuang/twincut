@@ -10,22 +10,22 @@ import (
 // ResultsView is the structured payload the results template renders.
 // Built by walking a finished run's event stream.
 type ResultsView struct {
-	RunID         string         // for the apply form
-	Mode          string         // self_check, cross_check, …
-	SourcePath    string         // the folder that was scanned
-	Status        RunStatus
-	Cancelled     bool
-	HasError      bool
-	ErrorMessage  string
-	Warnings      []ResultWarn
-	Groups        []ResultGroup
-	NumGroups     int
-	NumFiles      int    // total candidate-to-quarantine files (sum of remove[] across groups)
-	BytesReclaim  int64  // bytes reclaimable if the user accepts every default
-	BytesHuman    string // formatted "3.4 GB"
-	NumWarnings   int
-	ApplyURL      string // "/api/self-check/apply" or "/api/cross-check/apply"
-	Backups       []string // cross-check only: backup paths from run args (for apply form replay)
+	RunID        string // for the apply form
+	Mode         string // self_check, cross_check, …
+	SourcePath   string // the folder that was scanned
+	Status       RunStatus
+	Cancelled    bool
+	HasError     bool
+	ErrorMessage string
+	Warnings     []ResultWarn
+	Groups       []ResultGroup
+	NumGroups    int
+	NumFiles     int    // total candidate-to-quarantine files (sum of remove[] across groups)
+	BytesReclaim int64  // bytes reclaimable if the user accepts every default
+	BytesHuman   string // formatted "3.4 GB"
+	NumWarnings  int
+	ApplyURL     string   // "/api/self-check/apply" or "/api/cross-check/apply"
+	Backups      []string // cross-check only: backup paths from run args (for apply form replay)
 
 	// Populated from the run_end event when present.
 	MovedCount    int
@@ -107,9 +107,9 @@ type ResultWarn struct {
 func BuildResults(run *Run) (ResultsView, error) {
 	snap := run.Snapshot()
 	view := ResultsView{
-		RunID:     run.ID,
-		Mode:      snap.Mode,
-		Status:    snap.Status,
+		RunID:  run.ID,
+		Mode:   snap.Mode,
+		Status: snap.Status,
 	}
 
 	// For cross-check runs, extract the backup paths from the run's CLI args
@@ -389,7 +389,7 @@ func formatBitrate(bps int64) string {
 // their own problems.
 func humanBytes(b int64) string {
 	const (
-		_         = iota
+		_        = iota
 		kb int64 = 1 << (10 * iota)
 		mb
 		gb

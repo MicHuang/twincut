@@ -141,10 +141,10 @@ type Progress struct {
 // by lib/thumb.sh during --dry-run --json-events. One event per candidate file.
 type ThumbCandidate struct {
 	EventEnvelope
-	Decision      string `json:"decision"`                 // thumb_l2_exif | thumb_l3_embed | thumb_l1_review
-	Path          string `json:"path"`                     // absolute path of the candidate thumbnail
-	Keeper        string `json:"keeper,omitempty"`         // absolute path of the file being kept (L2/L3 always; L1 only when pHash matched)
-	GroupID       string `json:"group_id,omitempty"`       // L2: EXIF SHA1; L3: "l3:<sha1>"; L1 matched: "l1ph:<sha1>"; absent for L1 unmatched
+	Decision      string `json:"decision"`           // thumb_l2_exif | thumb_l3_embed | thumb_l1_review
+	Path          string `json:"path"`               // absolute path of the candidate thumbnail
+	Keeper        string `json:"keeper,omitempty"`   // absolute path of the file being kept (L2/L3 always; L1 only when pHash matched)
+	GroupID       string `json:"group_id,omitempty"` // L2: EXIF SHA1; L3: "l3:<sha1>"; L1 matched: "l1ph:<sha1>"; absent for L1 unmatched
 	Width         int    `json:"width,omitempty"`
 	Height        int    `json:"height,omitempty"`
 	SizeBytes     int64  `json:"size_bytes,omitempty"`
@@ -237,4 +237,3 @@ type ApplyCommand struct {
 	Keeper   string `json:"keeper,omitempty"`
 	Decision string `json:"decision"`
 }
-

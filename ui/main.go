@@ -30,11 +30,11 @@ var assets embed.FS
 
 func main() {
 	var (
-		port        = flag.Int("port", 7681, "HTTP port (falls back to a free port if taken)")
-		noOpen      = flag.Bool("no-open", false, "Do not open the browser on launch")
-		stateDir    = flag.String("state-dir", "", "State directory (default ~/.twincut-ui)")
-		lang        = flag.String("lang", "", "Force language: en | zh-Hans (default: auto from Accept-Language)")
-		twincutBin  = flag.String("twincut-bin", "", "Path to twincut.sh (default: PATH lookup, then sibling of this binary)")
+		port       = flag.Int("port", 7681, "HTTP port (falls back to a free port if taken)")
+		noOpen     = flag.Bool("no-open", false, "Do not open the browser on launch")
+		stateDir   = flag.String("state-dir", "", "State directory (default ~/.twincut-ui)")
+		lang       = flag.String("lang", "", "Force language: en | zh-Hans (default: auto from Accept-Language)")
+		twincutBin = flag.String("twincut-bin", "", "Path to twincut.sh (default: PATH lookup, then sibling of this binary)")
 	)
 	flag.Parse()
 
