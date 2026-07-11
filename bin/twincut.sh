@@ -695,6 +695,14 @@ vmeta_join_candidates(){
 
 append_video_meta(){
   local csv="$1" f="$2"; [[ -f "$f" ]] || return 0
+  # Single choke point for all vmeta writers (scan walk + both similar-video
+  # self-heals): a raw tab/newline/CR in the path would corrupt the TSV row
+  # and never match the liveness/dedup lookups again.
+  if ! tsv_path_safe "$f"; then
+    emit_warn --code io_error --path "$f" --detail "path contains tab/newline/CR; unsafe for video meta index — not indexed"
+    echo "[!] skip (unsafe for video meta index): $f" >&2
+    return 0
+  fi
 
   local ssize vline codec width height fps_str fps_val bitrate d_stream d_fmt sdur mtime dbuck isbad=0 bname
   ssize="$(fsize "$f")"
@@ -748,10 +756,12 @@ ensure_video_meta_index(){
 
   # Retain only live rows
   kept="$(mktemp)"; tmp2="$(mktemp)"
-  awk -F'\t' 'NR<=2{next} {print $1}' "$vcsv" | while IFS= read -r p; do [[ -e "$p" ]] && echo "$p" >> "$kept"; done
+  # if-form (not `&& …`): a dead path in the last row must not leak exit 1
+  # out of the loop — under set -e that killed the run mid-refresh.
+  awk -F'\t' 'NR<=2{next} {print $1}' "$vcsv" | while IFS= read -r p; do if [[ -e "$p" ]]; then echo "$p" >> "$kept"; fi; done
   { head -n2 "$vcsv"; awk -F'\t' 'NR<=2{next} {print $0}' "$vcsv" | while IFS= read -r line; do
       p="$(printf "%s" "$line" | awk -F'\t' '{print $1}')"
-      grep -Fqx -- "$p" "$kept" && printf '%s\n' "$line"
+      if grep -Fqx -- "$p" "$kept"; then printf '%s\n' "$line"; fi
     done; } > "$tmp2"
   mv "$tmp2" "$vcsv"; rm -f "$kept" 2>/dev/null || true
 
