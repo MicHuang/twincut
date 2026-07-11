@@ -1323,6 +1323,10 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
     build_name_predicate
     while IFS= read -r -d '' bf; do
       is_video_ext "$bf" || continue
+      # TSV-unsafe paths can never be indexed or matched (append_video_meta
+      # skips them); bail out before the empty-meta fallback mislabels a
+      # perfectly good video as bad_video. The vmeta walk already warned.
+      tsv_path_safe "$bf" || continue
 
       # Load/append meta row for bf (must happen before the bad-video verdict below,
       # so the fallback never re-queries a row that may still be missing mid-run)
@@ -1506,7 +1510,9 @@ while IFS= read -r -d '' f; do
   fi
 
   # --- “video-fast” semantic join (cross or source self-check; not exact; videos only; and MD5 not matched) ---
-  if ( $DO_CROSS || $DO_SOURCE_SELF ) && $VIDEO_FAST && ! $EXACT && is_video_ext "$f"; then
+  # tsv_path_safe: unindexable paths must not fall through to the empty-meta
+  # bad_video fallback (same early-out as the backup similar-video loop).
+  if ( $DO_CROSS || $DO_SOURCE_SELF ) && $VIDEO_FAST && ! $EXACT && is_video_ext "$f" && tsv_path_safe "$f"; then
     # Load source meta from CSV (append if missing)
     read s_size s_dur s_codec s_w s_h s_mtime s_dbuck < <(
       awk -F'\t' -v p="$f" 'NR>2 && $1==p {print $2,$3,$4,$5,$6,$7,$8; exit}' "${SVMETA_FILE:-/dev/null}"

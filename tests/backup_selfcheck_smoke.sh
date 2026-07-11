@@ -78,6 +78,9 @@ if awk -F '\t' 'NR>2 && NF!=11 {exit 1}' "$vmeta"; then :; else
   fail "tab-in-name: vmeta index contains a corrupt (!=11 field) row"
 fi
 grep -q 'evilvid' "$vmeta" && fail "tab-in-name: tab-named video path leaked into vmeta index"
+if grep '"code":"bad_video"' "$events2" | grep -q 'evilvid'; then
+  fail "tab-in-name: good video falsely reported bad_video just because its path is TSV-unsafe"
+fi
 
 # --- vmeta liveness must tolerate rows whose file has since been deleted
 # (a dead path in the LAST retained row made the retention pipeline exit 1
