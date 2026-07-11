@@ -43,9 +43,9 @@ type Run struct {
 
 	mu      sync.RWMutex
 	status  RunStatus
-	events  []Event              // canonical history, in seq order
+	events  []Event               // canonical history, in seq order
 	subs    map[string]chan Event // SSE subscriber channels
-	done    chan struct{}        // closed when the run finishes
+	done    chan struct{}         // closed when the run finishes
 	cmd     *exec.Cmd
 	cancel  context.CancelFunc
 	journal *os.File

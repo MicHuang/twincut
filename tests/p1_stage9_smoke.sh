@@ -159,6 +159,9 @@ assert "D1: tab-in-path: quarantine file with tab in name does not exist" \
 assert "D1: tab-in-path: original source file left untouched" \
   '[[ -e "$TAB_SRC/$TAB_NAME.jpg" ]]'
 
+assert "D1: tab-in-path apply ends with run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_TAB_NDJSON"'
+
 # === D1b. newline-in-path — @base64 parser must preserve literal \n; same
 # qmove TSV guard must safely refuse to move it. ===
 NL_NAME="$(printf 'line1\nline2')"
@@ -189,6 +192,72 @@ assert "D1b: newline-in-path: quarantine file does not exist" \
 
 assert "D1b: newline-in-path: original source file left untouched" \
   '[[ -e "$NL_SRC/$NL_NAME.jpg" ]]'
+
+assert "D1b: newline-in-path apply ends with run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_NL_NDJSON"'
+
+# === D1c. tab-in-KEEPER — the matched path is written into the manifest
+# TSV `matched` column; the guard must refuse the move when the keeper
+# (not just the src) cannot be represented in the TSV. ===
+KTAB_NAME="$(printf 'keep%bafter' '\t')"
+KTAB_SRC="$TMP/srcD1c"; mkdir -p "$KTAB_SRC"
+cp "$SRC/keeper.jpg" "$KTAB_SRC/$KTAB_NAME.jpg"
+cp "$SRC/unrelated_big.jpg" "$KTAB_SRC/victim.jpg"
+KTAB_QUAR="$KTAB_SRC/_QUARANTINE/_thumbs"
+
+APPLY_KTAB="$TMP/apply_ktab.ndjson"
+jq -cn --arg src "$KTAB_SRC/victim.jpg" \
+      --arg dst "$KTAB_QUAR" \
+      --arg keep "$KTAB_SRC/$KTAB_NAME.jpg" \
+  '{type:"apply_move", src:$src, dst_dir:$dst, keeper:$keep, decision:"thumb_l2_exif"}' \
+  > "$APPLY_KTAB"
+
+APPLY_KTAB_NDJSON="$TMP/apply_ktab_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$KTAB_SRC" \
+  >"$APPLY_KTAB_NDJSON" 2>/dev/null < "$APPLY_KTAB" || true
+
+assert "D1c: tab-in-keeper apply emits no action kind=move (TSV guard blocks it)" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_KTAB_NDJSON") -eq 0 ]]'
+
+assert "D1c: tab-in-keeper apply emits warn io_error" \
+  '[[ $(grep -c "\"type\":\"warn\".*\"code\":\"io_error\"" "$APPLY_KTAB_NDJSON") -eq 1 ]]'
+
+assert "D1c: tab-in-keeper: victim file left untouched" \
+  '[[ -e "$KTAB_SRC/victim.jpg" ]]'
+
+assert "D1c: tab-in-keeper apply ends with run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_KTAB_NDJSON"'
+
+# === D1d. CR-in-path — carriage returns are invisible in logs and break
+# path round-trips through line-oriented consumers; guard must refuse. ===
+CR_NAME="$(printf 'cr%bafter' '\r')"
+CR_SRC="$TMP/srcD1d"; mkdir -p "$CR_SRC"
+cp "$SRC/keeper.jpg" "$CR_SRC/keeper.jpg"
+cp "$SRC/unrelated_big.jpg" "$CR_SRC/$CR_NAME.jpg"
+CR_QUAR="$CR_SRC/_QUARANTINE/_thumbs"
+
+APPLY_CR="$TMP/apply_cr.ndjson"
+jq -cn --arg src "$CR_SRC/$CR_NAME.jpg" \
+      --arg dst "$CR_QUAR" \
+      --arg keep "$CR_SRC/keeper.jpg" \
+  '{type:"apply_move", src:$src, dst_dir:$dst, keeper:$keep, decision:"thumb_l2_exif"}' \
+  > "$APPLY_CR"
+
+APPLY_CR_NDJSON="$TMP/apply_cr_result.ndjson"
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$CR_SRC" \
+  >"$APPLY_CR_NDJSON" 2>/dev/null < "$APPLY_CR" || true
+
+assert "D1d: CR-in-path apply emits no action kind=move (TSV guard blocks it)" \
+  '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_CR_NDJSON") -eq 0 ]]'
+
+assert "D1d: CR-in-path apply emits warn io_error" \
+  '[[ $(grep -c "\"type\":\"warn\".*\"code\":\"io_error\"" "$APPLY_CR_NDJSON") -eq 1 ]]'
+
+assert "D1d: CR-in-path: original source file left untouched" \
+  '[[ -e "$CR_SRC/$CR_NAME.jpg" ]]'
+
+assert "D1d: CR-in-path apply ends with run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_CR_NDJSON"'
 
 # === D2. zero-command apply — empty stdin is a no-op success ===
 ZERO_SRC="$TMP/srcD2"; mkdir -p "$ZERO_SRC"

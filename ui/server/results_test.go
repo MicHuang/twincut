@@ -266,8 +266,8 @@ func TestHumanBytes(t *testing.T) {
 		{1023, "1023 B"},
 		{1024, "1.0 KB"},
 		{mb, "1.0 MB"},
-		{mb*5/2, "2.5 MB"},   // 2.5 MB
-		{gb*34/10, "3.4 GB"}, // 3.4 GB
+		{mb * 5 / 2, "2.5 MB"},   // 2.5 MB
+		{gb * 34 / 10, "3.4 GB"}, // 3.4 GB
 	}
 	for _, c := range cases {
 		got := humanBytes(c.in)

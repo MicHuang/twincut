@@ -11,9 +11,9 @@ import (
 
 // DirEntry is a minimal listing record for the directory browser.
 type DirEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-	IsDir bool  `json:"is_dir"`
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	IsDir bool   `json:"is_dir"`
 	// Hidden is true for dot-files; the UI may hide them by default.
 	Hidden bool `json:"hidden"`
 }

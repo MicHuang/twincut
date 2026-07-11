@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	recentsFile  = "recents.json"
-	recentsMax   = 10
+	recentsFile = "recents.json"
+	recentsMax  = 10
 )
 
 // RecentsStore persists the user's most recently used scan folders to
