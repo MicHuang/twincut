@@ -10,12 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** ✅ COMPLETE — Follow-up hygiene wave F-H1 merged (PR #19 → `98c30aa`, 2026-07-11), on top of the completed 2026-07-05 remediation milestone (PRs #16/#17/#18). No active work; see "Next up" for remaining recorded follow-ups (vmeta guard, vid_eq design decision, optional polish).
+**Current milestone:** F-H2 vmeta-index path guard IN REVIEW — PR #20 open, CI green, awaiting user merge decision (claude@mac-joyce, branch `claude/vmeta-guard`). On top of merged F-H1 (PR #19 → `98c30aa`, 2026-07-11) and the completed 2026-07-05 remediation milestone (PRs #16/#17/#18). See "Next up" for the other recorded follow-ups (vid_eq design decision, optional polish).
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
+| F-H2 | vmeta-index path guard + refresh crash fix | claude@mac-joyce | in-review | PR #20 open, CI green both platforms, **awaiting user merge decision** (auto-merge denied by permission policy: agent-authored PR, Tier-1-only review). Scope grew beyond the recorded note — actual consequence was a full run crash, not \"bounded\": (1) `tsv_path_safe` guard at the `append_video_meta` choke point (covers all 3 writers, more complete than the walk-only shape suggested by F-H1 review); (2) retention loops if-form so a dead last row doesn't leak exit 1 → `set -e` killed the run at end-of-run refresh, reproducible with NO evil filename (fix-mode quarantining an indexed video sufficed; line-1258 call only survived because command substitution drops errexit); (3) Tier-1 Important fixed: TSV-unsafe path no longer falls through empty-meta fallback to a false `bad_video` label. All 3 red-first in `tests/backup_selfcheck_smoke.sh`. `make test` + all smokes + shellcheck CI gate green. Tier-1 grok-4.5 Approve-with-nits; Important fixed in-branch (`f257ea0`). |
 | F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | done | PR #19 merged (`98c30aa`, 2026-07-11). All DoD met: `make test` + all smokes green; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean; CI green both platforms. Per-task reviews Approved ×4; final whole-branch (fable) "Yes"; Tier-1 gemini OK (pick_keep comment MINOR fixed in-branch; rest recorded in "Next up"). |
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
 | R-W2 | Remediation Wave 2: Go UI security/robustness (origin guard, panic, apply validation) | claude@mac-joyce | done | PR #17 merged (`a780610`, 2026-07-10). originGuard mux-wide + wiring pin; apply preview validation; nil-deref → 404; \r-aware stderr drain; dead code out. Tier-1 gemini OK. | Plan Tasks 3-4. DoD: `cd ui && go test ./...` green incl. new origin/history/apply tests, Tier-1 review pass. Independent of W1. |
@@ -31,7 +32,7 @@
 
 ### Next up
 - **F-H1 (in-review) cleared the first four former follow-ups** (KEEP determinism remainder, TSV-guard extension incl. `\r`, stage9 D1/D1b `run_end` asserts, gofmt ui). Remaining recorded follow-ups, none blocking:
-  - **vmeta-index path guard** (NEW, from F-H1 final review): `ensure_video_meta_index` (`bin/twincut.sh` ~730-762) still writes tab/CR-named video paths unguarded into the vmeta TSV and re-appends a corrupt row every run (liveness check never matches). Bounded: qmove guards prevent any file action; worst case a failed `mv` on a truncated path. Same fix shape as F-H1 Task 2 (`tsv_path_safe` skip + warn at the walk).
+  - ~~vmeta-index path guard~~ → claimed as F-H2 (in-progress, see task table).
   - **vid_eq**: strict re-verify is redundant (fast/full run identical checks ⇒ 2 wasted ffprobe calls/pair) — needs a design decision, not hygiene; usage string duplicated 3×.
   - **Go**: apply-endpoint 422 error strings echo raw `prevSnap.Mode` (low-risk info pattern).
   - **Optional test/comment polish** (F-H1 final review + Tier-1, none justify a re-spin): K3 could also assert `dup_group.keep_path` JSON; `tests/keep_policy_smoke.sh` could note the equal-mtime pin has most discriminating power on ext4 (APFS find order coincides with byte order); apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir); stage9 D1-D1d `|| true` on the apply invocations masks the CLI exit code (gemini MINOR — cleanup should touch all four sections together since D1/D1b pre-date this wave).
@@ -57,6 +58,12 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-11 `[claude]@mac-joyce` — F-H2 implemented, PR #20 open, awaiting user merge
+- vmeta-index guard follow-up turned out to be a crash-class bug, not "bounded" as recorded: a corrupt/dead row in the LAST retained position made the retention pipeline exit 1 and `set -e` killed the run at the end-of-run refresh (line ~1704), after quarantine moves but before `run_end`/SUMMARY. Reproducible with no evil filename — fix-mode quarantining an indexed video sufficed. The startup call site (line ~1258) only survived because `$( )` command substitution drops errexit by default.
+- Three fixes, all red-first in `tests/backup_selfcheck_smoke.sh` (scenarios: tab-named video, deleted-video pruning, fix-mode quarantine+refresh; keeper-is-jpg trick makes the dead-row layout find-order-independent): (1) `tsv_path_safe` guard at `append_video_meta` choke point — deviates deliberately from the review note's walk-only suggestion because the two similar-video self-heals are also writers; (2) retention loops `&&`→`if` so no status leak; (3) `tsv_path_safe` early-out at both similar-video loop entries so unsafe paths don't get falsely labeled `bad_video` (grok Tier-1 Important, fixed in-branch `f257ea0`).
+- Verification: `make test`, p0 (28), stage9 (48), stage11 (6), events contract, backup_selfcheck/vid_eq/keep_policy smokes, `go test ./...`, exact CI shellcheck warning gate — all green locally; CI green on both platforms. Tier-1 grok-4.5: Approve with nits.
+- **Next for whoever picks up: user decides merge of PR #20** (auto-merge denied by permission policy — agent-authored PR with model-only review). After merge: close F-H2 on the board, prune claim branch, sync peers. Reviewer nits NOT taken (recorded here as accepted residuals): newline/CR smoke variant (tab is representative), single-warn-per-path dedup, mid-dead-row documentation assert.
 
 ### 2026-07-11 `[claude]@mac-joyce` — F-H1 closed: PR #19 merged (`98c30aa`)
 - User merged (squash); board updated (F-H1 → done, milestone marked complete), local + remote claim branches pruned, synced to mac-yiqi.
