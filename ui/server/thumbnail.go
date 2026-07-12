@@ -108,7 +108,7 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 
 	prevSnap := previewRun.Snapshot()
 	if prevSnap.Mode != "thumbnail_detect_preview" {
-		http.Error(w, "preview_run_id refers to a non-thumbnail-preview run (mode="+prevSnap.Mode+")", http.StatusUnprocessableEntity)
+		http.Error(w, "preview_run_id refers to a non-thumbnail-preview run", http.StatusUnprocessableEntity)
 		return
 	}
 	if prevSnap.Status == RunStatusRunning {
