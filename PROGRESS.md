@@ -10,12 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** ✅ COMPLETE — F-H2 vmeta-index path guard + refresh crash fix merged (PR #20 → `e3d6098`, 2026-07-11), after F-H1 (PR #19 → `98c30aa`) and the 2026-07-05 remediation milestone (PRs #16/#17/#18). No active work; see "Next up" for remaining recorded follow-ups (vid_eq design decision, Go 422 mode-echo, optional polish).
+**Current milestone:** F-H3 vid_eq strict-mode single-pass cleanup implemented and in review as draft PR #21; prior F-H2/F-H1 and 2026-07-05 remediation milestones remain complete.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
+| F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | in_review | Draft PR #21. Removed the redundant second metadata/ffprobe pass in both strict-mode similar-video loops while preserving `video_strict` semantics; centralized `vid_eq.sh` usage output. Red-first invocation-count regression now covers both production call sites. Local `make test` green; GitHub Go/shell/shellcheck/macOS-thumbnail checks green; Tier-1 grok-4.5: Ship with nits, both Important follow-ups fixed in `cfefb16`. Branch: `codex/f-h3-vid-eq-single-pass`. |
 | F-H2 | vmeta-index path guard + refresh crash fix | claude@mac-joyce | done | PR #20 merged (`e3d6098`, 2026-07-11, user-approved squash). Scope grew beyond the recorded note — actual consequence was a full run crash, not \"bounded\": (1) `tsv_path_safe` guard at the `append_video_meta` choke point (covers all 3 writers, more complete than the walk-only shape suggested by F-H1 review); (2) retention loops if-form so a dead last row doesn't leak exit 1 → `set -e` killed the run at end-of-run refresh, reproducible with NO evil filename (fix-mode quarantining an indexed video sufficed; line-1258 call only survived because command substitution drops errexit); (3) Tier-1 Important fixed: TSV-unsafe path no longer falls through empty-meta fallback to a false `bad_video` label. All 3 red-first in `tests/backup_selfcheck_smoke.sh`. `make test` + all smokes + shellcheck CI gate green. Tier-1 grok-4.5 Approve-with-nits; Important fixed in-branch (`f257ea0`). |
 | F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | done | PR #19 merged (`98c30aa`, 2026-07-11). All DoD met: `make test` + all smokes green; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean; CI green both platforms. Per-task reviews Approved ×4; final whole-branch (fable) "Yes"; Tier-1 gemini OK (pick_keep comment MINOR fixed in-branch; rest recorded in "Next up"). |
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
@@ -33,7 +34,7 @@
 ### Next up
 - **F-H1 (in-review) cleared the first four former follow-ups** (KEEP determinism remainder, TSV-guard extension incl. `\r`, stage9 D1/D1b `run_end` asserts, gofmt ui). Remaining recorded follow-ups, none blocking:
   - ~~vmeta-index path guard~~ → claimed as F-H2 (in-progress, see task table).
-  - **vid_eq**: strict re-verify is redundant (fast/full run identical checks ⇒ 2 wasted ffprobe calls/pair) — needs a design decision, not hygiene; usage string duplicated 3×.
+  - **vid_eq**: strict re-verify + usage dedup claimed as F-H3 on `codex/f-h3-vid-eq-single-pass`.
   - **Go**: apply-endpoint 422 error strings echo raw `prevSnap.Mode` (low-risk info pattern).
   - **Optional test/comment polish** (F-H1 final review + Tier-1, none justify a re-spin): K3 could also assert `dup_group.keep_path` JSON; `tests/keep_policy_smoke.sh` could note the equal-mtime pin has most discriminating power on ext4 (APFS find order coincides with byte order); apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir); stage9 D1-D1d `|| true` on the apply invocations masks the CLI exit code (gemini MINOR — cleanup should touch all four sections together since D1/D1b pre-date this wave).
   - **Accepted residuals**: newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort; `emit_warn --path` blames the action target even when matched/dir is the offending field (convention).
@@ -58,6 +59,17 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-11 `[codex]@macmini-yiqi` — F-H3 implemented, draft PR #21 green
+- Removed strict mode's redundant bare/full `vid_eq` pass at both backup-self and cross/source-self production call sites. Strict size/duration thresholds, vmeta fps/bitrate filtering, `video_strict` event labels, strict decision labels, and the direct helper full/`EQUAL` CLI contract remain intact. Centralized `vid_eq.sh` usage output and updated `CLAUDE.md` to the single-pass contract.
+- TDD evidence: new cross-check invocation-count regression failed first with `strict candidate should call vid_eq once, got 2`, then passed after the production change. Tier-1 grok-4.5 returned `TEAM_RESULT=OK ok` / Ship with nits; fixed both Important follow-ups by adding a backup-self call-site regression and refreshing `CLAUDE.md`.
+- Verification: sandbox-safe `make test` green (script 12/12, Go, event contract 18/18, P0 28/28, Stage 11 6/6, vid_eq/backup-selfcheck/keep-policy smokes); `bash -n` and `git diff --check` green. Local shellcheck was unavailable, but draft PR #21's GitHub shellcheck gate passed along with Go, shell, and macOS thumbnail jobs.
+- Commits: `06d3291` implementation, `cfefb16` reviewer follow-up. Next: user review/merge of draft PR #21; after merge mark F-H3 done, prune branch, and sync peers.
+
+### 2026-07-11 `[codex]@macmini-yiqi` — F-H3 claimed: vid_eq strict-mode single pass
+- Checked the live board plus open GitHub issues/PRs; no active work or collision existed. `agent-team handoff-check f-h3-vid-eq-single-pass` passed online from fresh branch `codex/f-h3-vid-eq-single-pass` at `origin/main`.
+- Scope: remove the two redundant strict-mode bare `vid_eq` re-verification calls (fast/full currently execute identical metadata checks under the same exported strict thresholds), keep the existing strict fps/bitrate vmeta filter and `video_strict` event/decision labels, and deduplicate `bin/vid_eq.sh` usage output.
+- Verification plan: add a red-first invocation-count regression, run `bash tests/vid_eq_smoke.sh`, `make test`, relevant smokes, the CI shellcheck warning gate, then Tier-1 review because matching behavior is business logic.
 
 ### 2026-07-11 `[claude]@mac-joyce` — F-H2 closed: PR #20 merged (`e3d6098`)
 - User approved wrap-up; squash-merged, board updated (F-H2 → done, milestone complete), local + remote claim branches pruned, synced to mac-yiqi.

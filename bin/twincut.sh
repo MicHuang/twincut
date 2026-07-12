@@ -869,7 +869,7 @@ Notes:
   - During --dry-run, a source-side cache (<source>/.source_hashindex.txt) is created/updated.
   - After a successful non-dry run, the source cache is removed unless --keep-source-cache.
   - Default video-fast is enabled (size±0.5%, dur±0.3s). Use --exact for hash-only.
-  - In --video-fast-strict, join also compares fps/bitrate (if present) and re-verifies via vid_eq's metadata-level EQUAL check.
+  - In --video-fast-strict, join also compares fps/bitrate (if present) and vid_eq applies tighter size/duration thresholds in one metadata pass.
   - Symlinks are NOT followed by default. Use --follow-symlinks to opt in.
   - Every action (move/delete) is recorded in <quarantine>/_manifest-<RUN_ID>.tsv.
     Use --restore <manifest> to roll back a previous run.
@@ -1360,11 +1360,6 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
         [[ -z "$cand" || "$cand" == "$bf" ]] && continue
         out="$("$V_EQ_BIN" --fast "$bf" "$cand" 2>/dev/null || true)"
         if echo "$out" | grep -q "CANDIDATE:yes"; then
-          # strict 模式再跑一次 full
-          if $VIDEO_FAST_STRICT; then
-            out2="$("$V_EQ_BIN" "$bf" "$cand" 2>/dev/null || true)"
-            echo "$out2" | grep -q "EQUAL:yes" || { continue; }
-          fi
           # Keep policy: prefer oldest mtime
           pick_keep "$bf" "$cand"
           _sim_reason="video_fast"; $VIDEO_FAST_STRICT && _sim_reason="video_strict"
@@ -1562,11 +1557,6 @@ while IFS= read -r -d '' f; do
         [[ "$b" == "$f" ]] && continue
         out="$("$V_EQ_BIN" --fast "$f" "$b" 2>/dev/null || true)"
         if echo "$out" | grep -q "CANDIDATE:yes"; then
-          # strict 模式再跑一次 full
-          if $VIDEO_FAST_STRICT; then
-            out2="$("$V_EQ_BIN" "$f" "$b" 2>/dev/null || true)"
-            echo "$out2" | grep -q "EQUAL:yes" || { continue; }
-          fi
           _sim_reason="video_fast"; $VIDEO_FAST_STRICT && _sim_reason="video_strict"
           if $DO_CROSS; then
             # Cross: backup-side $b is the keeper; source-side $f is removed.
