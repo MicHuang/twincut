@@ -60,7 +60,39 @@ SIZE_PCT=5 DUR_SEC=0.3 TWINCUT_RUN_ID=r_videq_e2e \
 grep -q '"type":"dup_group"' "$events" || fail "e2e: no dup_group emitted"
 grep -q '"match_reason":"video_fast"' "$events" || fail "e2e: no video_fast match"
 
-# 6. --size-pct / --dur-sec as the last argument must print usage and exit 2,
+# 6. Strict cross-check must evaluate an accepted candidate pair with one
+#    vid_eq metadata pass. --fast and bare/full currently perform identical
+#    checks under the same strict SIZE_PCT/DUR_SEC environment.
+strict_src="$work/strict-src"; strict_bk="$work/strict-bk"
+mkdir -p "$strict_src" "$strict_bk"
+cp "$HI" "$strict_src/a.mp4"
+cp "$HI" "$strict_bk/b.mp4"
+printf x >> "$strict_bk/b.mp4"  # distinct hash, 1-byte size delta, valid video
+
+counting_ve="$work/counting-vid-eq.sh"
+cat > "$counting_ve" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$V_EQ_CALL_LOG"
+exec "$REAL_V_EQ" "$@"
+EOF
+chmod +x "$counting_ve"
+
+strict_calls="$work/strict-vid-eq.calls"
+strict_events="$work/strict.ndjson"
+REAL_V_EQ="$VE" V_EQ_CALL_LOG="$strict_calls" V_EQ_BIN="$counting_ve" \
+  TWINCUT_RUN_ID=r_videq_strict "$TC" --source "$strict_src" \
+  --backup "$strict_bk" --video-fast-strict --dry-run --json-events \
+  >"$strict_events" 2>"$work/strict.log" \
+  || fail "strict e2e exited nonzero (see $work/strict.log)"
+grep -q '"match_reason":"video_strict"' "$strict_events" \
+  || fail "strict e2e: no video_strict match"
+strict_call_count="$(wc -l < "$strict_calls" | tr -d ' ')"
+[[ "$strict_call_count" == "1" ]] \
+  || fail "strict candidate should call vid_eq once, got $strict_call_count"
+grep -q '^--fast ' "$strict_calls" \
+  || fail "strict candidate should use the labeled --fast contract"
+
+# 7. --size-pct / --dur-sec as the last argument must print usage and exit 2,
 #    not crash on an unbound $2 under `set -u`.
 rc=0; err="$("$VE" --size-pct 2>&1)" || rc=$?
 [[ $rc -eq 2 ]] || fail "--size-pct with no value should exit 2: got rc=$rc"

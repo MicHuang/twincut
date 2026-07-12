@@ -8,8 +8,8 @@
 # Fast and full run the same METADATA checks (size window, duration window,
 # codec, WxH); "strictness" comes from the SIZE_PCT/DUR_SEC values the caller
 # exports (twincut tightens them under --video-fast-strict). Never decodes frames.
-# twincut.sh --video-fast-strict calls the bare form and greps EQUAL:yes,
-# so the default mode MUST stay full/EQUAL.
+# twincut uses the labeled --fast form once per candidate; the bare full/EQUAL
+# form remains part of this helper's public CLI contract for direct callers.
 #
 # Env knobs (twincut.sh exports these so --size-pct/--dur-sec propagate):
 #   SIZE_PCT  size window in percent   (default 0.5, matches twincut)
@@ -20,6 +20,10 @@ export LC_ALL=C
 SIZE_PCT=${SIZE_PCT:-0.5}
 DUR_SEC=${DUR_SEC:-0.3}
 MODE="full"
+
+usage(){
+  echo "Usage: $(basename "$0") [--fast] [--size-pct N] [--dur-sec SEC] <fileA> <fileB>" >&2
+}
 
 _fsize(){ stat -c %s -- "$1" 2>/dev/null || stat -f %z -- "$1" 2>/dev/null || echo 0; }
 # One value per call — avoids depending on ffprobe's canonical field order,
@@ -62,13 +66,13 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
       --fast) MODE="fast"; shift;;
       --size-pct)
         if [[ $# -lt 2 ]]; then
-          echo "Usage: $(basename "$0") [--fast] [--size-pct N] [--dur-sec SEC] <fileA> <fileB>" >&2
+          usage
           exit 2
         fi
         SIZE_PCT="$2"; shift 2;;
       --dur-sec)
         if [[ $# -lt 2 ]]; then
-          echo "Usage: $(basename "$0") [--fast] [--size-pct N] [--dur-sec SEC] <fileA> <fileB>" >&2
+          usage
           exit 2
         fi
         DUR_SEC="$2"; shift 2;;
@@ -76,7 +80,7 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
     esac
   done
   if [[ ${#ARGS[@]} -ne 2 ]]; then
-    echo "Usage: $(basename "$0") [--fast] [--size-pct N] [--dur-sec SEC] <fileA> <fileB>" >&2
+    usage
     exit 2
   fi
   vid_eq "${ARGS[0]}" "${ARGS[1]}"
