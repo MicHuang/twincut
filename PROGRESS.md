@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** F-H4 Go apply-endpoint 422 mode-echo redaction implemented; independent review and draft-PR creation blocked by the current approval usage limit. F-H3 merged as PR #21 (`981d513`) and prior milestones remain complete.
+**Current milestone:** F-H4 Go apply-endpoint 422 mode-echo redaction implemented and in review as draft PR #22. F-H3 merged as PR #21 (`981d513`) and prior milestones remain complete.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | blocked | Implementation pushed as `600fd65` on `codex/f-h4-go-422-mode-redaction`: both handlers now return stable 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover non-disclosure and exact response contracts. Focused/full Go tests and `make test` green. Blocker: approval usage limit rejected required `grok-review` and GitHub draft-PR creation; no substitution/workaround attempted. Next after limit resets: run Tier-1 `grok-review`, address findings, create draft PR, run CI. User input is only required if proceeding before reset. |
+| F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | in_review | Draft PR #22. Self-check, cross-check, and reviewer-identified thumbnail apply handlers now return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover non-disclosure and exact response contracts for all three. Focused/full Go tests and `make test` green. Tier-1 grok-4.5: `TEAM_RESULT=OK ok`, Ship; thumbnail residual fixed in `e45a73c`. Branch: `codex/f-h4-go-422-mode-redaction`. |
 | F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
 | F-H2 | vmeta-index path guard + refresh crash fix | claude@mac-joyce | done | PR #20 merged (`e3d6098`, 2026-07-11, user-approved squash). Scope grew beyond the recorded note — actual consequence was a full run crash, not \"bounded\": (1) `tsv_path_safe` guard at the `append_video_meta` choke point (covers all 3 writers, more complete than the walk-only shape suggested by F-H1 review); (2) retention loops if-form so a dead last row doesn't leak exit 1 → `set -e` killed the run at end-of-run refresh, reproducible with NO evil filename (fix-mode quarantining an indexed video sufficed; line-1258 call only survived because command substitution drops errexit); (3) Tier-1 Important fixed: TSV-unsafe path no longer falls through empty-meta fallback to a false `bad_video` label. All 3 red-first in `tests/backup_selfcheck_smoke.sh`. `make test` + all smokes + shellcheck CI gate green. Tier-1 grok-4.5 Approve-with-nits; Important fixed in-branch (`f257ea0`). |
 | F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | done | PR #19 merged (`98c30aa`, 2026-07-11). All DoD met: `make test` + all smokes green; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean; CI green both platforms. Per-task reviews Approved ×4; final whole-branch (fable) "Yes"; Tier-1 gemini OK (pick_keep comment MINOR fixed in-branch; rest recorded in "Next up"). |
@@ -47,7 +47,7 @@
 - Run `agent-team handoff-check <task-slug>` first (sync state + existing-claim check), then branch `<handle>/<task>` off synced main, set owner + in-progress, commit `chore(progress): claim <task>`, and push the branch before working. See agent-team/docs/peer-handoff.md §3.
 
 ### Blocked / waiting on
-- F-H4 independent Tier-1 review and draft-PR creation are blocked by the approval usage limit until the reported reset at 2026-07-12 01:02 local time, unless the user explicitly authorizes proceeding after being informed. Implementation commit `600fd65` is already pushed; do not substitute reviewers or bypass the wrapper/approval layer.
+- None currently. F-H4 draft PR #22 awaits CI/user merge.
 - Local pHash-dependent smoke sections may skip unless Pillow/imagehash are installed; CI installs them.
 
 ## Archive Index
@@ -61,6 +61,11 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-11 `[codex]@macmini-yiqi` — F-H4 Tier-1 passed; draft PR #22 open
+- User explicitly authorized continuing before the reported approval reset; the required `grok-review` then ran successfully and returned `TEAM_RESULT=OK ok` / Ship for the self-check and cross-check redaction in `600fd65`.
+- Reviewer found the same raw-mode echo in thumbnail apply. Folded that same-class residual into F-H4 in `e45a73c`: added a sentinel/exact-body red-first regression, removed the raw mode from the 422 response, and reran focused tests, full `go test ./... -count=1`, and repo `make test` green.
+- Draft PR #22 opened from `codex/f-h4-go-422-mode-redaction`; next is GitHub CI, then user merge. Accepted reviewer notes left out of scope: server-owned `status=` strings and request `preview_run_id` echo on some 404 paths.
 
 ### 2026-07-11 `[codex]@macmini-yiqi` — F-H4 implemented; review/publish gate blocked
 - TDD fix in `600fd65`: self-check and cross-check apply wrong-mode 422 responses no longer concatenate raw `prevSnap.Mode`; endpoint-specific stable messages and status 422 remain. New tests set `internal_sensitive_mode`, assert it is absent, and pin the exact public response body. RED first showed both leaks; GREEN after the two-line production fix.
