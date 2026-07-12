@@ -131,7 +131,7 @@ func (s *Server) handleCrossCheckApply(w http.ResponseWriter, r *http.Request) {
 	}
 	prevSnap := previewRun.Snapshot()
 	if prevSnap.Mode != "cross_check_preview" {
-		http.Error(w, "preview_run_id refers to a non-cross-check-preview run (mode="+prevSnap.Mode+")", http.StatusUnprocessableEntity)
+		http.Error(w, "preview_run_id refers to a non-cross-check-preview run", http.StatusUnprocessableEntity)
 		return
 	}
 	if prevSnap.Status == RunStatusRunning {

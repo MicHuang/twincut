@@ -94,11 +94,12 @@ func TestResolveSimilarVideo(t *testing.T) {
 func TestHandleSelfCheckApply_RejectsWrongModePreview(t *testing.T) {
 	srv := newThumbTestServer(t)
 	srcPath := os.Getenv("HOME")
+	leakedMode := "internal_sensitive_mode"
 	r := runFromEvents(t, []string{
 		`{"type":"run_start","ts":1,"run_id":"prev-wrongmode","mode":"thumbnail_detect_preview","source":"` + srcPath + `"}`,
 		`{"type":"run_end","ts":2,"run_id":"prev-wrongmode","cancelled":false}`,
 	})
-	r.Mode = "thumbnail_detect_preview" // not a self_check_preview
+	r.Mode = leakedMode // not a self_check_preview; must not be reflected
 	r.Args = []string{"--thumbnail-detect", "--source", srcPath, "--dry-run"}
 	storeRun(srv.runs, "prev-wrongmode", r)
 
@@ -109,6 +110,12 @@ func TestHandleSelfCheckApply_RejectsWrongModePreview(t *testing.T) {
 	srv.handleSelfCheckApply(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("wrong-mode preview: got %d, want 422", w.Code)
+	}
+	if strings.Contains(w.Body.String(), leakedMode) {
+		t.Fatalf("wrong-mode preview leaked internal mode in response: %q", w.Body.String())
+	}
+	if got, want := w.Body.String(), "preview_run_id refers to a non-self-check-preview run\n"; got != want {
+		t.Fatalf("wrong-mode response = %q, want %q", got, want)
 	}
 }
 

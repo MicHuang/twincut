@@ -136,7 +136,7 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	}
 	prevSnap := previewRun.Snapshot()
 	if prevSnap.Mode != "self_check_preview" {
-		http.Error(w, "preview_run_id refers to a non-self-check-preview run (mode="+prevSnap.Mode+")", http.StatusUnprocessableEntity)
+		http.Error(w, "preview_run_id refers to a non-self-check-preview run", http.StatusUnprocessableEntity)
 		return
 	}
 	if prevSnap.Status == RunStatusRunning {
