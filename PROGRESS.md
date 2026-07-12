@@ -10,13 +10,14 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** F-H3 vid_eq strict-mode single-pass cleanup implemented and in review as draft PR #21; prior F-H2/F-H1 and 2026-07-05 remediation milestones remain complete.
+**Current milestone:** F-H4 Go apply-endpoint 422 mode-echo redaction in progress; F-H3 merged as PR #21 (`981d513`) and prior milestones remain complete.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | in_review | Draft PR #21. Removed the redundant second metadata/ffprobe pass in both strict-mode similar-video loops while preserving `video_strict` semantics; centralized `vid_eq.sh` usage output. Red-first invocation-count regression now covers both production call sites. Local `make test` green; GitHub Go/shell/shellcheck/macOS-thumbnail checks green; Tier-1 grok-4.5: Ship with nits, both Important follow-ups fixed in `cfefb16`. Branch: `codex/f-h3-vid-eq-single-pass`. |
+| F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | in_progress | Remove raw `prevSnap.Mode` from wrong-mode 422 responses in self-check and cross-check apply handlers while preserving status and actionable stable text. DoD: red-first sentinel non-disclosure tests for both endpoints, focused/full Go tests, `make test`, Tier-1 review because this is a security-hardening response change. Branch: `codex/f-h4-go-422-mode-redaction`. |
+| F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
 | F-H2 | vmeta-index path guard + refresh crash fix | claude@mac-joyce | done | PR #20 merged (`e3d6098`, 2026-07-11, user-approved squash). Scope grew beyond the recorded note — actual consequence was a full run crash, not \"bounded\": (1) `tsv_path_safe` guard at the `append_video_meta` choke point (covers all 3 writers, more complete than the walk-only shape suggested by F-H1 review); (2) retention loops if-form so a dead last row doesn't leak exit 1 → `set -e` killed the run at end-of-run refresh, reproducible with NO evil filename (fix-mode quarantining an indexed video sufficed; line-1258 call only survived because command substitution drops errexit); (3) Tier-1 Important fixed: TSV-unsafe path no longer falls through empty-meta fallback to a false `bad_video` label. All 3 red-first in `tests/backup_selfcheck_smoke.sh`. `make test` + all smokes + shellcheck CI gate green. Tier-1 grok-4.5 Approve-with-nits; Important fixed in-branch (`f257ea0`). |
 | F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | done | PR #19 merged (`98c30aa`, 2026-07-11). All DoD met: `make test` + all smokes green; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean; CI green both platforms. Per-task reviews Approved ×4; final whole-branch (fable) "Yes"; Tier-1 gemini OK (pick_keep comment MINOR fixed in-branch; rest recorded in "Next up"). |
 | R-W1 | Remediation Wave 1: matching-engine correctness (vid_eq rewrite + read-crash class) | claude@mac-joyce | done | PR #16 merged (`9cf6928`, 2026-07-09). All DoD met: both new smokes + `make test` green; Tier-1 gemini OK on main diff + grok-4.5 OK on incremental fix (gemini wrapper was down mid-review — model-ID rot, fixed in agent-team PR #47; user authorized grok substitution). The final-review bad-video-fallback race was FIXED pre-merge (not deferred). |
@@ -34,8 +35,8 @@
 ### Next up
 - **F-H1 (in-review) cleared the first four former follow-ups** (KEEP determinism remainder, TSV-guard extension incl. `\r`, stage9 D1/D1b `run_end` asserts, gofmt ui). Remaining recorded follow-ups, none blocking:
   - ~~vmeta-index path guard~~ → claimed as F-H2 (in-progress, see task table).
-  - **vid_eq**: strict re-verify + usage dedup claimed as F-H3 on `codex/f-h3-vid-eq-single-pass`.
-  - **Go**: apply-endpoint 422 error strings echo raw `prevSnap.Mode` (low-risk info pattern).
+  - ~~**vid_eq** strict re-verify + usage dedup~~ → F-H3 done via PR #21.
+  - **Go** apply-endpoint 422 mode echo claimed as F-H4 on `codex/f-h4-go-422-mode-redaction`.
   - **Optional test/comment polish** (F-H1 final review + Tier-1, none justify a re-spin): K3 could also assert `dup_group.keep_path` JSON; `tests/keep_policy_smoke.sh` could note the equal-mtime pin has most discriminating power on ext4 (APFS find order coincides with byte order); apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir); stage9 D1-D1d `|| true` on the apply invocations masks the CLI exit code (gemini MINOR — cleanup should touch all four sections together since D1/D1b pre-date this wave).
   - **Accepted residuals**: newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort; `emit_warn --path` blames the action target even when matched/dir is the offending field (convention).
   - The remediation plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
@@ -59,6 +60,11 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-11 `[codex]@macmini-yiqi` — F-H3 merged/cleaned; F-H4 claimed
+- User approved F-H3 merge. Marked draft PR #21 ready, squash-merged it as `981d513`, fast-forwarded local `main`, and deleted local/remote `codex/f-h3-vid-eq-single-pass` branches.
+- Claimed F-H4 from fresh `origin/main`: `agent-team handoff-check f-h4-go-422-mode-redaction` passed online with no existing claim, on branch `codex/f-h4-go-422-mode-redaction`.
+- Scope: self-check and cross-check apply wrong-mode 422 responses must no longer concatenate raw `prevSnap.Mode`; retain 422 and stable endpoint-specific guidance. Verification plan: sentinel-mode red-first tests on both handlers, focused and full Go tests, repo `make test`, then Tier-1 review.
 
 ### 2026-07-11 `[codex]@macmini-yiqi` — F-H3 implemented, draft PR #21 green
 - Removed strict mode's redundant bare/full `vid_eq` pass at both backup-self and cross/source-self production call sites. Strict size/duration thresholds, vmeta fps/bitrate filtering, `video_strict` event labels, strict decision labels, and the direct helper full/`EQUAL` CLI contract remain intact. Centralized `vid_eq.sh` usage output and updated `CLAUDE.md` to the single-pass contract.
