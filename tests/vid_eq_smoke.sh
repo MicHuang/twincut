@@ -92,7 +92,31 @@ strict_call_count="$(wc -l < "$strict_calls" | tr -d ' ')"
 grep -q '^--fast ' "$strict_calls" \
   || fail "strict candidate should use the labeled --fast contract"
 
-# 7. --size-pct / --dur-sec as the last argument must print usage and exit 2,
+# 7. Backup-self has a separate production call site and evaluates a two-file
+#    pair in both directions. It must use two labeled --fast calls, never the
+#    old four-call fast+full shape.
+strict_self="$work/strict-self"; mkdir -p "$strict_self"
+cp "$HI" "$strict_self/a.mp4"
+cp "$HI" "$strict_self/b.mp4"
+printf x >> "$strict_self/b.mp4"
+
+strict_self_calls="$work/strict-self-vid-eq.calls"
+strict_self_events="$work/strict-self.ndjson"
+REAL_V_EQ="$VE" V_EQ_CALL_LOG="$strict_self_calls" V_EQ_BIN="$counting_ve" \
+  TWINCUT_RUN_ID=r_videq_strict_self "$TC" --backup "$strict_self" \
+  --report-backup-dupes --video-fast-strict --dry-run --json-events \
+  >"$strict_self_events" 2>"$work/strict-self.log" \
+  || fail "strict backup-self exited nonzero (see $work/strict-self.log)"
+grep -q '"match_reason":"video_strict"' "$strict_self_events" \
+  || fail "strict backup-self: no video_strict match"
+strict_self_call_count="$(wc -l < "$strict_self_calls" | tr -d ' ')"
+[[ "$strict_self_call_count" == "2" ]] \
+  || fail "strict backup-self should call vid_eq twice, got $strict_self_call_count"
+if grep -qv '^--fast ' "$strict_self_calls"; then
+  fail "strict backup-self must not use the bare full/EQUAL contract"
+fi
+
+# 8. --size-pct / --dur-sec as the last argument must print usage and exit 2,
 #    not crash on an unbound $2 under `set -u`.
 rc=0; err="$("$VE" --size-pct 2>&1)" || rc=$?
 [[ $rc -eq 2 ]] || fail "--size-pct with no value should exit 2: got rc=$rc"
