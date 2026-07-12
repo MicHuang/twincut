@@ -506,11 +506,12 @@ func TestHandleThumbnailsApply_PassesJsonInAndSource(t *testing.T) {
 func TestHandleThumbnailsApply_RejectsWrongMode(t *testing.T) {
 	srv := newThumbTestServer(t)
 	srcPath := os.Getenv("HOME")
+	leakedMode := "internal_sensitive_mode"
 	r := runFromEvents(t, []string{
 		`{"type":"run_start","ts":1,"run_id":"wrong-mode","mode":"self_check_preview","source":"` + srcPath + `"}`,
 		`{"type":"run_end","ts":2,"run_id":"wrong-mode","total":0,"dupes":0,"moved":0,"cancelled":false}`,
 	})
-	r.Mode = "self_check_preview"
+	r.Mode = leakedMode
 	r.Args = []string{"--self-check", "--source", srcPath, "--dry-run", "--json-events"}
 	storeRun(srv.runs, "wrong-mode", r)
 
@@ -527,8 +528,11 @@ func TestHandleThumbnailsApply_RejectsWrongMode(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", resp.StatusCode, http.StatusUnprocessableEntity, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "non-thumbnail-preview") {
-		t.Errorf("body missing 'non-thumbnail-preview'; got: %s", body)
+	if strings.Contains(body, leakedMode) {
+		t.Fatalf("wrong-mode preview leaked internal mode in response: %q", body)
+	}
+	if want := "preview_run_id refers to a non-thumbnail-preview run\n"; body != want {
+		t.Fatalf("wrong-mode response = %q, want %q", body, want)
 	}
 }
 
