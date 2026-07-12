@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** F-H4 Go apply-endpoint 422 mode-echo redaction implemented and in review as draft PR #22. F-H3 merged as PR #21 (`981d513`) and prior milestones remain complete.
+**Current milestone:** ✅ COMPLETE — F-H4 Go apply-endpoint 422 mode-echo redaction merged as PR #22 (`cf7adbe`, 2026-07-12). No active work; remaining items are optional polish, accepted residuals, and trigger-gated deferred work.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | in_review | Draft PR #22. Self-check, cross-check, and reviewer-identified thumbnail apply handlers now return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover non-disclosure and exact response contracts for all three. Focused/full Go tests and `make test` green. Tier-1 grok-4.5: `TEAM_RESULT=OK ok`, Ship; thumbnail residual fixed in `e45a73c`. Branch: `codex/f-h4-go-422-mode-redaction`. |
+| F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
 | F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
 | F-H2 | vmeta-index path guard + refresh crash fix | claude@mac-joyce | done | PR #20 merged (`e3d6098`, 2026-07-11, user-approved squash). Scope grew beyond the recorded note — actual consequence was a full run crash, not \"bounded\": (1) `tsv_path_safe` guard at the `append_video_meta` choke point (covers all 3 writers, more complete than the walk-only shape suggested by F-H1 review); (2) retention loops if-form so a dead last row doesn't leak exit 1 → `set -e` killed the run at end-of-run refresh, reproducible with NO evil filename (fix-mode quarantining an indexed video sufficed; line-1258 call only survived because command substitution drops errexit); (3) Tier-1 Important fixed: TSV-unsafe path no longer falls through empty-meta fallback to a false `bad_video` label. All 3 red-first in `tests/backup_selfcheck_smoke.sh`. `make test` + all smokes + shellcheck CI gate green. Tier-1 grok-4.5 Approve-with-nits; Important fixed in-branch (`f257ea0`). |
 | F-H1 | Follow-up hygiene wave: KEEP determinism remainder + TSV-guard extension + stage9 run_end assertions + gofmt ui/server | claude@mac-joyce | done | PR #19 merged (`98c30aa`, 2026-07-11). All DoD met: `make test` + all smokes green; TDD red-first where reachable (K2/K3 fs-order caveat recorded); `gofmt -l` empty; shellcheck clean; CI green both platforms. Per-task reviews Approved ×4; final whole-branch (fable) "Yes"; Tier-1 gemini OK (pick_keep comment MINOR fixed in-branch; rest recorded in "Next up"). |
@@ -36,7 +36,7 @@
 - **F-H1 (in-review) cleared the first four former follow-ups** (KEEP determinism remainder, TSV-guard extension incl. `\r`, stage9 D1/D1b `run_end` asserts, gofmt ui). Remaining recorded follow-ups, none blocking:
   - ~~vmeta-index path guard~~ → claimed as F-H2 (in-progress, see task table).
   - ~~**vid_eq** strict re-verify + usage dedup~~ → F-H3 done via PR #21.
-  - **Go** apply-endpoint 422 mode echo claimed as F-H4 on `codex/f-h4-go-422-mode-redaction`.
+  - ~~**Go** apply-endpoint 422 mode echo~~ → F-H4 done via PR #22.
   - **Optional test/comment polish** (F-H1 final review + Tier-1, none justify a re-spin): K3 could also assert `dup_group.keep_path` JSON; `tests/keep_policy_smoke.sh` could note the equal-mtime pin has most discriminating power on ext4 (APFS find order coincides with byte order); apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir); stage9 D1-D1d `|| true` on the apply invocations masks the CLI exit code (gemini MINOR — cleanup should touch all four sections together since D1/D1b pre-date this wave).
   - **Accepted residuals**: newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort; `emit_warn --path` blames the action target even when matched/dir is the offending field (convention).
   - The remediation plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
@@ -47,7 +47,7 @@
 - Run `agent-team handoff-check <task-slug>` first (sync state + existing-claim check), then branch `<handle>/<task>` off synced main, set owner + in-progress, commit `chore(progress): claim <task>`, and push the branch before working. See agent-team/docs/peer-handoff.md §3.
 
 ### Blocked / waiting on
-- None currently. F-H4 draft PR #22 awaits CI/user merge.
+- None currently.
 - Local pHash-dependent smoke sections may skip unless Pillow/imagehash are installed; CI installs them.
 
 ## Archive Index
@@ -61,6 +61,10 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-12 `[codex]@macmini-yiqi` — F-H4 closed: PR #22 merged (`cf7adbe`)
+- User approved wrap-up. Marked draft PR #22 ready, squash-merged it as `cf7adbe`, fast-forwarded local `main`, and deleted local/remote `codex/f-h4-go-422-mode-redaction` branches.
+- F-H4 is complete: all three apply handlers redact raw mode from wrong-mode 422 responses; Tier-1 Grok verdict Ship; final GitHub Go, shell, shellcheck, and macOS thumbnail jobs green. No active twincut work remains.
 
 ### 2026-07-11 `[codex]@macmini-yiqi` — F-H4 Tier-1 passed; draft PR #22 open
 - User explicitly authorized continuing before the reported approval reset; the required `grok-review` then ran successfully and returned `TEAM_RESULT=OK ok` / Ship for the self-check and cross-check redaction in `600fd65`.
