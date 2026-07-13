@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** Optional-polish wave — F-H5 (stage9 apply exit-code assertions + keep-policy test polish) in progress. Prior milestone (remediation + F-H1..F-H4) fully merged; remaining non-claimed items are accepted residuals and trigger-gated deferred work.
+**Current milestone:** ✅ COMPLETE — F-H5 stage9 apply exit-code assertions + keep-policy test polish merged as PR #23 (`df13634`, 2026-07-12). No active work; remaining items are optional product follow-ups, accepted residuals, and trigger-gated deferred work.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | in-review | Draft PR #23 open, awaiting CI + user merge. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
+| F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | done | PR #23 squash-merged as `df13634` (2026-07-12, user approval); local/remote claim branches pruned. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
 | F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
 | F-H2 | vmeta-index path guard + refresh crash fix | claude@mac-joyce | done | PR #20 merged (`e3d6098`, 2026-07-11, user-approved squash). Scope grew beyond the recorded note — actual consequence was a full run crash, not \"bounded\": (1) `tsv_path_safe` guard at the `append_video_meta` choke point (covers all 3 writers, more complete than the walk-only shape suggested by F-H1 review); (2) retention loops if-form so a dead last row doesn't leak exit 1 → `set -e` killed the run at end-of-run refresh, reproducible with NO evil filename (fix-mode quarantining an indexed video sufficed; line-1258 call only survived because command substitution drops errexit); (3) Tier-1 Important fixed: TSV-unsafe path no longer falls through empty-meta fallback to a false `bad_video` label. All 3 red-first in `tests/backup_selfcheck_smoke.sh`. `make test` + all smokes + shellcheck CI gate green. Tier-1 grok-4.5 Approve-with-nits; Important fixed in-branch (`f257ea0`). |
@@ -63,6 +63,11 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-12 `[claude]@mac-joyce` — F-H5 closed: PR #23 merged (`df13634`)
+- User approved; marked draft ready, squash-merged, fast-forwarded local `main`, pruned local/remote claim branches, synced peers.
+- CI green pre-merge on both workflow runs (go-tests, shell-tests, shellcheck, thumbnail-tests-macos). Implementation details in the previous entry.
+- Remaining follow-ups live in "Next up" (`--json-in` `exit $?` clarity, duplicate `dup_group` emission observation, apply-loop `mkdir -p` cosmetic, accepted residuals, trigger-gated deferrals). No active twincut work remains.
 
 ### 2026-07-12 `[claude]@mac-joyce` — F-H5 executed, draft PR #23 open (in-review, awaiting user merge)
 - Test-only hygiene wave on `claude/stage9-apply-exitcode-polish`, bundling three "Next up" polish items. Commits: `71d7033` core change (14 `|| true` → captured-rc asserts in stage9 + header contract doc; K3 `dup_group.keep_path` JSON assert; keep_policy ext4/APFS note); `d2919ac` Tier-1 nits (run_end-succeeded asserts on bad-decision/traversal/D5/D2, header scoping).
