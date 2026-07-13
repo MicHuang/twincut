@@ -10,12 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** ✅ COMPLETE — F-H4 Go apply-endpoint 422 mode-echo redaction merged as PR #22 (`cf7adbe`, 2026-07-12). No active work; remaining items are optional polish, accepted residuals, and trigger-gated deferred work.
+**Current milestone:** Optional-polish wave — F-H5 (stage9 apply exit-code assertions + keep-policy test polish) in progress. Prior milestone (remediation + F-H1..F-H4) fully merged; remaining non-claimed items are accepted residuals and trigger-gated deferred work.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
+| F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | in-review | Draft PR #23 open, awaiting CI + user merge. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
 | F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
 | F-H2 | vmeta-index path guard + refresh crash fix | claude@mac-joyce | done | PR #20 merged (`e3d6098`, 2026-07-11, user-approved squash). Scope grew beyond the recorded note — actual consequence was a full run crash, not \"bounded\": (1) `tsv_path_safe` guard at the `append_video_meta` choke point (covers all 3 writers, more complete than the walk-only shape suggested by F-H1 review); (2) retention loops if-form so a dead last row doesn't leak exit 1 → `set -e` killed the run at end-of-run refresh, reproducible with NO evil filename (fix-mode quarantining an indexed video sufficed; line-1258 call only survived because command substitution drops errexit); (3) Tier-1 Important fixed: TSV-unsafe path no longer falls through empty-meta fallback to a false `bad_video` label. All 3 red-first in `tests/backup_selfcheck_smoke.sh`. `make test` + all smokes + shellcheck CI gate green. Tier-1 grok-4.5 Approve-with-nits; Important fixed in-branch (`f257ea0`). |
@@ -37,7 +38,8 @@
   - ~~vmeta-index path guard~~ → claimed as F-H2 (in-progress, see task table).
   - ~~**vid_eq** strict re-verify + usage dedup~~ → F-H3 done via PR #21.
   - ~~**Go** apply-endpoint 422 mode echo~~ → F-H4 done via PR #22.
-  - **Optional test/comment polish** (F-H1 final review + Tier-1, none justify a re-spin): K3 could also assert `dup_group.keep_path` JSON; `tests/keep_policy_smoke.sh` could note the equal-mtime pin has most discriminating power on ext4 (APFS find order coincides with byte order); apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir); stage9 D1-D1d `|| true` on the apply invocations masks the CLI exit code (gemini MINOR — cleanup should touch all four sections together since D1/D1b pre-date this wave).
+  - **Optional test/comment polish**: ~~K3 `keep_path` JSON assert; keep_policy ext4 note; stage9 `|| true` exit-code masks~~ → claimed as F-H5 (in-progress, see task table). Still unclaimed: apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir — product code, deliberately outside test-only F-H5).
+  - **New optional product follow-ups from F-H5 Tier-1 (grok-4.5, non-blocking)**: the `--json-in` short-circuit in `bin/twincut.sh` (~line 1128) reads `process_apply_list_jsonin; exit 0` — D3's exit-1 only works because `set -e` aborts on the function's return 1; `exit $?` would make the contract explicit in source. Also observed during F-H5 probing (pre-existing, uninvestigated): backup similar-video emits the same pair as TWO identical `dup_group` events (group_id 1 and 2) in one run.
   - **Accepted residuals**: newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort; `emit_warn --path` blames the action target even when matched/dir is the offending field (convention).
   - The remediation plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
 - Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15; wrappers could map upstream "model no longer available" 404s to `BLOCKED not-configured` (seen when gemini/grok model IDs rotted mid-session, fixed in agent-team PR #47).
@@ -61,6 +63,13 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-12 `[claude]@mac-joyce` — F-H5 executed, draft PR #23 open (in-review, awaiting user merge)
+- Test-only hygiene wave on `claude/stage9-apply-exitcode-polish`, bundling three "Next up" polish items. Commits: `71d7033` core change (14 `|| true` → captured-rc asserts in stage9 + header contract doc; K3 `dup_group.keep_path` JSON assert; keep_policy ext4/APFS note); `d2919ac` Tier-1 nits (run_end-succeeded asserts on bad-decision/traversal/D5/D2, header scoping).
+- Method: characterized exit codes empirically BEFORE pinning (scratchpad probe replacing `|| true` with rc echo). Result: all invocations exit 0 except D3 malformed-JSON (exit 1) — matches `process_apply_list_jsonin` by design (per-record failures → event channel + skipped + `run_end succeeded`; only pre-flight returns 1). rc assert conditions are double-quoted so the value expands at call time (informative FAIL output; avoids SC2034 under assert()'s eval).
+- Verification: stage9 66/66, keep_policy all ok, `make test` green, exact CI shellcheck warning gate clean, `git diff --check` clean. Tier-1 per §2 (>50 lines; small packet → direct `grok-review` from main thread): grok-4.5 `TEAM_RESULT=OK` / Ship, zero required changes.
+- Follow-ups recorded in "Next up" (NOT taken — product code, out of test-only scope): `--json-in` short-circuit `exit 0` → `exit $?` clarity; duplicate `dup_group` emission observation (same pair emitted as group_id 1 AND 2 in one backup similar-video run — pre-existing, seen while probing K3, needs investigation before calling it a bug).
+- Next for whoever picks up: user decides merge of draft PR #23; after merge set F-H5 → done, prune claim branch, sync peers.
 
 ### 2026-07-12 `[codex]@macmini-yiqi` — F-H4 closed: PR #22 merged (`cf7adbe`)
 - User approved wrap-up. Marked draft PR #22 ready, squash-merged it as `cf7adbe`, fast-forwarded local `main`, and deleted local/remote `codex/f-h4-go-422-mode-redaction` branches.

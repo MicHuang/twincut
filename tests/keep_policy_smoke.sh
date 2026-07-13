@@ -4,6 +4,11 @@
 # (directory enumeration is filesystem-dependent: ext4 htree vs APFS).
 # K1 pins the Wave-3 hash-dupe (mtime, path) sort; K2/K3 pin the
 # similar-video tie-break on the source and backup paths.
+#
+# NOTE: the equal-mtime pin has most discriminating power on ext4 (CI
+# ubuntu). On APFS, find(1) enumeration order happens to coincide with
+# path byte order, so these checks can pass locally even if the sort
+# regresses to scan order — a local green here is weaker evidence than CI.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -69,5 +74,8 @@ SIZE_PCT=5 DUR_SEC=0.3 TWINCUT_RUN_ID=r_keep_k3 \
 grep -q "BACKUP-SIMILAR" "$work/k3.log" || fail "K3: no similar-video pair found"
 grep -q "keep='$bk3/aa_vid.mp4'" "$work/k3.log" \
   || fail "K3: equal-mtime similar-video keep is not the byte-smaller path"
+grep -q '"type":"dup_group"' "$ev3" || fail "K3: no dup_group emitted"
+grep -q '"type":"dup_group".*"keep_path":"'"$bk3"'/aa_vid.mp4"' "$ev3" \
+  || fail "K3: dup_group keep_path is not the byte-smaller path"
 
 echo "keep_policy_smoke: all ok"
