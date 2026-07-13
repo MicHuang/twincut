@@ -5,6 +5,12 @@
 # composes a synthetic ApplyCommand JSON-lines stream, pipes it to
 # --thumbnail-detect-apply --json-in --json-events, and asserts the
 # resulting events.ndjson + filesystem state.
+#
+# Exit-code contract (asserted per invocation below): apply mode exits 0
+# even when individual records fail — per-record errors go to the event
+# channel (error/warn events, record counted as skipped) and the run ends
+# run_end status=succeeded. Only a pre-flight failure (malformed JSON
+# stdin) exits 1 with run_end status=failed.
 
 set -euo pipefail
 
@@ -52,8 +58,11 @@ PY
 # === 2. preview scan ===
 # --json-events: twincut does exec 3>&1 1>&2 so NDJSON lands on original stdout.
 PREVIEW_NDJSON="$TMP/preview.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect --source "$SRC" --json-events \
-  >"$PREVIEW_NDJSON" 2>/dev/null || true
+  >"$PREVIEW_NDJSON" 2>/dev/null || rc=$?
+
+assert "preview scan exited 0" "[[ $rc -eq 0 ]]"
 
 assert "preview emitted at least one run_start" \
   '[[ $(grep -c "\"type\":\"run_start\"" "$PREVIEW_NDJSON") -ge 1 ]]'
@@ -73,8 +82,11 @@ EOF
 
 # === 4. apply via --json-in ===
 APPLY_NDJSON="$TMP/apply_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SRC" \
-  >"$APPLY_NDJSON" 2>/dev/null < "$APPLY_INPUT" || true
+  >"$APPLY_NDJSON" 2>/dev/null < "$APPLY_INPUT" || rc=$?
+
+assert "apply exited 0" "[[ $rc -eq 0 ]]"
 
 assert "apply emitted one action kind=move" \
   '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_NDJSON") -eq 1 ]]'
@@ -97,8 +109,12 @@ cat > "$APPLY_BAD" <<EOF
 {"type":"apply_move","src":"$SRC/unrelated_big.jpg","dst_dir":"$QUAR_DIR","keeper":"","decision":"NOT_A_VALID_DECISION"}
 EOF
 APPLY_BAD_NDJSON="$TMP/apply_bad_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SRC" \
-  >"$APPLY_BAD_NDJSON" 2>/dev/null < "$APPLY_BAD" || true
+  >"$APPLY_BAD_NDJSON" 2>/dev/null < "$APPLY_BAD" || rc=$?
+
+assert "bad-decision exited 0 (per-record failure is event-channel, not exit code)" \
+  "[[ $rc -eq 0 ]]"
 
 assert "bad-decision emitted error event" \
   'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$APPLY_BAD_NDJSON"'
@@ -114,8 +130,12 @@ cat > "$APPLY_ESCAPE" <<EOF
 {"type":"apply_move","src":"$SRC/unrelated_big.jpg","dst_dir":"$ESCAPE_TARGET","keeper":"","decision":"thumb_l2_exif"}
 EOF
 APPLY_ESCAPE_NDJSON="$TMP/apply_escape_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SRC" \
-  >"$APPLY_ESCAPE_NDJSON" 2>/dev/null < "$APPLY_ESCAPE" || true
+  >"$APPLY_ESCAPE_NDJSON" 2>/dev/null < "$APPLY_ESCAPE" || rc=$?
+
+assert "traversal attempt exited 0 (rejected record is event-channel)" \
+  "[[ $rc -eq 0 ]]"
 
 assert "traversal attempt emitted apply_failed error" \
   'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$APPLY_ESCAPE_NDJSON"'
@@ -144,8 +164,11 @@ jq -cn --arg src "$TAB_SRC/$TAB_NAME.jpg" \
   > "$APPLY_TAB"
 
 APPLY_TAB_NDJSON="$TMP/apply_tab_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$TAB_SRC" \
-  >"$APPLY_TAB_NDJSON" 2>/dev/null < "$APPLY_TAB" || true
+  >"$APPLY_TAB_NDJSON" 2>/dev/null < "$APPLY_TAB" || rc=$?
+
+assert "D1: tab-in-path apply exited 0" "[[ $rc -eq 0 ]]"
 
 assert "D1: tab-in-path apply emits no action kind=move (TSV guard blocks it)" \
   '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_TAB_NDJSON") -eq 0 ]]'
@@ -178,8 +201,11 @@ jq -cn --arg src "$NL_SRC/$NL_NAME.jpg" \
   > "$APPLY_NL"
 
 APPLY_NL_NDJSON="$TMP/apply_nl_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$NL_SRC" \
-  >"$APPLY_NL_NDJSON" 2>/dev/null < "$APPLY_NL" || true
+  >"$APPLY_NL_NDJSON" 2>/dev/null < "$APPLY_NL" || rc=$?
+
+assert "D1b: newline-in-path apply exited 0" "[[ $rc -eq 0 ]]"
 
 assert "D1b: newline-in-path apply emits no action kind=move (TSV guard blocks it)" \
   '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_NL_NDJSON") -eq 0 ]]'
@@ -213,8 +239,11 @@ jq -cn --arg src "$KTAB_SRC/victim.jpg" \
   > "$APPLY_KTAB"
 
 APPLY_KTAB_NDJSON="$TMP/apply_ktab_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$KTAB_SRC" \
-  >"$APPLY_KTAB_NDJSON" 2>/dev/null < "$APPLY_KTAB" || true
+  >"$APPLY_KTAB_NDJSON" 2>/dev/null < "$APPLY_KTAB" || rc=$?
+
+assert "D1c: tab-in-keeper apply exited 0" "[[ $rc -eq 0 ]]"
 
 assert "D1c: tab-in-keeper apply emits no action kind=move (TSV guard blocks it)" \
   '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_KTAB_NDJSON") -eq 0 ]]'
@@ -244,8 +273,11 @@ jq -cn --arg src "$CR_SRC/$CR_NAME.jpg" \
   > "$APPLY_CR"
 
 APPLY_CR_NDJSON="$TMP/apply_cr_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$CR_SRC" \
-  >"$APPLY_CR_NDJSON" 2>/dev/null < "$APPLY_CR" || true
+  >"$APPLY_CR_NDJSON" 2>/dev/null < "$APPLY_CR" || rc=$?
+
+assert "D1d: CR-in-path apply exited 0" "[[ $rc -eq 0 ]]"
 
 assert "D1d: CR-in-path apply emits no action kind=move (TSV guard blocks it)" \
   '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$APPLY_CR_NDJSON") -eq 0 ]]'
@@ -262,9 +294,12 @@ assert "D1d: CR-in-path apply ends with run_end status=succeeded" \
 # === D2. zero-command apply — empty stdin is a no-op success ===
 ZERO_SRC="$TMP/srcD2"; mkdir -p "$ZERO_SRC"
 ZERO_NDJSON="$TMP/apply_zero_result.ndjson"
+rc=0
 printf '' \
   | "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$ZERO_SRC" \
-    >"$ZERO_NDJSON" 2>/dev/null || true
+    >"$ZERO_NDJSON" 2>/dev/null || rc=$?
+
+assert "D2: zero-command apply exited 0 (no-op success)" "[[ $rc -eq 0 ]]"
 
 assert "D2: zero-command apply emits no action events" \
   '[[ $(grep -c "\"type\":\"action\"" "$ZERO_NDJSON") -eq 0 ]]'
@@ -275,9 +310,13 @@ assert "D2: zero-command apply emits no error events" \
 # === D3. malformed JSON stdin — pre-flight rejects with apply_failed ===
 BAD_SRC="$TMP/srcD3"; mkdir -p "$BAD_SRC"
 BAD_NDJSON="$TMP/apply_malformed_result.ndjson"
+rc=0
 printf 'this is definitely not json\n' \
   | "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$BAD_SRC" \
-    >"$BAD_NDJSON" 2>/dev/null || true
+    >"$BAD_NDJSON" 2>/dev/null || rc=$?
+
+assert "D3: malformed JSON exited 1 (pre-flight failure IS the exit code)" \
+  "[[ $rc -eq 1 ]]"
 
 assert "D3: malformed JSON emits apply_failed error" \
   'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$BAD_NDJSON"'
@@ -298,8 +337,11 @@ cat > "$APPLY_SKIP_BAD" <<EOF
 EOF
 
 SKIP_BAD_NDJSON="$TMP/apply_skip_bad_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$SKIP_SRC" \
-  >"$SKIP_BAD_NDJSON" 2>/dev/null < "$APPLY_SKIP_BAD" || true
+  >"$SKIP_BAD_NDJSON" 2>/dev/null < "$APPLY_SKIP_BAD" || rc=$?
+
+assert "D5: apply_skip bogus decision exited 0" "[[ $rc -eq 0 ]]"
 
 assert "D5: apply_skip bogus decision emits apply_failed error" \
   'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\".*\"detail\":\"unknown decision" "$SKIP_BAD_NDJSON"'
@@ -320,8 +362,11 @@ cat > "$APPLY_MISS" <<EOF
 EOF
 
 MISS_NDJSON="$TMP/apply_miss_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$MISS_SRC" \
-  >"$MISS_NDJSON" 2>/dev/null < "$APPLY_MISS" || true
+  >"$MISS_NDJSON" 2>/dev/null < "$APPLY_MISS" || rc=$?
+
+assert "D4: missing-src exited 0" "[[ $rc -eq 0 ]]"
 
 assert "D4: missing-src emits warn missing_file" \
   'grep -q "\"type\":\"warn\".*\"code\":\"missing_file\"" "$MISS_NDJSON"'
@@ -358,8 +403,11 @@ grad("e2e_thumb.jpg", (320, 240))     # small dims → L1 thumbnail candidate
 PY
 
 E2E_PREVIEW="$TMP/e2e_preview.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect --source "$E2E_SRC" --json-events \
-  >"$E2E_PREVIEW" 2>/dev/null || true
+  >"$E2E_PREVIEW" 2>/dev/null || rc=$?
+
+assert "E2E: preview scan exited 0" "[[ $rc -eq 0 ]]"
 
 # The real candidate path the detector reported (verify the move against it).
 # shellcheck disable=SC2034  # read via eval inside assert()'s quoted condition strings below
@@ -382,8 +430,11 @@ assert "E2E: derived exactly one apply_move from detector output" \
   '[[ $(grep -c "\"type\":\"apply_move\"" "$E2E_APPLY") -eq 1 ]]'
 
 E2E_RESULT="$TMP/e2e_result.ndjson"
+rc=0
 "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$E2E_SRC" \
-  >"$E2E_RESULT" 2>/dev/null < "$E2E_APPLY" || true
+  >"$E2E_RESULT" 2>/dev/null < "$E2E_APPLY" || rc=$?
+
+assert "E2E: detector-derived apply exited 0" "[[ $rc -eq 0 ]]"
 
 assert "E2E: detector-derived apply emitted action kind=move" \
   '[[ $(grep -c "\"type\":\"action\".*\"kind\":\"move\"" "$E2E_RESULT") -eq 1 ]]'
