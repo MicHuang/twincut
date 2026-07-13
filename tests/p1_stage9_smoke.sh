@@ -9,8 +9,9 @@
 # Exit-code contract (asserted per invocation below): apply mode exits 0
 # even when individual records fail — per-record errors go to the event
 # channel (error/warn events, record counted as skipped) and the run ends
-# run_end status=succeeded. Only a pre-flight failure (malformed JSON
-# stdin) exits 1 with run_end status=failed.
+# run_end status=succeeded. Only an apply-flow pre-flight failure
+# (malformed JSON stdin) exits 1 with run_end status=failed. (Usage
+# errors elsewhere in the CLI die with other codes — not covered here.)
 
 set -euo pipefail
 
@@ -122,6 +123,9 @@ assert "bad-decision emitted error event" \
 assert "bad-decision left source file intact" \
   '[[ -e "$SRC/unrelated_big.jpg" ]]'
 
+assert "bad-decision run ends run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_BAD_NDJSON"'
+
 # === 6. traversal attempt — dst_dir outside SOURCE_DIR must be rejected ===
 ESCAPE_TARGET="$(mktemp -d)"
 trap 'rm -rf "$TMP" "$ESCAPE_TARGET"' EXIT
@@ -145,6 +149,9 @@ assert "traversal attempt: source file still at original location" \
 
 assert "traversal attempt: escape target dir is empty" \
   '[[ -z "$(ls -A "$ESCAPE_TARGET" 2>/dev/null)" ]]'
+
+assert "traversal attempt run ends run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$APPLY_ESCAPE_NDJSON"'
 
 # === D1. tab-in-path — NUL-delim parser must preserve literal \t; the
 # qmove TSV guard (hygiene Step 7) must then safely refuse to move it
@@ -307,6 +314,9 @@ assert "D2: zero-command apply emits no action events" \
 assert "D2: zero-command apply emits no error events" \
   '[[ $(grep -c "\"type\":\"error\"" "$ZERO_NDJSON") -eq 0 ]]'
 
+assert "D2: zero-command apply ends run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$ZERO_NDJSON"'
+
 # === D3. malformed JSON stdin — pre-flight rejects with apply_failed ===
 BAD_SRC="$TMP/srcD3"; mkdir -p "$BAD_SRC"
 BAD_NDJSON="$TMP/apply_malformed_result.ndjson"
@@ -351,6 +361,9 @@ assert "D5: apply_skip bogus decision emits no action events" \
 
 assert "D5: apply_skip bogus decision: source file untouched" \
   '[[ -e "$SKIP_SRC/keep_me.jpg" ]]'
+
+assert "D5: apply_skip bogus decision run ends run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$SKIP_BAD_NDJSON"'
 
 # === D4. missing src under SOURCE_DIR — emit_warn missing_file path ===
 MISS_SRC="$TMP/srcD4"; mkdir -p "$MISS_SRC"
