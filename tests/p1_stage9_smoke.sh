@@ -35,10 +35,74 @@ assert(){
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 SRC="$TMP/src"; mkdir -p "$SRC"
+
+# === F-H7A. guarded apply_move records must not create destination dirs ===
+# These apply-only contracts intentionally run before the Pillow gate below.
+GUARD_SRC="$TMP/srcF_H7_guards"; mkdir -p "$GUARD_SRC"
+printf 'excluded' > "$GUARD_SRC/excluded.jpg"
+printf 'hardlink' > "$GUARD_SRC/hardlink.jpg"
+printf 'move' > "$GUARD_SRC/move.jpg"
+printf 'mkdir-fail' > "$GUARD_SRC/mkdir-fail.jpg"
+ln "$GUARD_SRC/hardlink.jpg" "$GUARD_SRC/hardlink-keeper.jpg"
+GUARD_EXCLUDED_DIR="$GUARD_SRC/should_not_exist_excluded"
+GUARD_HARDLINK_DIR="$GUARD_SRC/should_not_exist_hardlink"
+GUARD_MOVED_DIR="$GUARD_SRC/created_for_real_move"
+GUARD_MKDIR_BLOCKER="$GUARD_SRC/not_a_directory"; printf 'blocker' > "$GUARD_MKDIR_BLOCKER"
+GUARD_INPUT="$TMP/apply_guarded.ndjson"
+cat > "$GUARD_INPUT" <<EOF
+{"type":"apply_move","src":"$GUARD_SRC/excluded.jpg","dst_dir":"$GUARD_EXCLUDED_DIR","keeper":"","decision":"thumb_l2_exif"}
+{"type":"apply_move","src":"$GUARD_SRC/hardlink.jpg","dst_dir":"$GUARD_HARDLINK_DIR","keeper":"$GUARD_SRC/hardlink-keeper.jpg","decision":"thumb_l2_exif"}
+{"type":"apply_move","src":"$GUARD_SRC/move.jpg","dst_dir":"$GUARD_MOVED_DIR","keeper":"","decision":"thumb_l2_exif"}
+{"type":"apply_move","src":"$GUARD_SRC/mkdir-fail.jpg","dst_dir":"$GUARD_MKDIR_BLOCKER","keeper":"","decision":"thumb_l2_exif"}
+EOF
+GUARD_NDJSON="$TMP/apply_guarded_result.ndjson"
+rc=0
+"$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$GUARD_SRC" \
+  --exclude-path "$GUARD_SRC/excluded.jpg" \
+  >"$GUARD_NDJSON" 2>/dev/null < "$GUARD_INPUT" || rc=$?
+
+assert "F-H7A: guarded apply exited 0" "[[ $rc -eq 0 ]]"
+assert "F-H7A: excluded source remains" '[[ -e "$GUARD_SRC/excluded.jpg" ]]'
+assert "F-H7A: hardlink source remains" '[[ -e "$GUARD_SRC/hardlink.jpg" ]]'
+assert "F-H7A: excluded skip creates no destination dir" '[[ ! -e "$GUARD_EXCLUDED_DIR" ]]'
+assert "F-H7A: hardlink skip creates no destination dir" '[[ ! -e "$GUARD_HARDLINK_DIR" ]]'
+assert "F-H7A: real move removes its source" '[[ ! -e "$GUARD_SRC/move.jpg" ]]'
+assert "F-H7A: real move creates its destination file" '[[ -e "$GUARD_MOVED_DIR/move.jpg" ]]'
+assert "F-H7A: mkdir failure leaves its source" '[[ -e "$GUARD_SRC/mkdir-fail.jpg" ]]'
+assert "F-H7A: excluded and hardlink skips are both emitted" \
+  'grep -q "\"reason\":\"excluded\"" "$GUARD_NDJSON" && grep -q "\"reason\":\"hardlink\"" "$GUARD_NDJSON"'
+assert "F-H7A: qmove owns mkdir failure warning" \
+  'grep -q "\"type\":\"warn\".*\"code\":\"io_error\".*\"path\":\"$GUARD_MKDIR_BLOCKER\".*\"detail\":\"mkdir failed\"" "$GUARD_NDJSON"'
+assert "F-H7A: guarded apply ends run_end status=succeeded" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\".*\"applied\":1.*\"skipped\":3" "$GUARD_NDJSON"'
+assert "F-H7A: strict subshell emits exactly one run_end" \
+  '[[ $(grep -c "\"type\":\"run_end\"" "$GUARD_NDJSON") -eq 1 ]]'
+
+# === F-H7B / D3. malformed JSON propagates the pre-flight exit status ===
+BAD_SRC="$TMP/srcD3"; mkdir -p "$BAD_SRC"
+BAD_NDJSON="$TMP/apply_malformed_result.ndjson"
+rc=0
+printf 'this is definitely not json\n' \
+  | "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$BAD_SRC" \
+    >"$BAD_NDJSON" 2>/dev/null || rc=$?
+
+assert "D3: malformed JSON exited 1 (pre-flight failure IS the exit code)" \
+  "[[ $rc -eq 1 ]]"
+assert "D3: malformed JSON emits apply_failed error" \
+  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$BAD_NDJSON"'
+assert "D3: malformed JSON emits no action events" \
+  '[[ $(grep -c "\"type\":\"action\"" "$BAD_NDJSON") -eq 0 ]]'
+assert "D3: malformed JSON emits run_end status=failed" \
+  'grep -q "\"type\":\"run_end\".*\"status\":\"failed\"" "$BAD_NDJSON"'
+assert "D3: strict subshell emits exactly one run_end" \
+  '[[ $(grep -c "\"type\":\"run_end\"" "$BAD_NDJSON") -eq 1 ]]'
+
 # Use Python to build gradient PNGs if Pillow is available; else skip.
 if ! python3 -c 'import PIL' 2>/dev/null; then
-  echo "[skip] Pillow not installed — Stage 9 smoke needs gradient fixtures"
-  exit 0
+  echo "[skip] Pillow not installed — Stage 9 detection sections skipped"
+  echo "========================================="
+  echo "PASS=$PASS FAIL=$FAIL (apply-only sections)"
+  exit $(( FAIL > 0 ? 1 : 0 ))
 fi
 python3 - <<PY
 from PIL import Image
@@ -316,26 +380,6 @@ assert "D2: zero-command apply emits no error events" \
 
 assert "D2: zero-command apply ends run_end status=succeeded" \
   'grep -q "\"type\":\"run_end\".*\"status\":\"succeeded\"" "$ZERO_NDJSON"'
-
-# === D3. malformed JSON stdin — pre-flight rejects with apply_failed ===
-BAD_SRC="$TMP/srcD3"; mkdir -p "$BAD_SRC"
-BAD_NDJSON="$TMP/apply_malformed_result.ndjson"
-rc=0
-printf 'this is definitely not json\n' \
-  | "$TWINCUT" --thumbnail-detect-apply --json-events --json-in --source "$BAD_SRC" \
-    >"$BAD_NDJSON" 2>/dev/null || rc=$?
-
-assert "D3: malformed JSON exited 1 (pre-flight failure IS the exit code)" \
-  "[[ $rc -eq 1 ]]"
-
-assert "D3: malformed JSON emits apply_failed error" \
-  'grep -q "\"type\":\"error\".*\"code\":\"apply_failed\"" "$BAD_NDJSON"'
-
-assert "D3: malformed JSON emits no action events" \
-  '[[ $(grep -c "\"type\":\"action\"" "$BAD_NDJSON") -eq 0 ]]'
-
-assert "D3: malformed JSON emits run_end status=failed" \
-  'grep -q "\"type\":\"run_end\".*\"status\":\"failed\"" "$BAD_NDJSON"'
 
 # === D5. apply_skip with bogus decision — must be rejected ===
 SKIP_SRC="$TMP/srcD5"; mkdir -p "$SKIP_SRC"
