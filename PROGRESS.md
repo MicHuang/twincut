@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** 🔎 IN REVIEW — F-H7 implementation, full local verification, and Tier-1 Grok 4.5 review are complete. Next: draft PR and GitHub CI, then user-approved merge before formal use.
+**Current milestone:** ✅ COMPLETE — F-H7 pre-use apply-path contract cleanup merged as PR #25 (`7d702fc`, 2026-07-20). No active work; the reviewed/tested baseline is ready for formal use. Remaining items are accepted residuals, optional local tooling, and trigger-gated deferred work.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H7 | pre-use apply-path contract cleanup | codex@macmini-yiqi | in-review | Draft PR #25 from `codex/f-h7-preuse-apply-cleanup`. Implementation `fa524ad` + review follow-up `6665ece`: exact apply status captured without disabling strict mode inside the function; `qmove` is sole owner of destination-dir creation after exclusion/TSV/hardlink guards. Red-first excluded+hardlink empty-dir assertions; exit-0 mutation made D3 fail; apply-only success/skip/mkdir-failure/preflight coverage runs without Pillow and pins exactly one `run_end`. Focused 17/17 and full `make test` green; syntax/diff checks clean. Tier-1 Grok 4.5 initial Ship (`TEAM_RESULT=OK`) with two Low test gaps; both addressed and incremental re-review returned OK with no material residuals. Next: GitHub CI, then user-approved merge. |
+| F-H7 | pre-use apply-path contract cleanup | codex@macmini-yiqi | done | PR #25 user-approved and squash-merged as `7d702fc` (2026-07-20). Exact apply status is captured without disabling strict mode inside the function; `qmove` is sole owner of destination-dir creation after exclusion/TSV/hardlink guards. Red-first excluded+hardlink empty-dir assertions; exit-0 mutation made D3 fail; apply-only success/skip/mkdir-failure/preflight coverage runs without Pillow and pins exactly one `run_end`. Focused 17/17, full `make test`, syntax/diff checks, and all four GitHub CI jobs green. Tier-1 Grok 4.5 initial Ship with two Low test gaps; both addressed; incremental re-review OK with no material residuals. |
 | F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | done | PR #24 squash-merged as `74aef6f` (2026-07-19, user-approved). Exact Bash 3.2 indexed-array pair keys suppress reverse traversal without path-pattern collisions; innermost `continue 1` preserves later candidates. K3 pins exactly one event/report for a pair; K3b mutation-check pins all three unique pairs. Full local checks and all four GitHub CI jobs green. Tier-1 Grok 4.5 initial Ship with findings; all addressed; incremental re-review Ship with no required residuals. |
 | F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | done | PR #23 squash-merged as `df13634` (2026-07-12, user approval); local/remote claim branches pruned. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
@@ -40,8 +40,8 @@
   - ~~vmeta-index path guard~~ → claimed as F-H2 (in-progress, see task table).
   - ~~**vid_eq** strict re-verify + usage dedup~~ → F-H3 done via PR #21.
   - ~~**Go** apply-endpoint 422 mode echo~~ → F-H4 done via PR #22.
-  - **Optional test/comment polish**: ~~K3 `keep_path` JSON assert; keep_policy ext4 note; stage9 `|| true` exit-code masks~~ → F-H5 done. ~~Apply-loop `mkdir -p` runs before qmove's guard~~ → claimed as F-H7.
-  - **New optional product follow-ups from F-H5 Tier-1 (grok-4.5, non-blocking)**: ~~make the `--json-in` short-circuit's exit propagation explicit instead of relying on `set -e`~~ → claimed as F-H7. ~~Backup similar-video duplicate `dup_group` emission~~ → F-H6 fixed and merged via PR #24.
+  - **Optional test/comment polish**: ~~K3 `keep_path` JSON assert; keep_policy ext4 note; stage9 `|| true` exit-code masks~~ → F-H5 done. ~~Apply-loop `mkdir -p` runs before qmove's guard~~ → F-H7 fixed and merged via PR #25.
+  - **New optional product follow-ups from F-H5 Tier-1 (grok-4.5, non-blocking)**: ~~make the `--json-in` short-circuit's exit propagation explicit instead of relying on `set -e`~~ → F-H7 fixed and merged via PR #25. ~~Backup similar-video duplicate `dup_group` emission~~ → F-H6 fixed and merged via PR #24.
   - **Accepted residuals**: newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort; `emit_warn --path` blames the action target even when matched/dir is the offending field (convention).
   - The remediation plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
 - Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15; wrappers could map upstream "model no longer available" 404s to `BLOCKED not-configured` (seen when gemini/grok model IDs rotted mid-session, fixed in agent-team PR #47).
@@ -65,6 +65,10 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-20 `[codex]@macmini-yiqi` — F-H7 closed: PR #25 merged (`7d702fc`)
+- User approved; marked PR #25 ready and squash-merged the verified head `28dd68c` as `7d702fc`. Both workflow runs were fully green: go-tests, shell-tests, shellcheck, and thumbnail-tests-macos.
+- Fast-forwarded local `main` to the merge commit. F-H7 completes the two requested pre-use follow-ups; the current baseline is ready for formal use. Next: post-merge focused verification, closeout commit on `main`, and local/remote task-branch cleanup.
 
 ### 2026-07-19 `[codex]@macmini-yiqi` — F-H7 draft PR #25 open
 - `github:yeet` preflight confirmed the intended three-file PR scope, clean worktree, authenticated `gh`, `MicHuang/twincut`, base `main`, and the existing task branch. Pushed reviewed head and opened draft PR #25: `codex/f-h7-preuse-apply-cleanup` → `main`.
