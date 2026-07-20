@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** 🔎 IN REVIEW — F-H6 backup similar-video pair deduplication is implemented, fully verified, Tier-1 approved, and published as draft PR #24; awaiting GitHub CI and user merge approval.
+**Current milestone:** ✅ COMPLETE — F-H6 backup similar-video pair deduplication merged as PR #24 (`74aef6f`, 2026-07-19). No active work; remaining items are optional product follow-ups, accepted residuals, and trigger-gated deferred work.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | in-review | Draft PR #24 from `codex/f-h6-backup-dup-group-dedup`. Implementation `6cca107` + review follow-up `cea32d1`: exact Bash 3.2 indexed-array pair keys, innermost `continue 1`, and K3/K3b exactly-once + multi-candidate coverage. RED: original K3 got 2 events; mutation `continue 1`→`break` made K3b get 2/3 pairs. GREEN: keep-policy under `/bin/bash` 3.2, backup-self, vid_eq, events 18/18, Stage 11 6/6, P0 28/28, full `make test`, syntax, and diff check; Stage 9 skipped for missing Pillow and local shellcheck unavailable. Tier-1 Grok 4.5: initial Ship with findings; all findings addressed; incremental re-review Ship with no required residuals. Next: wait for GitHub CI, then user decides ready/merge. |
+| F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | done | PR #24 squash-merged as `74aef6f` (2026-07-19, user-approved). Exact Bash 3.2 indexed-array pair keys suppress reverse traversal without path-pattern collisions; innermost `continue 1` preserves later candidates. K3 pins exactly one event/report for a pair; K3b mutation-check pins all three unique pairs. Full local checks and all four GitHub CI jobs green. Tier-1 Grok 4.5 initial Ship with findings; all addressed; incremental re-review Ship with no required residuals. |
 | F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | done | PR #23 squash-merged as `df13634` (2026-07-12, user approval); local/remote claim branches pruned. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
 | F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
@@ -40,7 +40,7 @@
   - ~~**vid_eq** strict re-verify + usage dedup~~ → F-H3 done via PR #21.
   - ~~**Go** apply-endpoint 422 mode echo~~ → F-H4 done via PR #22.
   - **Optional test/comment polish**: ~~K3 `keep_path` JSON assert; keep_policy ext4 note; stage9 `|| true` exit-code masks~~ → claimed as F-H5 (in-progress, see task table). Still unclaimed: apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir — product code, deliberately outside test-only F-H5).
-  - **New optional product follow-ups from F-H5 Tier-1 (grok-4.5, non-blocking)**: the `--json-in` short-circuit in `bin/twincut.sh` (~line 1128) reads `process_apply_list_jsonin; exit 0` — D3's exit-1 only works because `set -e` aborts on the function's return 1; `exit $?` would make the contract explicit in source. ~~Backup similar-video duplicate `dup_group` emission~~ → F-H6 fixed and open as draft PR #24.
+  - **New optional product follow-ups from F-H5 Tier-1 (grok-4.5, non-blocking)**: the `--json-in` short-circuit in `bin/twincut.sh` (~line 1128) reads `process_apply_list_jsonin; exit 0` — D3's exit-1 only works because `set -e` aborts on the function's return 1; `exit $?` would make the contract explicit in source. ~~Backup similar-video duplicate `dup_group` emission~~ → F-H6 fixed and merged via PR #24.
   - **Accepted residuals**: newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort; `emit_warn --path` blames the action target even when matched/dir is the offending field (convention).
   - The remediation plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
 - Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15; wrappers could map upstream "model no longer available" 404s to `BLOCKED not-configured` (seen when gemini/grok model IDs rotted mid-session, fixed in agent-team PR #47).
@@ -64,6 +64,10 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-19 `[codex]@macmini-yiqi` — F-H6 closed: PR #24 merged (`74aef6f`)
+- User approved; marked draft PR #24 ready and squash-merged it. GitHub CI was green before merge: go-tests, shell-tests (including K3/K3b with CI dependencies), shellcheck, and thumbnail-tests-macos.
+- Fast-forwarded local `main` to the merge commit. F-H6 is complete; remaining optional work stays in "Next up" (`--json-in` explicit exit propagation, apply-loop cosmetic directory creation, accepted residuals, and trigger-gated deferrals).
 
 ### 2026-07-19 `[codex]@macmini-yiqi` — F-H6 draft PR #24 open
 - Rechecked the account concern before publishing: local Git author remains `Yiqi Huang <yitsi.huang@gmail.com>`, while `gh api user`, SSH authentication, and the only account in `hosts.yml` all resolve to GitHub login `MicHuang`; the earlier token-invalid result no longer reproduces.
