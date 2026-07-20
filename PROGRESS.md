@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** ⛔ BLOCKED — F-H7 implementation and full local verification are complete; required Tier-1 review is waiting for explicit approval to send this new minimal private-repo diff to Grok 4.5.
+**Current milestone:** 🔎 IN REVIEW — F-H7 implementation, full local verification, and Tier-1 Grok 4.5 review are complete. Next: draft PR and GitHub CI, then user-approved merge before formal use.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H7 | pre-use apply-path contract cleanup | codex@macmini-yiqi | blocked | Implementation `fa524ad` on `codex/f-h7-preuse-apply-cleanup`: exact apply status captured without disabling strict mode inside the function; `qmove` is now sole owner of destination-dir creation after exclusion/TSV/hardlink guards. Red-first excluded+hardlink empty-dir assertions; exit-0 mutation made D3 fail; success/skip/failure apply-only coverage runs without Pillow. Focused 13/13 and full `make test` green; syntax/diff checks clean. BLOCKER: Tier-1 Grok 4.5 packet was not sent because tenant policy requires explicit approval for this new minimal private diff (only `bin/twincut.sh` + `tests/p1_stage9_smoke.sh`; no secrets or machine paths). User input required; next: approve disclosure, rerun `grok-review`, address findings, then draft PR/CI. |
+| F-H7 | pre-use apply-path contract cleanup | codex@macmini-yiqi | in-review | Implementation `fa524ad` + review follow-up `6665ece` on `codex/f-h7-preuse-apply-cleanup`: exact apply status captured without disabling strict mode inside the function; `qmove` is sole owner of destination-dir creation after exclusion/TSV/hardlink guards. Red-first excluded+hardlink empty-dir assertions; exit-0 mutation made D3 fail; apply-only success/skip/mkdir-failure/preflight coverage runs without Pillow and pins exactly one `run_end`. Focused 17/17 and full `make test` green; syntax/diff checks clean. Tier-1 Grok 4.5 initial Ship (`TEAM_RESULT=OK`) with two Low test gaps; both addressed and incremental re-review returned OK with no material residuals. Next: draft PR, CI, user-approved merge. |
 | F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | done | PR #24 squash-merged as `74aef6f` (2026-07-19, user-approved). Exact Bash 3.2 indexed-array pair keys suppress reverse traversal without path-pattern collisions; innermost `continue 1` preserves later candidates. K3 pins exactly one event/report for a pair; K3b mutation-check pins all three unique pairs. Full local checks and all four GitHub CI jobs green. Tier-1 Grok 4.5 initial Ship with findings; all addressed; incremental re-review Ship with no required residuals. |
 | F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | done | PR #23 squash-merged as `df13634` (2026-07-12, user approval); local/remote claim branches pruned. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
@@ -65,6 +65,11 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-19 `[codex]@macmini-yiqi` — F-H7 Tier-1 Ship; residual tests closed
+- User explicitly approved the sanitized two-file private diff. Grok 4.5 returned `TEAM_RESULT=OK ok` / Ship with zero High or Medium findings. It confirmed the strict-subshell exit capture is the correct Bash 3.2 pattern and that deferred directory creation matches the guard contract.
+- Took both Low test suggestions in `6665ece`: an existing regular file deterministically forces `qmove`'s mkdir failure and pins the `io_error` warning/source retention/skipped counter; success and malformed-preflight paths each assert exactly one `run_end`. Apply-only Stage 9 is now 17/17 without Pillow; full `make test` remains green.
+- Incremental Grok re-review returned `TEAM_RESULT=OK ok`: both residuals closed, nothing material overlooked. Next: push the reviewed head, open a draft PR, wait for GitHub CI, then request user merge approval.
 
 ### 2026-07-19 `[codex]@macmini-yiqi` — F-H7 implemented; Tier-1 awaits per-diff approval
 - `fa524ad` removes the pre-guard `mkdir -p`; `qmove` now creates a destination only after exclusion, TSV-safety, and hardlink guards. The apply short-circuit captures the function's exact status through a strict subshell, avoiding Bash's rule that suppresses `errexit` when a function is invoked from `if`/`||`.
