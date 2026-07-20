@@ -10,12 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** ✅ COMPLETE — F-H5 stage9 apply exit-code assertions + keep-policy test polish merged as PR #23 (`df13634`, 2026-07-12). No active work; remaining items are optional product follow-ups, accepted residuals, and trigger-gated deferred work.
+**Current milestone:** 🔄 IN PROGRESS — F-H6 backup similar-video pair deduplication. Reproduced the same pair being emitted twice in report-only and fix+dry-run modes; implementing one-event-per-undirected-pair semantics with a red-first regression.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
+| F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | in-progress | Claim branch `codex/f-h6-backup-dup-group-dedup`. Scope: mirror source-self canonical pair/seen-set behavior in backup-self so report-only and fix+dry-run emit exactly one `dup_group` per pair; preserve candidate scanning with `continue` on seen pairs. TDD: strengthen K3 to require one event and one report line. Verification: keep-policy + backup-self smokes, `make test`, relevant shell/contract gates, `git diff --check`, Tier-1 Grok 4.5. |
 | F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | done | PR #23 squash-merged as `df13634` (2026-07-12, user approval); local/remote claim branches pruned. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
 | F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
