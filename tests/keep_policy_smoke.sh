@@ -77,5 +77,32 @@ grep -q "keep='$bk3/aa_vid.mp4'" "$work/k3.log" \
 grep -q '"type":"dup_group"' "$ev3" || fail "K3: no dup_group emitted"
 grep -q '"type":"dup_group".*"keep_path":"'"$bk3"'/aa_vid.mp4"' "$ev3" \
   || fail "K3: dup_group keep_path is not the byte-smaller path"
+k3_event_count="$(grep -c '"type":"dup_group"' "$ev3")"
+[[ "$k3_event_count" -eq 1 ]] \
+  || fail "K3: expected exactly one dup_group for the pair, got $k3_event_count"
+k3_report_count="$(grep -c 'BACKUP-SIMILAR' "$work/k3.log")"
+[[ "$k3_report_count" -eq 1 ]] \
+  || fail "K3: expected exactly one BACKUP-SIMILAR line for the pair, got $k3_report_count"
+
+# K3b. Three mutually-similar files form three undirected pairs. Once a
+# reverse pair is seen, the candidate loop must continue to later unseen
+# candidates rather than break and drop a valid pair.
+bk3b="$work/k3b"; mkdir -p "$bk3b"
+cp "$HI" "$bk3b/aa_vid.mp4"
+cp "$LO" "$bk3b/mm_vid.mp4"
+cp "$HI" "$bk3b/zz_vid.mp4"
+touch -t 202601011200 "$bk3b/aa_vid.mp4" "$bk3b/mm_vid.mp4" "$bk3b/zz_vid.mp4"
+
+ev3b="$work/k3b.ndjson"
+SIZE_PCT=5 DUR_SEC=0.3 TWINCUT_RUN_ID=r_keep_k3b \
+  "$TC" --backup "$bk3b" --report-backup-dupes --quarantine "$work/q3b" \
+  --json-events >"$ev3b" 2>"$work/k3b.log" \
+  || fail "K3b: backup self-check exited nonzero"
+k3b_event_count="$(grep -c '"type":"dup_group"' "$ev3b")"
+[[ "$k3b_event_count" -eq 3 ]] \
+  || fail "K3b: expected all three unique pairs, got $k3b_event_count dup_group events"
+k3b_report_count="$(grep -c 'BACKUP-SIMILAR' "$work/k3b.log")"
+[[ "$k3b_report_count" -eq 3 ]] \
+  || fail "K3b: expected all three unique report lines, got $k3b_report_count"
 
 echo "keep_policy_smoke: all ok"

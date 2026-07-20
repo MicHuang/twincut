@@ -10,12 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** ✅ COMPLETE — F-H5 stage9 apply exit-code assertions + keep-policy test polish merged as PR #23 (`df13634`, 2026-07-12). No active work; remaining items are optional product follow-ups, accepted residuals, and trigger-gated deferred work.
+**Current milestone:** 🔎 IN REVIEW — F-H6 backup similar-video pair deduplication is implemented, fully verified, Tier-1 approved, and published as draft PR #24; awaiting GitHub CI and user merge approval.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
+| F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | in-review | Draft PR #24 from `codex/f-h6-backup-dup-group-dedup`. Implementation `6cca107` + review follow-up `cea32d1`: exact Bash 3.2 indexed-array pair keys, innermost `continue 1`, and K3/K3b exactly-once + multi-candidate coverage. RED: original K3 got 2 events; mutation `continue 1`→`break` made K3b get 2/3 pairs. GREEN: keep-policy under `/bin/bash` 3.2, backup-self, vid_eq, events 18/18, Stage 11 6/6, P0 28/28, full `make test`, syntax, and diff check; Stage 9 skipped for missing Pillow and local shellcheck unavailable. Tier-1 Grok 4.5: initial Ship with findings; all findings addressed; incremental re-review Ship with no required residuals. Next: wait for GitHub CI, then user decides ready/merge. |
 | F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | done | PR #23 squash-merged as `df13634` (2026-07-12, user approval); local/remote claim branches pruned. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
 | F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
@@ -39,7 +40,7 @@
   - ~~**vid_eq** strict re-verify + usage dedup~~ → F-H3 done via PR #21.
   - ~~**Go** apply-endpoint 422 mode echo~~ → F-H4 done via PR #22.
   - **Optional test/comment polish**: ~~K3 `keep_path` JSON assert; keep_policy ext4 note; stage9 `|| true` exit-code masks~~ → claimed as F-H5 (in-progress, see task table). Still unclaimed: apply-loop `mkdir -p` runs before qmove's guard (pre-existing, cosmetic empty dir — product code, deliberately outside test-only F-H5).
-  - **New optional product follow-ups from F-H5 Tier-1 (grok-4.5, non-blocking)**: the `--json-in` short-circuit in `bin/twincut.sh` (~line 1128) reads `process_apply_list_jsonin; exit 0` — D3's exit-1 only works because `set -e` aborts on the function's return 1; `exit $?` would make the contract explicit in source. Also observed during F-H5 probing (pre-existing, uninvestigated): backup similar-video emits the same pair as TWO identical `dup_group` events (group_id 1 and 2) in one run.
+  - **New optional product follow-ups from F-H5 Tier-1 (grok-4.5, non-blocking)**: the `--json-in` short-circuit in `bin/twincut.sh` (~line 1128) reads `process_apply_list_jsonin; exit 0` — D3's exit-1 only works because `set -e` aborts on the function's return 1; `exit $?` would make the contract explicit in source. ~~Backup similar-video duplicate `dup_group` emission~~ → F-H6 fixed and open as draft PR #24.
   - **Accepted residuals**: newline-in-path remains unsafe end-to-end in the line-oriented SMAP/sort; `emit_warn --path` blames the action target even when matched/dir is the offending field (convention).
   - The remediation plan's own §"Explicitly deferred" list (O(N²) membership loops, double dir walk, thumb memoization, cache pruning, Go run eviction, etc.) — unchanged, trigger-gated.
 - Agent-team follow-up: improve `reviewer-claude` dispatch diagnostics for hook/missing-agent failures observed while reviewing PR #15; wrappers could map upstream "model no longer available" 404s to `BLOCKED not-configured` (seen when gemini/grok model IDs rotted mid-session, fixed in agent-team PR #47).
@@ -63,6 +64,21 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-19 `[codex]@macmini-yiqi` — F-H6 draft PR #24 open
+- Rechecked the account concern before publishing: local Git author remains `Yiqi Huang <yitsi.huang@gmail.com>`, while `gh api user`, SSH authentication, and the only account in `hosts.yml` all resolve to GitHub login `MicHuang`; the earlier token-invalid result no longer reproduces.
+- Opened draft PR #24 (`codex/f-h6-backup-dup-group-dedup` → `main`) through the GitHub connector with the root cause, behavior impact, red/mutation evidence, full verification matrix, Tier-1 results, and local Pillow/shellcheck caveats. Next: wait for CI, then user decides ready/merge.
+
+### 2026-07-19 `[codex]@macmini-yiqi` — F-H6 Tier-1 Ship; draft PR blocked on `gh` re-auth
+- User explicitly approved sending the minimal private diff to Grok 4.5 after the tenant disclosure warning. Initial Tier-1 returned Ship and requested multi-candidate coverage plus exact path-key handling; `cea32d1` addresses both with a Bash 3.2 indexed array, explicit inner-loop `continue 1`, post-dedup `pick_keep`, and K3b's three-pair graph.
+- Mutation evidence: temporarily changing `continue 1` to `break` made K3b fail with `expected all three unique pairs, got 2`; restored code passed. Full `make test` plus focused Bash 3.2/smoke/syntax/diff checks are green. Incremental Grok re-review returned `TEAM_RESULT=OK ok` / Ship with no required residuals.
+- Branch `codex/f-h6-backup-dup-group-dedup` is pushed through `cea32d1`. Draft PR was not created because the required `github:yeet` preflight found `gh auth status` invalid for active account `MicHuang`; next command is `gh auth refresh -h github.com`, then resume draft PR creation. No auth workaround or connector bypass attempted.
+
+### 2026-07-19 `[codex]@macmini-yiqi` — F-H6 implemented; Tier-1 blocked on explicit external-diff approval
+- Reproduced backup similar-video pair duplication: report-only and fix+dry-run emitted the same pair twice, while real fix emitted once only because the first qmove removed the reverse-pass input. Source-self already had canonical seen-pair suppression; cross mode is not symmetric across one directory.
+- TDD on `tests/keep_policy_smoke.sh` K3: new exactly-one event assertion failed first with `got 2`; `6cca107` mirrors source-self's canonical pair key and uses `continue` on seen pairs so other candidates remain reachable. K3 now also pins one `BACKUP-SIMILAR` line.
+- Verification green: keep-policy, backup-self, vid_eq, events contract 18/18, Stage 11 6/6, P0 28/28, full `make test`, `bash -n`, and `git diff --check`. Stage 9 skipped because Pillow is absent; shellcheck is not installed locally and remains a CI gate.
+- Required Tier-1 Grok 4.5 did not execute: tenant policy rejected sending the minimal 13-line private-repo product/test diff to the external reviewer despite agent-team standing approval. No workaround or reviewer substitution attempted. Next: obtain explicit informed user approval, rerun `grok-review`, address findings, then publish the draft PR.
 
 ### 2026-07-12 `[claude]@mac-joyce` — F-H5 closed: PR #23 merged (`df13634`)
 - User approved; marked draft ready, squash-merged, fast-forwarded local `main`, pruned local/remote claim branches, synced peers.

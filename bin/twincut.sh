@@ -54,6 +54,7 @@ BK_DUPE_NOTE=""
 SRC_DUPE_CNT=0
 SIMILAR_CNT=0
 SIM_GROUP_ID=0
+BACKUP_SIM_SEEN_KEYS=()
 SOURCE_CACHE=""
 SRC_HASH_RUN_FILE=""
 
@@ -1360,7 +1361,19 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
         [[ -z "$cand" || "$cand" == "$bf" ]] && continue
         out="$("$V_EQ_BIN" --fast "$bf" "$cand" 2>/dev/null || true)"
         if echo "$out" | grep -q "CANDIDATE:yes"; then
-          # Keep policy: prefer oldest mtime
+          # Each backup-self pair is reachable from both sides of the outer
+          # find loop. Canonicalize it and use an indexed array for exact key
+          # comparison (paths may contain glob or colon characters).
+          if [[ "$bf" < "$cand" ]]; then _bpa="$bf"; _bpb="$cand"; else _bpa="$cand"; _bpb="$bf"; fi
+          _bpkey="${_bpa}"$'\x1f'"${_bpb}"
+          _bp_seen=false
+          for _seen_key in ${BACKUP_SIM_SEEN_KEYS[@]+"${BACKUP_SIM_SEEN_KEYS[@]}"}; do
+            if [[ "$_seen_key" == "$_bpkey" ]]; then _bp_seen=true; break; fi
+          done
+          # This continues the innermost candidate loop, not the outer find.
+          if $_bp_seen; then continue 1; fi
+          BACKUP_SIM_SEEN_KEYS+=("$_bpkey")
+          # Keep policy only matters for a pair that will be emitted.
           pick_keep "$bf" "$cand"
           _sim_reason="video_fast"; $VIDEO_FAST_STRICT && _sim_reason="video_strict"
           emit_similar_video_group "$_sim_reason" "$KEEP" "$VMETA_FILE" "$MOVE" "$VMETA_FILE"
