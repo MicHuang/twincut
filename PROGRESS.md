@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** 🔄 IN PROGRESS — F-H6 backup similar-video pair deduplication. Reproduced the same pair being emitted twice in report-only and fix+dry-run modes; implementing one-event-per-undirected-pair semantics with a red-first regression.
+**Current milestone:** ⏸ BLOCKED — F-H6 backup similar-video pair deduplication is implemented and locally green at `6cca107`; the required Tier-1 review is waiting for explicit user approval to send the 13-line product/test diff to external Grok after tenant policy rejected the standing-approval call as private-code exfiltration.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | in-progress | Claim branch `codex/f-h6-backup-dup-group-dedup`. Scope: mirror source-self canonical pair/seen-set behavior in backup-self so report-only and fix+dry-run emit exactly one `dup_group` per pair; preserve candidate scanning with `continue` on seen pairs. TDD: strengthen K3 to require one event and one report line. Verification: keep-policy + backup-self smokes, `make test`, relevant shell/contract gates, `git diff --check`, Tier-1 Grok 4.5. |
+| F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | blocked | Implemented at `6cca107`: backup-self now canonicalizes each pair and skips already-seen reverse traversal with `continue`; K3 pins exactly one `dup_group` and one report line. RED: K3 got 2 events. GREEN: keep-policy, backup-self, vid_eq, events 18/18, Stage 11 6/6, P0 28/28, full `make test`, bash syntax, and `git diff --check`; Stage 9 skipped for missing Pillow and local shellcheck unavailable. Blocker: tenant policy rejected the minimal `grok-review` packet before wrapper execution because it would send private-repo diff content externally. Next: after explicit informed user approval, rerun the same 13-line Tier-1 packet; user input required: yes. |
 | F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | done | PR #23 squash-merged as `df13634` (2026-07-12, user approval); local/remote claim branches pruned. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
 | F-H3 | vid_eq strict-mode single-pass validation + usage dedup | codex@macmini-yiqi | done | PR #21 squash-merged as `981d513` (2026-07-11 user approval); local/remote claim branches pruned. Removed redundant strict metadata/ffprobe re-checks at both production call sites, preserved strict semantics, and centralized usage output. Local/CI checks green; Tier-1 grok-4.5 Ship with nits, Important follow-ups fixed before merge. |
@@ -64,6 +64,12 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-19 `[codex]@macmini-yiqi` — F-H6 implemented; Tier-1 blocked on explicit external-diff approval
+- Reproduced backup similar-video pair duplication: report-only and fix+dry-run emitted the same pair twice, while real fix emitted once only because the first qmove removed the reverse-pass input. Source-self already had canonical seen-pair suppression; cross mode is not symmetric across one directory.
+- TDD on `tests/keep_policy_smoke.sh` K3: new exactly-one event assertion failed first with `got 2`; `6cca107` mirrors source-self's canonical pair key and uses `continue` on seen pairs so other candidates remain reachable. K3 now also pins one `BACKUP-SIMILAR` line.
+- Verification green: keep-policy, backup-self, vid_eq, events contract 18/18, Stage 11 6/6, P0 28/28, full `make test`, `bash -n`, and `git diff --check`. Stage 9 skipped because Pillow is absent; shellcheck is not installed locally and remains a CI gate.
+- Required Tier-1 Grok 4.5 did not execute: tenant policy rejected sending the minimal 13-line private-repo product/test diff to the external reviewer despite agent-team standing approval. No workaround or reviewer substitution attempted. Next: obtain explicit informed user approval, rerun `grok-review`, address findings, then publish the draft PR.
 
 ### 2026-07-12 `[claude]@mac-joyce` — F-H5 closed: PR #23 merged (`df13634`)
 - User approved; marked draft ready, squash-merged, fast-forwarded local `main`, pruned local/remote claim branches, synced peers.
