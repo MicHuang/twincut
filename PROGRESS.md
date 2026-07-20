@@ -10,13 +10,13 @@
 
 ## Status Board  _(overwrite this section to reflect current reality)_
 
-**Current milestone:** 🚧 IN PROGRESS — F-H7 pre-use apply-path contract cleanup. Make `--json-in` exit propagation explicit and prevent skipped apply moves from creating empty destination directories before formal daily use.
+**Current milestone:** ⛔ BLOCKED — F-H7 implementation and full local verification are complete; required Tier-1 review is waiting for explicit approval to send this new minimal private-repo diff to Grok 4.5.
 
 ### Task table
 
 | # | 任务 | owner | status | 备注 |
 |---|------|-------|--------|------|
-| F-H7 | pre-use apply-path contract cleanup | codex@macmini-yiqi | in-progress | Claim branch `codex/f-h7-preuse-apply-cleanup`. Scope: explicit `process_apply_list_jsonin` status propagation at the top-level short-circuit; remove the redundant pre-`qmove` `mkdir -p` so excluded/hardlink-skipped records do not leave empty destination directories. DoD: red-first or mutation-backed contract tests, focused Stage 9 + full suite, syntax/diff checks, Tier-1 Grok 4.5, CI green, user-approved merge. |
+| F-H7 | pre-use apply-path contract cleanup | codex@macmini-yiqi | blocked | Implementation `fa524ad` on `codex/f-h7-preuse-apply-cleanup`: exact apply status captured without disabling strict mode inside the function; `qmove` is now sole owner of destination-dir creation after exclusion/TSV/hardlink guards. Red-first excluded+hardlink empty-dir assertions; exit-0 mutation made D3 fail; success/skip/failure apply-only coverage runs without Pillow. Focused 13/13 and full `make test` green; syntax/diff checks clean. BLOCKER: Tier-1 Grok 4.5 packet was not sent because tenant policy requires explicit approval for this new minimal private diff (only `bin/twincut.sh` + `tests/p1_stage9_smoke.sh`; no secrets or machine paths). User input required; next: approve disclosure, rerun `grok-review`, address findings, then draft PR/CI. |
 | F-H6 | backup similar-video pair deduplication | codex@macmini-yiqi | done | PR #24 squash-merged as `74aef6f` (2026-07-19, user-approved). Exact Bash 3.2 indexed-array pair keys suppress reverse traversal without path-pattern collisions; innermost `continue 1` preserves later candidates. K3 pins exactly one event/report for a pair; K3b mutation-check pins all three unique pairs. Full local checks and all four GitHub CI jobs green. Tier-1 Grok 4.5 initial Ship with findings; all addressed; incremental re-review Ship with no required residuals. |
 | F-H5 | stage9 apply exit-code assertions + keep-policy test polish | claude@mac-joyce | done | PR #23 squash-merged as `df13634` (2026-07-12, user approval); local/remote claim branches pruned. Test-only: all 14 `|| true` masks in `tests/p1_stage9_smoke.sh` → captured-rc assertions (contract characterized first: per-record failures exit 0 via event channel; only apply-flow malformed-JSON pre-flight exits 1), header documents it, per-record-failure sections also assert `run_end succeeded` (48→66 asserts); K3 gains `dup_group.keep_path` JSON assert; keep_policy header notes ext4-vs-APFS discriminating power. Local: both smokes + `make test` + exact shellcheck CI gate green. Tier-1 grok-4.5 `TEAM_RESULT=OK` / Ship; nits taken in-branch (`d2919ac`). |
 | F-H4 | Go apply-endpoint 422 mode-echo redaction | codex@macmini-yiqi | done | PR #22 squash-merged as `cf7adbe` (2026-07-12 user approval); local/remote claim branches pruned. Self-check, cross-check, and thumbnail apply handlers return stable wrong-mode 422 text without raw `prevSnap.Mode`; red-first sentinel tests cover all three. Local/CI checks green; Tier-1 grok-4.5 `TEAM_RESULT=OK ok` / Ship. |
@@ -65,6 +65,11 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-19 `[codex]@macmini-yiqi` — F-H7 implemented; Tier-1 awaits per-diff approval
+- `fa524ad` removes the pre-guard `mkdir -p`; `qmove` now creates a destination only after exclusion, TSV-safety, and hardlink guards. The apply short-circuit captures the function's exact status through a strict subshell, avoiding Bash's rule that suppresses `errexit` when a function is invoked from `if`/`||`.
+- RED: existing code created both excluded and hardlink destination dirs. GREEN: apply-only Stage 9 is 13/13 without Pillow and also proves a real move still creates/moves correctly. Mutation `exit "$apply_rc"` → `exit 0` made D3 fail at exit 0 vs expected 1; restored. Full `make test`, Bash syntax, and `git diff --check` are green; local shellcheck is unavailable and remains a CI gate.
+- Required Tier-1 was not executed: the approval layer rejected this new private diff despite the team standing policy and prohibited reviewer substitution/workaround. User input is required to authorize sending the sanitized two-file diff to Grok 4.5; then rerun review, fix findings, publish draft PR, and wait for CI.
 
 ### 2026-07-19 `[codex]@macmini-yiqi` — F-H7 claimed: pre-use apply cleanup
 - User requested both remaining apply-path product follow-ups before formal use: explicit `--json-in` exit propagation and elimination of empty destination directories on guarded/skipped `qmove` records.
