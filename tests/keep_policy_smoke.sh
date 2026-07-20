@@ -77,5 +77,11 @@ grep -q "keep='$bk3/aa_vid.mp4'" "$work/k3.log" \
 grep -q '"type":"dup_group"' "$ev3" || fail "K3: no dup_group emitted"
 grep -q '"type":"dup_group".*"keep_path":"'"$bk3"'/aa_vid.mp4"' "$ev3" \
   || fail "K3: dup_group keep_path is not the byte-smaller path"
+k3_event_count="$(grep -c '"type":"dup_group"' "$ev3")"
+[[ "$k3_event_count" -eq 1 ]] \
+  || fail "K3: expected exactly one dup_group for the pair, got $k3_event_count"
+k3_report_count="$(grep -c 'BACKUP-SIMILAR' "$work/k3.log")"
+[[ "$k3_report_count" -eq 1 ]] \
+  || fail "K3: expected exactly one BACKUP-SIMILAR line for the pair, got $k3_report_count"
 
 echo "keep_policy_smoke: all ok"

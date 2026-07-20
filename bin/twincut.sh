@@ -1362,6 +1362,13 @@ for BDIR in ${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}; do
         if echo "$out" | grep -q "CANDIDATE:yes"; then
           # Keep policy: prefer oldest mtime
           pick_keep "$bf" "$cand"
+          # Each backup-self pair is reachable from both sides of the outer
+          # find loop. Canonicalize it and emit/report the pair exactly once;
+          # continue (rather than break) so other candidates for bf survive.
+          if [[ "$bf" < "$cand" ]]; then _bpa="$bf"; _bpb="$cand"; else _bpa="$cand"; _bpb="$bf"; fi
+          _bpkey="${_bpa}"$'\x1f'"${_bpb}"
+          case ":${_BACKUP_SIM_SEEN:-}:" in *":${_bpkey}:"*) continue ;; esac
+          _BACKUP_SIM_SEEN="${_BACKUP_SIM_SEEN:-}:${_bpkey}"
           _sim_reason="video_fast"; $VIDEO_FAST_STRICT && _sim_reason="video_strict"
           emit_similar_video_group "$_sim_reason" "$KEEP" "$VMETA_FILE" "$MOVE" "$VMETA_FILE"
           if $REPORT_BACKUP_DUPES; then
