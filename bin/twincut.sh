@@ -424,8 +424,6 @@ process_apply_list_jsonin(){
             --detail "apply src not on disk"
           skipped=$((skipped+1)); continue
         fi
-        mkdir -p "$dst_dir" || { emit_warn --code io_error --path "$dst_dir" \
-          --detail "mkdir failed"; skipped=$((skipped+1)); continue; }
         if qmove "$src" "$dst_dir" "$keeper" "" "$decision"; then
           moved=$((moved+1))
         else
@@ -1125,8 +1123,16 @@ fi
 if $THUMB_DETECT_APPLY && $JSON_IN; then
   emit_run_start --mode thumbnail_detect_apply --source "${SOURCE_DIR:-}"
   init_manifest
-  process_apply_list_jsonin
-  exit 0
+  # Capture the exact apply status without calling the function from an if/||
+  # context (Bash would suppress errexit inside the entire function). The
+  # subshell restores strict mode, while the parent only captures and exits.
+  set +e
+  (
+    set -e
+    process_apply_list_jsonin
+  )
+  apply_rc=$?
+  exit "$apply_rc"
 fi
 
 # -------------------------- Mode resolution/guards -------------------------
