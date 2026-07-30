@@ -120,7 +120,7 @@ parser (`ui/server/events.go`) is keyed on `"type"`.
 The same principle applies to other naming (struct fields, routes, helpers): search the codebase first, then write the spec.
 
 <!-- agent-team:handoff:start -->
-<!-- agent-team:handoff:version=2026-06-28-u1 -->
+<!-- agent-team:handoff:version=2026-07-30-rpt1 -->
 ## Agent-Team Peer Handoff
 
 At the start of every session in this repo:
@@ -132,4 +132,12 @@ At the start of every session in this repo:
 
 If a SessionStart hook injects the Status Board, still treat PROGRESS.md as the source of truth and refresh it before editing.
 Always read PROGRESS.md directly when the injected context may be stale.
+
+### Report agent-team failures upstream
+
+If agent-team's own machinery fails—for example `stamp-handoff`, `upgrade`, `handoff-check`, a wrapper, reviewer routing, audit, or these managed instructions—separate that defect from the project bug and gather only minimal evidence: the command, sanitized `agent-team detect .` output, `TEAM_RESULT` / exact error, and expected versus actual behavior. Replace the repository root with `.`, and remove usernames, hostnames, and project identifiers unless they are essential.
+
+Prepare a report with the [upstream downstream-report template](https://github.com/MicHuang/agent-team/issues/new?template=downstream-report.md). If GitHub write access is unavailable, prepare the same copy-paste draft. Before creating the external issue, show the exact draft to the user and get explicit confirmation. Do not run `gh`, call an API, or submit through a browser until the user confirms that exact draft.
+
+Never send full PROGRESS.md, project source or business content, secrets, or private paths and identities unless the user explicitly approves the minimal necessary excerpt. The upstream issue is canonical; keep only its link and a short status in local PROGRESS.md.
 <!-- agent-team:handoff:end -->

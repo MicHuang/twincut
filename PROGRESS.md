@@ -1,6 +1,6 @@
 # PROGRESS - twincut
+<!-- agent-team:progress-schema=2026-07-30-rpt1 -->
 
-<!-- agent-team:progress-schema=2026-06-28-u1 -->
 
 > Peer-handoff file. Start by reading Status Board; finish by updating Status Board and appending Handoff Log.
 > Protocol: agent-team/docs/peer-handoff.md. Owner handles: claude / codex.
@@ -12,7 +12,7 @@
 
 **Current milestone:** ✅ COMPLETE — F-H7 pre-use apply-path contract cleanup merged as PR #25 (`7d702fc`, 2026-07-20). No active work; the reviewed/tested baseline is ready for formal use. Remaining items are accepted residuals, optional local tooling, and trigger-gated deferred work.
 
-**RPT1 rollout:** T5 is upgrading the repository to `2026-07-30-rpt1` so Codex and Claude can discover and safely submit downstream agent-team reports; the two initial adoption entries were first moved into a semantic archive.
+**RPT1 rollout:** T5 is complete. The repository is now at `2026-07-30-rpt1`, so Codex and Claude can discover and safely submit downstream agent-team reports; the two initial adoption entries are preserved in a semantic archive.
 
 ### Task table
 
@@ -32,7 +32,7 @@
 | T2 | Re-apply agent-team stamp | codex@macmini-yiqi | done | Re-ran `agent-team stamp-handoff /Users/zhabs/Tools/twincut` on Stage 11; generated `PROGRESS.md`, `AGENTS.md`, and updated `CLAUDE.md`. |
 | T3 | Refresh stale project docs | codex@macmini-yiqi | done | Updated `CLAUDE.md`, `README.md`, and `AGENTS.md` so they reflect the Go UI, Makefile/test suite, and Stage 11 typed event contract. |
 | T4 | Hygiene cleanup | codex@macmini-yiqi | done | Removed tracked generated quarantine CSV headers under `installers/_QUARANTINE/`. |
-| T5 | agent-team RPT1 downstream-report awareness rollout | codex@macmini-yiqi | in-progress | Archive two initial adoption entries, upgrade managed blocks/schema, then verify detect, upgrade check, handoff-check, full tests, and diff check; no product behavior changes. |
+| T5 | agent-team RPT1 downstream-report awareness rollout | codex@macmini-yiqi | done | Archived two initial adoption entries; upgraded AGENTS/CLAUDE managed blocks and PROGRESS schema to `2026-07-30-rpt1`; detect/upgrade/diff/handoff gates and full `make test` passed; no product behavior changed. |
 
 ### Task DoD convention
 - Each pending/in-progress task must name verification commands, manual checks, service/credential dependencies, and what counts as blocked.
@@ -69,6 +69,12 @@ Closed milestone history lives in docs/progress/archive/. Keep this root PROGRES
 ---
 
 ## Handoff Log  _(append only, newest on top)_
+
+### 2026-07-30 `[codex]@macmini-yiqi` — T5 complete: RPT1 downstream-report awareness
+- **Archive:** Moved the two oldest stamp/baseline entries into `docs/progress/archive/initial-agent-team-adoption.md`, added a concrete range and summary, and kept the root Handoff Log at 30 entries.
+- **Upgrade:** `agent-team upgrade --apply .` advanced the AGENTS/CLAUDE managed blocks and PROGRESS schema to `2026-07-30-rpt1`. Both agent surfaces now require a minimal sanitized exact draft and explicit user confirmation before opening an upstream agent-team issue.
+- **Verification:** `agent-team detect .` and `upgrade --check .` report current state; report-awareness phrases are present; full `make test` passed (Bash 12/12, Go, event contract 18/18, P0 28/28, apply-only Stage 9 17/17 with Pillow sections skipped, Stage 11 6/6, and focused smokes); `git diff --check` is clean. The final clean-branch handoff-check is rerun with the published commit.
+- **Scope:** Peer-handoff metadata and history only. No matching engine, UI, installer, media, quarantine data, or product behavior changed.
 
 ### 2026-07-20 `[codex]@macmini-yiqi` — F-H7 closed: PR #25 merged (`7d702fc`)
 - User approved; marked PR #25 ready and squash-merged the verified head `28dd68c` as `7d702fc`. Both workflow runs were fully green: go-tests, shell-tests, shellcheck, and thumbnail-tests-macos.
