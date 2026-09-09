@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"path"
 	"sort"
 	"strings"
@@ -109,4 +110,52 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// langCookie is set by the header switcher and outranks the --lang flag: the
+// flag overrides detection, not a person's explicit choice.
+const langCookie = "lang"
+
+// resolveLocale picks a locale from, in order: the lang cookie, the --lang
+// flag, Accept-Language, then defaultLocale. It is generic over the map value
+// so the same function serves a catalog map and a template map.
+//
+// The cookie is untrusted input: an unrecognised value falls through rather
+// than erroring.
+func resolveLocale[V any](r *http.Request, flagLang string, avail map[string]V) string {
+	if c, err := r.Cookie(langCookie); err == nil {
+		if _, ok := avail[c.Value]; ok {
+			return c.Value
+		}
+	}
+	if _, ok := avail[flagLang]; ok {
+		return flagLang
+	}
+	if first := firstAcceptLanguageTag(r.Header.Get("Accept-Language")); first != "" {
+		if strings.HasPrefix(strings.ToLower(first), "zh") {
+			if _, ok := avail["zh-Hans"]; ok {
+				return "zh-Hans"
+			}
+		}
+	}
+	return defaultLocale
+}
+
+// firstAcceptLanguageTag returns the highest-priority tag from an
+// Accept-Language header. Two locales do not justify RFC 4647 matching.
+func firstAcceptLanguageTag(header string) string {
+	if i := strings.IndexAny(header, ",;"); i >= 0 {
+		header = header[:i]
+	}
+	return strings.TrimSpace(header)
+}
+
+// SupportedLocales lists the locale codes baked into fsys, sorted. Exported so
+// main can validate --lang before the server starts.
+func SupportedLocales(fsys fs.FS) ([]string, error) {
+	cats, err := loadCatalogs(fsys)
+	if err != nil {
+		return nil, err
+	}
+	return sortedKeys(cats), nil
 }
