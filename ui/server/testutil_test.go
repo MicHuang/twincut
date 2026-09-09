@@ -1,6 +1,7 @@
 package server
 
 import (
+	"html/template"
 	"testing"
 )
 
@@ -32,4 +33,20 @@ func TestSpawnGuardPanicsWithoutHook(t *testing.T) {
 		}
 	}()
 	_, _ = rm.Start(StartOptions{Mode: "test"})
+}
+
+// newTestTemplates parses the on-disk templates with the production FuncMap
+// plus locale-independent stubs for t/tmap/lang. Three test files used to
+// duplicate this; they must not, because the FuncMap now grows.
+func newTestTemplates(t *testing.T) *template.Template {
+	t.Helper()
+	fm := baseFuncMap()
+	fm["t"] = func(k string) string { return k }
+	fm["tmap"] = func(prefix string) map[string]string { return map[string]string{} }
+	fm["lang"] = func() string { return defaultLocale }
+	tmpl, err := template.New("").Funcs(fm).ParseGlob("../templates/*.html")
+	if err != nil {
+		t.Fatalf("parse templates: %v", err)
+	}
+	return tmpl
 }

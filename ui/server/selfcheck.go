@@ -26,7 +26,7 @@ type selfCheckRunningData struct {
 	ShowActions bool
 }
 
-func (s *Server) handleSelfCheckTab(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleSelfCheckTab(w http.ResponseWriter, r *http.Request) {
 	data := selfCheckFormData{}
 	if recents, err := s.recents.List(); err == nil {
 		data.Recents = recents
@@ -35,7 +35,7 @@ func (s *Server) handleSelfCheckTab(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_form.html", data); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_form.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -84,7 +84,7 @@ func (s *Server) handleSelfCheckPreview(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      folder,
 		Mode:        "preview",
@@ -110,7 +110,7 @@ func (s *Server) handleSelfCheckResults(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_results.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_results.html", view); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -184,7 +184,7 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      folder,
 		Mode:        "apply",
@@ -209,7 +209,7 @@ func (s *Server) handleSelfCheckDone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -277,7 +277,7 @@ func (s *Server) handleFsList(w http.ResponseWriter, r *http.Request) {
 
 	// Empty path → show the allowlist roots.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "dir_listing.html", listing); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "dir_listing.html", listing); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

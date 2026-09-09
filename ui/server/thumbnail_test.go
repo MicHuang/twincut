@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"html/template"
 	"io"
 	"net/http"
@@ -20,27 +19,6 @@ func newThumbTestServer(t *testing.T) *Server {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	funcMap := template.FuncMap{
-		"dict": func(args ...any) (map[string]any, error) {
-			if len(args)%2 != 0 {
-				return nil, fmt.Errorf("dict requires even number of args")
-			}
-			m := make(map[string]any, len(args)/2)
-			for i := 0; i < len(args); i += 2 {
-				key, ok := args[i].(string)
-				if !ok {
-					return nil, fmt.Errorf("dict key %v is not a string", args[i])
-				}
-				m[key] = args[i+1]
-			}
-			return m, nil
-		},
-		"hasPrefix": strings.HasPrefix,
-	}
-	tmpl, err := template.New("").Funcs(funcMap).ParseGlob("../templates/*.html")
-	if err != nil {
-		t.Fatalf("parse templates: %v", err)
-	}
 	stateDir := t.TempDir()
 	rm, err := NewRunManager(stateDir, "/dev/null")
 	if err != nil {
@@ -51,7 +29,7 @@ func newThumbTestServer(t *testing.T) *Server {
 			StateDir:    stateDir,
 			TwincutPath: "/dev/null",
 		},
-		tmpl:    tmpl,
+		tmpls:   map[string]*template.Template{defaultLocale: newTestTemplates(t)},
 		runs:    rm,
 		recents: NewRecentsStore(stateDir),
 	}
@@ -314,7 +292,7 @@ func TestHandleThumbnailsL1Row_RendersCheckbox(t *testing.T) {
 		Index:   0,
 	}
 	var buf strings.Builder
-	if err := srv.tmpl.ExecuteTemplate(&buf, "thumbnails_l1_row.html", data); err != nil {
+	if err := srv.tmpls[defaultLocale].ExecuteTemplate(&buf, "thumbnails_l1_row.html", data); err != nil {
 		t.Fatalf("execute template: %v", err)
 	}
 	body := buf.String()
@@ -371,7 +349,7 @@ func TestRunningPanelTitle_ThumbnailModes(t *testing.T) {
 				Mode:    tc.mode,
 				NextURL: "/api/thumbnails/results/x",
 			}
-			if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_running.html", data); err != nil {
+			if err := srv.tmpls[defaultLocale].ExecuteTemplate(&buf, "selfcheck_running.html", data); err != nil {
 				t.Fatalf("execute: %v", err)
 			}
 			if !strings.Contains(buf.String(), tc.want) {

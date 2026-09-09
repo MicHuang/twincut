@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -17,27 +16,6 @@ import (
 func newCrossCheckTestServer(t *testing.T) *Server {
 	t.Helper()
 	stateDir := t.TempDir()
-	funcMap := template.FuncMap{
-		"dict": func(args ...any) (map[string]any, error) {
-			if len(args)%2 != 0 {
-				return nil, fmt.Errorf("dict requires even number of args")
-			}
-			m := make(map[string]any, len(args)/2)
-			for i := 0; i < len(args); i += 2 {
-				key, ok := args[i].(string)
-				if !ok {
-					return nil, fmt.Errorf("dict key %v is not a string", args[i])
-				}
-				m[key] = args[i+1]
-			}
-			return m, nil
-		},
-		"hasPrefix": strings.HasPrefix,
-	}
-	tmpl, err := template.New("").Funcs(funcMap).ParseGlob("../templates/*.html")
-	if err != nil {
-		t.Fatalf("parse templates: %v", err)
-	}
 	rm, err := NewRunManager(stateDir, "/dev/null")
 	if err != nil {
 		t.Fatalf("run manager: %v", err)
@@ -47,7 +25,7 @@ func newCrossCheckTestServer(t *testing.T) *Server {
 			StateDir:    stateDir,
 			TwincutPath: "/dev/null",
 		},
-		tmpl:    tmpl,
+		tmpls:   map[string]*template.Template{defaultLocale: newTestTemplates(t)},
 		runs:    rm,
 		recents: NewRecentsStore(stateDir),
 	}

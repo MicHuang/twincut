@@ -20,7 +20,7 @@ func (s *Server) handleThumbnailsTab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "thumbnails_form.html", map[string]any{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "thumbnails_form.html", map[string]any{
 		"Recents": recents,
 	}); err != nil {
 		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
@@ -61,7 +61,7 @@ func (s *Server) handleThumbnailsPreview(w http.ResponseWriter, r *http.Request)
 	_ = s.recents.Add(source)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      source,
 		Mode:        "thumbnail_detect_preview",
@@ -85,7 +85,7 @@ func (s *Server) handleThumbnailsResults(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "thumbnails_results.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "thumbnails_results.html", view); err != nil {
 		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -160,7 +160,7 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      source,
 		Mode:        "thumbnail_detect_apply",
@@ -185,7 +185,7 @@ func (s *Server) handleThumbnailsDone(w http.ResponseWriter, r *http.Request) {
 	}
 	view.Mode = "thumbnail_detect"
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
 		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
 	}
 }

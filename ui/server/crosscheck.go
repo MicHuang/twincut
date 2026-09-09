@@ -50,7 +50,7 @@ func (s *Server) handleCrossCheckTab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "crosscheck_form.html", map[string]any{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "crosscheck_form.html", map[string]any{
 		"Recents": recents,
 	}); err != nil {
 		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
@@ -59,7 +59,7 @@ func (s *Server) handleCrossCheckTab(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCrossCheckAddBackupRow(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "crosscheck_backup_row.html", nil); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "crosscheck_backup_row.html", nil); err != nil {
 		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -103,7 +103,7 @@ func (s *Server) handleCrossCheckPreview(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      source,
 		Mode:        "cross_check_preview",
@@ -197,7 +197,7 @@ func (s *Server) handleCrossCheckApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      source,
 		Mode:        "cross_check_apply",
@@ -221,7 +221,7 @@ func (s *Server) handleCrossCheckResults(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_results.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_results.html", view); err != nil {
 		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -240,7 +240,7 @@ func (s *Server) handleCrossCheckDone(w http.ResponseWriter, r *http.Request) {
 	}
 	view.Mode = "cross_check"
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
 		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
 	}
 }

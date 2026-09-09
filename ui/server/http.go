@@ -33,16 +33,16 @@ type Options struct {
 // Server is the long-lived HTTP layer.
 type Server struct {
 	opts    Options
-	tmpl    *template.Template
+	tmpls   map[string]*template.Template
 	runs    *RunManager
 	recents *RecentsStore
 }
 
-// New constructs a Server from the given options. Panics on template parse
-// errors — these are baked-in assets, so failure means the binary itself is
-// broken.
-func New(opts Options) *Server {
-	funcMap := template.FuncMap{
+// baseFuncMap holds the template helpers that do not depend on locale. New()
+// adds t/tmap/lang per locale on top; tests build from the same base so the
+// two cannot drift.
+func baseFuncMap() template.FuncMap {
+	return template.FuncMap{
 		"dict": func(args ...any) (map[string]any, error) {
 			if len(args)%2 != 0 {
 				return nil, fmt.Errorf("dict requires even number of args")
@@ -59,9 +59,30 @@ func New(opts Options) *Server {
 		},
 		"hasPrefix": strings.HasPrefix,
 	}
-	tmpl, err := template.New("").Funcs(funcMap).ParseFS(opts.Assets, "templates/*.html")
+}
+
+// New constructs a Server from the given options. Panics on template parse
+// errors — these are baked-in assets, so failure means the binary itself is
+// broken.
+func New(opts Options) *Server {
+	cats, err := loadCatalogs(opts.Assets)
 	if err != nil {
-		panic("twincut-ui: parse embedded templates: " + err.Error())
+		panic("twincut-ui: load locale catalogs: " + err.Error())
+	}
+	if err := validateCatalogs(cats, nil); err != nil {
+		panic("twincut-ui: locale catalogs: " + err.Error())
+	}
+	tmpls := make(map[string]*template.Template, len(cats))
+	for code, cat := range cats {
+		fm := baseFuncMap()
+		fm["t"] = cat.lookup
+		fm["tmap"] = cat.subtree
+		fm["lang"] = func() string { return code }
+		tm, err := template.New("").Funcs(fm).ParseFS(opts.Assets, "templates/*.html")
+		if err != nil {
+			panic("twincut-ui: parse embedded templates: " + err.Error())
+		}
+		tmpls[code] = tm
 	}
 	rm, err := NewRunManager(opts.StateDir, opts.TwincutPath)
 	if err != nil {
@@ -69,10 +90,17 @@ func New(opts Options) *Server {
 	}
 	return &Server{
 		opts:    opts,
-		tmpl:    tmpl,
+		tmpls:   tmpls,
 		runs:    rm,
 		recents: NewRecentsStore(opts.StateDir),
 	}
+}
+
+// tmplFor returns the template set for the request's locale. Because t is
+// bound into each set at parse time, a handler cannot render a mixed-language
+// page.
+func (s *Server) tmplFor(r *http.Request) *template.Template {
+	return s.tmpls[resolveLocale(r, s.opts.Lang, s.tmpls)]
 }
 
 // Handler returns the root http.Handler.
@@ -187,7 +215,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "app.html", data); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "app.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -255,13 +283,13 @@ type debugPageData struct {
 	Runs        []Snapshot
 }
 
-func (s *Server) handleDebug(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleDebug(w http.ResponseWriter, r *http.Request) {
 	data := debugPageData{
 		TwincutPath: s.opts.TwincutPath,
 		Runs:        s.runs.List(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "debug.html", data); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "debug.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -277,7 +305,7 @@ func (s *Server) handleDebugRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "debug_run.html", debugRunPageData{RunID: id}); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "debug_run.html", debugRunPageData{RunID: id}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

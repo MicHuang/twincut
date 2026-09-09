@@ -302,7 +302,7 @@ func TestResultsTemplate_CrossCheckRendersRoleBadges(t *testing.T) {
 		NumFiles:  1,
 	}
 	var buf strings.Builder
-	if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_results.html", view); err != nil {
+	if err := srv.tmpls[defaultLocale].ExecuteTemplate(&buf, "selfcheck_results.html", view); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	body := buf.String()
@@ -338,7 +338,7 @@ func TestResultsTemplate_SelfCheckUsesSelfCheckApplyURL(t *testing.T) {
 		NumFiles:  1,
 	}
 	var buf strings.Builder
-	if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_results.html", view); err != nil {
+	if err := srv.tmpls[defaultLocale].ExecuteTemplate(&buf, "selfcheck_results.html", view); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	body := buf.String()
