@@ -25,7 +25,7 @@ import (
 
 // All UI assets are baked into the binary. The build is a single-file drop-in.
 //
-//go:embed templates/*.html static/*
+//go:embed templates/*.html static/* locales/*.json
 var assets embed.FS
 
 func main() {
