@@ -327,8 +327,8 @@ func TestAppHTML_ThumbnailsNavLink(t *testing.T) {
 	if strings.Contains(body, `muted-tag`) {
 		t.Error("sidebar still has muted-tag soon badge (stale)")
 	}
-	if !strings.Contains(body, "stage 8") {
-		t.Error("footer still says stage 4 or other old value")
+	if !strings.Contains(body, "nav.footer") {
+		t.Error("footer no longer renders the nav.footer key")
 	}
 }
 
@@ -338,8 +338,8 @@ func TestRunningPanelTitle_ThumbnailModes(t *testing.T) {
 		mode string
 		want string
 	}{
-		{"thumbnail_detect_preview", "Detecting thumbnails"},
-		{"thumbnail_detect_apply", "Confirming thumbnail moves"},
+		{"thumbnail_detect_preview", "running.mode.thumbnailPreview"},
+		{"thumbnail_detect_apply", "running.mode.thumbnailApply"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			var buf strings.Builder

@@ -308,8 +308,8 @@ func TestResultsTemplate_CrossCheckRendersRoleBadges(t *testing.T) {
 	body := buf.String()
 	for _, want := range []string{
 		`hx-post="/api/cross-check/apply"`,
-		`BACKUP · keep`,
-		`SOURCE`,
+		`badge.backupKeep`,
+		`badge.source`,
 		`/bk/a.jpg`,
 		`/src/a.jpg`,
 		`type="checkbox" name="quarantine"`,
@@ -345,7 +345,7 @@ func TestResultsTemplate_SelfCheckUsesSelfCheckApplyURL(t *testing.T) {
 	if !strings.Contains(body, `hx-post="/api/self-check/apply"`) {
 		t.Errorf("self-check apply URL not in body")
 	}
-	if strings.Contains(body, `BACKUP · keep`) || strings.Contains(body, `>SOURCE<`) {
+	if strings.Contains(body, `badge.backupKeep`) || strings.Contains(body, `badge.source`) {
 		t.Errorf("self-check rendering leaked cross-check role badges:\n%s", body)
 	}
 }

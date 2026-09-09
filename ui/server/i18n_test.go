@@ -1,6 +1,7 @@
 package server
 
 import (
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -237,6 +238,35 @@ func TestCatalogsHaveNoUnusedKeys(t *testing.T) {
 		}
 		if !covered {
 			t.Errorf("catalog key %q is defined but used by nothing — delete it or use it", k)
+		}
+	}
+}
+
+func TestRenderAllLocales(t *testing.T) {
+	cats, err := loadCatalogs(os.DirFS(".."))
+	if err != nil {
+		t.Fatalf("loadCatalogs: %v", err)
+	}
+	for _, code := range sortedKeys(cats) {
+		cat := cats[code]
+		fm := baseFuncMap()
+		fm["t"] = cat.lookup
+		fm["tmap"] = cat.subtree
+		fm["lang"] = func() string { return code }
+		tmpl, err := template.New("").Funcs(fm).ParseGlob("../templates/*.html")
+		if err != nil {
+			t.Fatalf("%s: parse: %v", code, err)
+		}
+		if tmpl.Lookup("app.html") == nil {
+			t.Errorf("%s: app.html missing from the parsed set", code)
+		}
+		for _, k := range sortedKeys(cat) {
+			if strings.TrimSpace(cat[k]) == "" {
+				t.Errorf("%s: key %q is empty", code, k)
+			}
+			if strings.HasPrefix(cat[k], "!") && strings.HasSuffix(cat[k], "!") {
+				t.Errorf("%s: key %q looks like a lookup marker: %q", code, k, cat[k])
+			}
 		}
 	}
 }

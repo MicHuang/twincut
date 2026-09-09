@@ -1,7 +1,7 @@
 <section class="tab-section">
   <header class="tab-section-header">
-    <h2>Self-check</h2>
-    <p class="subtitle">Find duplicates inside one folder. Hash-only by default. Always previews before moving anything.</p>
+    <h2>{{t "selfcheck.title"}}</h2>
+    <p class="subtitle">{{t "selfcheck.intro"}}</p>
   </header>
 
   <form id="selfcheck-form"
@@ -11,7 +11,7 @@
         hx-disabled-elt="find button">
 
     <label class="field">
-      <span class="field-label">Folder to scan</span>
+      <span class="field-label">{{t "selfcheck.folderLabel"}}</span>
       <div class="folder-picker">
         <input type="text" name="folder" id="folder-input"
                placeholder="/path/to/your/photos"
@@ -22,12 +22,12 @@
                 hx-get="/fs/list?path={{.DefaultFolder}}"
                 hx-target="#folder-tree"
                 hx-swap="innerHTML">
-          Browse
+          {{t "common.browse"}}
         </button>
       </div>
       {{if .Recents}}
       <div class="recents">
-        <span class="muted">Recent:</span>
+        <span class="muted">{{t "common.recent"}}</span>
         {{range .Recents}}
           <button type="button" class="chip" data-path="{{.}}"
                   onclick="document.getElementById('folder-input').value='{{.}}'">{{.}}</button>
@@ -38,41 +38,41 @@
     </label>
 
     <details class="advanced">
-      <summary>Advanced options</summary>
+      <summary>{{t "selfcheck.advanced"}}</summary>
       <div class="advanced-grid">
         <label class="field">
-          <span class="field-label">Hash algorithm</span>
+          <span class="field-label">{{t "selfcheck.algo"}}</span>
           <select name="algo">
-            <option value="md5" selected>md5 (faster)</option>
-            <option value="sha1">sha1</option>
+            <option value="md5" selected>{{t "selfcheck.algo.md5"}}</option>
+            <option value="sha1">{{t "selfcheck.algo.sha1"}}</option>
           </select>
         </label>
         <label class="field">
-          <span class="field-label">Min size</span>
+          <span class="field-label">{{t "selfcheck.minSize"}}</span>
           <input type="text" name="min_size" value="0k" placeholder="e.g. 300k or 1M">
         </label>
         <label class="field field-wide">
-          <span class="field-label">Extensions (comma-separated, blank = default)</span>
+          <span class="field-label">{{t "selfcheck.exts"}}</span>
           <input type="text" name="ext" placeholder="jpg,png,mp4,…">
         </label>
         <label class="field">
-          <span class="field-label">Similar-video detection</span>
+          <span class="field-label">{{t "selfcheck.simVideo"}}</span>
           <select name="include_similar_video">
-            <option value="auto" selected>Auto (when folder has videos)</option>
-            <option value="on">Always</option>
-            <option value="off">Off</option>
+            <option value="auto" selected>{{t "selfcheck.simVideo.auto"}}</option>
+            <option value="on">{{t "selfcheck.simVideo.always"}}</option>
+            <option value="off">{{t "selfcheck.simVideo.off"}}</option>
           </select>
         </label>
         <label class="field">
-          <span class="field-label">Similarity size window (%)</span>
+          <span class="field-label">{{t "selfcheck.sizeWindow"}}</span>
           <input type="text" name="size_pct" value="" placeholder="auto: 5 when sim-video on, else 0.5">
         </label>
       </div>
     </details>
 
     <div class="form-actions">
-      <button type="submit" class="btn btn-primary">Preview</button>
-      <p class="muted-inline">Preview is a dry-run. Nothing is moved until you click Apply on the next screen.</p>
+      <button type="submit" class="btn btn-primary">{{t "button.preview"}}</button>
+      <p class="muted-inline">{{t "selfcheck.previewNote"}}</p>
     </div>
   </form>
 </section>

@@ -1,13 +1,13 @@
 <section class="tab-section">
   <header class="tab-section-header">
     <h2>
-      {{- if eq .Mode "apply" -}}Applying…
-      {{- else if eq .Mode "cross_check_apply" -}}Applying cross-check…
-      {{- else if eq .Mode "cross_check_preview" -}}Cross-checking…
-      {{- else if eq .Mode "thumbnail_detect_preview" -}}Detecting thumbnails…
-      {{- else if eq .Mode "thumbnail_detect_apply" -}}Confirming thumbnail moves…
-      {{- else if eq .Mode "restore" -}}Restoring…
-      {{- else -}}Previewing…
+      {{- if eq .Mode "apply" -}}{{t "running.mode.apply"}}
+      {{- else if eq .Mode "cross_check_apply" -}}{{t "running.mode.crossCheckApply"}}
+      {{- else if eq .Mode "cross_check_preview" -}}{{t "running.mode.crossCheckPreview"}}
+      {{- else if eq .Mode "thumbnail_detect_preview" -}}{{t "running.mode.thumbnailPreview"}}
+      {{- else if eq .Mode "thumbnail_detect_apply" -}}{{t "running.mode.thumbnailApply"}}
+      {{- else if eq .Mode "restore" -}}{{t "running.mode.restore"}}
+      {{- else -}}{{t "running.mode.previewing"}}
       {{- end -}}
     </h2>
     <p class="subtitle"><code>{{.Folder}}</code></p>
@@ -21,32 +21,32 @@
     <div class="progress">
       <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
       <div class="progress-stats">
-        <span id="progress-text">Starting…</span>
+        <span id="progress-text">{{t "running.starting"}}</span>
         <span class="muted" id="progress-current"></span>
       </div>
     </div>
 
     <div class="run-counters">
       <div class="counter">
-        <span class="counter-label">duplicates found</span>
+        <span class="counter-label">{{t "running.dupsFound"}}</span>
         <span class="counter-value" id="counter-dups">0</span>
       </div>
       <div class="counter">
-        <span class="counter-label">warnings</span>
+        <span class="counter-label">{{t "running.warnings"}}</span>
         <span class="counter-value" id="counter-warns">0</span>
       </div>
     </div>
 
     <details class="log-panel">
-      <summary>Show log</summary>
+      <summary>{{t "running.showLog"}}</summary>
       <pre class="log-pre" id="log-pre"></pre>
     </details>
 
     <div class="form-actions">
       <button type="button" class="btn btn-tertiary"
               hx-post="/api/runs/{{.RunID}}/cancel"
-              hx-swap="none">Cancel</button>
-      <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">Back to form</a>
+              hx-swap="none">{{t "button.cancel"}}</button>
+      <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">{{t "button.backToForm"}}</a>
     </div>
 
   </div>
