@@ -69,6 +69,9 @@ func New(opts Options) *Server {
 	if err != nil {
 		panic("twincut-ui: load locale catalogs: " + err.Error())
 	}
+	// Key coverage is asserted by TestCatalogsCoverEveryUsedKey, which scans the
+	// working tree. New() only checks that the locales agree with each other —
+	// the shipped binary has no source to scan.
 	if err := validateCatalogs(cats, nil); err != nil {
 		panic("twincut-ui: locale catalogs: " + err.Error())
 	}

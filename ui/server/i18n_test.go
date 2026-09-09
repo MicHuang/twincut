@@ -3,6 +3,10 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -139,5 +143,100 @@ func TestSupportedLocalesIsSorted(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != "en" || got[1] != "zh-Hans" {
 		t.Errorf("SupportedLocales = %v, want [en zh-Hans]", got)
+	}
+}
+
+// keyLiteralRe matches {{t "key"}} and {{tmap "prefix"}} with a STRING LITERAL
+// argument only. A computed key — {{t (printf …)}} — is deliberately not
+// matched: it would be invisible to this scanner, which is why the spec
+// forbids it.
+var keyLiteralRe = regexp.MustCompile(`\{\{-?\s*t(?:map)?\s+"([^"]+)"\s*-?\}\}`)
+
+// goKeyRe matches httpErrorT(w, r, key, …), where key is a quoted string
+// literal in real call sites. (Written unquoted here deliberately: this
+// package directory is itself in the *.go scan glob, and a quoted "key" in
+// this very comment would satisfy the pattern below and self-inject a
+// phantom used-key — caught by TestCatalogsCoverEveryUsedKey during TDD.)
+var goKeyRe = regexp.MustCompile(`httpErrorT\([^,]+,[^,]+,\s*"([^"]+)"`)
+
+func scanKeys(src string) []string {
+	seen := map[string]bool{}
+	for _, m := range keyLiteralRe.FindAllStringSubmatch(src, -1) {
+		seen[m[1]] = true
+	}
+	return sortedKeys(seen)
+}
+
+// templateKeys returns every catalog key referenced by a template or by Go.
+// It reads from disk relative to the package directory, so it is a TEST-ONLY
+// helper: the shipped binary has no source tree to scan. New() never calls it.
+func templateKeys() []string {
+	seen := map[string]bool{}
+	collect := func(dir, glob string, re *regexp.Regexp) {
+		paths, _ := filepath.Glob(filepath.Join(dir, glob))
+		for _, p := range paths {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				continue
+			}
+			for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+				seen[m[1]] = true
+			}
+		}
+	}
+	collect("../templates", "*.html", keyLiteralRe)
+	collect(".", "*.go", goKeyRe)
+	return sortedKeys(seen)
+}
+
+func TestScanTemplateKeysFindsLiterals(t *testing.T) {
+	src := `<p>{{t "a.one"}}</p><span>{{ t  "a.two" }}</span>
+	<script>const I={{tmap "progress."}};</script>{{t (printf "bad.%s" .X)}}`
+	got := scanKeys(src)
+	want := map[string]bool{"a.one": true, "a.two": true, "progress.": true}
+	if len(got) != len(want) {
+		t.Fatalf("scanKeys = %v, want %v — a computed key must not be picked up", got, want)
+	}
+	for _, k := range got {
+		if !want[k] {
+			t.Errorf("unexpected key %q", k)
+		}
+	}
+}
+
+func TestCatalogsCoverEveryUsedKey(t *testing.T) {
+	cats, err := loadCatalogs(os.DirFS(".."))
+	if err != nil {
+		t.Fatalf("loadCatalogs: %v", err)
+	}
+	if err := validateCatalogs(cats, templateKeys()); err != nil {
+		t.Fatalf("catalog coverage: %v", err)
+	}
+}
+
+func TestCatalogsHaveNoUnusedKeys(t *testing.T) {
+	cats, err := loadCatalogs(os.DirFS(".."))
+	if err != nil {
+		t.Fatalf("loadCatalogs: %v", err)
+	}
+	used := make(map[string]bool)
+	for _, k := range templateKeys() {
+		used[k] = true
+	}
+	for _, k := range sortedKeys(cats[defaultLocale]) {
+		if used[k] {
+			continue
+		}
+		// A tmap prefix covers its whole subtree.
+		covered := false
+		for u := range used {
+			if strings.HasSuffix(u, ".") && strings.HasPrefix(k, u) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			t.Errorf("catalog key %q is defined but used by nothing — delete it or use it", k)
+		}
 	}
 }
