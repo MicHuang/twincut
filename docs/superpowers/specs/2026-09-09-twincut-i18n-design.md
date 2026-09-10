@@ -30,7 +30,12 @@ not a nice-to-have.
 - The whole UI renders in English or Simplified Chinese, chosen per viewer.
 - A visible switcher; the choice persists across restarts.
 - Adding a third language later means dropping in one JSON file — no code change.
-- A missing translation cannot reach a user. It fails the build, not the run.
+- A missing translation fails CI rather than reaching a user — with two limits worth
+  stating plainly, both raised by the Tier-1 review (2026-09-10). The scanner recognises
+  only the `{{t "literal"}}` form that §6.1 mandates, so a key written as
+  `` {{t `key`}} ``, `{{ "key" | t }}` or via a bare `cat.lookup("…")` is invisible to
+  it: the scanner enforces the rule, it does not detect a violation of the rule. And the
+  checks that need the source tree run in CI, not in the shipped binary — see §6.
 
 ## 3. Non-goals
 
@@ -168,8 +173,14 @@ codebase has no prior i18n naming to follow (checked, per CLAUDE.md's
 code already panics on a template parse failure
 (`panic("twincut-ui: parse embedded templates: " + …)`). Catalog validation
 takes the same posture: `New()` panics if the locales' key sets are not
-identical, or if any key used by a template or by Go is absent. A user must
-never be the one who discovers a missing translation.
+identical. **What `New()` does not check, deliberately:** it passes `nil` for the
+used-key list, because `templateKeys()` reads the working tree and a shipped
+binary has no source to scan. So key coverage and value non-emptiness are
+CI-time guarantees (`TestCatalogsCoverEveryUsedKey`,
+`TestCatalogsHaveNoUnusedKeys`, `TestTmapBridgeRequiredSubkeys`,
+`TestRenderAllLocales`), not startup ones. A binary built from a tree that
+never ran those tests can therefore ship an empty value. CI is where a user
+must never be the one who discovers a missing translation.
 
 ### 6.1 Hard rule: `t` takes string literals only
 
