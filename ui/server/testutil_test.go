@@ -2,6 +2,7 @@ package server
 
 import (
 	"html/template"
+	"os"
 	"testing"
 )
 
@@ -49,4 +50,19 @@ func newTestTemplates(t *testing.T) *template.Template {
 		t.Fatalf("parse templates: %v", err)
 	}
 	return tmpl
+}
+
+// mustLoadTestCatalogs loads the real on-disk locale catalogs so handler
+// tests exercising httpErrorT see genuine translated text instead of the
+// catalog "!key!" lookup-miss marker. Mirrors newTestTemplates' real-template
+// loading; unlike newTestTemplates' key-echo funcmap stub, there is no
+// analogous stub for httpErrorT since it looks up s.cats directly rather
+// than through a FuncMap.
+func mustLoadTestCatalogs(t *testing.T) map[string]catalog {
+	t.Helper()
+	cats, err := loadCatalogs(os.DirFS(".."))
+	if err != nil {
+		t.Fatalf("load catalogs: %v", err)
+	}
+	return cats
 }

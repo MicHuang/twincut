@@ -45,7 +45,7 @@ func (s *Server) handleSelfCheckTab(w http.ResponseWriter, r *http.Request) {
 // fragment when run_end arrives.
 func (s *Server) handleSelfCheckPreview(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
 		return
 	}
 	folder := strings.TrimSpace(r.FormValue("folder"))
@@ -121,22 +121,22 @@ func (s *Server) handleSelfCheckResults(w http.ResponseWriter, r *http.Request) 
 // keeper). Returns the running-panel template with Mode="apply".
 func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
 		return
 	}
 	previewID := r.FormValue("preview_run_id")
 	if previewID == "" {
-		http.Error(w, "preview_run_id is required", http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.missingPreviewRun", http.StatusBadRequest)
 		return
 	}
 	previewRun := s.runs.Get(previewID)
 	if previewRun == nil {
-		http.Error(w, "preview run not found", http.StatusNotFound)
+		s.httpErrorT(w, r, "err.previewRunNotFound", http.StatusNotFound)
 		return
 	}
 	prevSnap := previewRun.Snapshot()
 	if prevSnap.Mode != "self_check_preview" {
-		http.Error(w, "preview_run_id refers to a non-self-check-preview run", http.StatusUnprocessableEntity)
+		s.httpErrorT(w, r, "err.wrongMode", http.StatusUnprocessableEntity)
 		return
 	}
 	if prevSnap.Status == RunStatusRunning {

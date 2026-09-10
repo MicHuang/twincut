@@ -29,7 +29,7 @@ func (s *Server) handleThumbnailsTab(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleThumbnailsPreview(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
 		return
 	}
 	source := strings.TrimSpace(r.FormValue("source"))
@@ -38,7 +38,7 @@ func (s *Server) handleThumbnailsPreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if ok, err := IsAllowedPath(source); err != nil || !ok {
-		http.Error(w, "source is outside the allowlist (must be under $HOME or /Volumes)", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.sourceNotAllowed", http.StatusForbidden)
 		return
 	}
 
@@ -92,23 +92,23 @@ func (s *Server) handleThumbnailsResults(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
 		return
 	}
 	previewID := r.FormValue("preview_run_id")
 	if previewID == "" {
-		http.Error(w, "missing preview_run_id", http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.missingPreviewRun", http.StatusBadRequest)
 		return
 	}
 	previewRun := s.runs.Get(previewID)
 	if previewRun == nil {
-		http.Error(w, "preview run not found: "+previewID, http.StatusNotFound)
+		s.httpErrorT(w, r, "err.previewRunNotFound", http.StatusNotFound)
 		return
 	}
 
 	prevSnap := previewRun.Snapshot()
 	if prevSnap.Mode != "thumbnail_detect_preview" {
-		http.Error(w, "preview_run_id refers to a non-thumbnail-preview run", http.StatusUnprocessableEntity)
+		s.httpErrorT(w, r, "err.wrongMode", http.StatusUnprocessableEntity)
 		return
 	}
 	if prevSnap.Status == RunStatusRunning {
@@ -129,7 +129,7 @@ func (s *Server) handleThumbnailsApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok, err := IsAllowedPath(source); err != nil || !ok {
-		http.Error(w, "source is outside the allowlist", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.sourceNotAllowed", http.StatusForbidden)
 		return
 	}
 

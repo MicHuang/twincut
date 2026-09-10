@@ -34,6 +34,7 @@ type Options struct {
 type Server struct {
 	opts    Options
 	tmpls   map[string]*template.Template
+	cats    map[string]catalog
 	runs    *RunManager
 	recents *RecentsStore
 }
@@ -94,6 +95,7 @@ func New(opts Options) *Server {
 	return &Server{
 		opts:    opts,
 		tmpls:   tmpls,
+		cats:    cats,
 		runs:    rm,
 		recents: NewRecentsStore(opts.StateDir),
 	}
@@ -104,6 +106,14 @@ func New(opts Options) *Server {
 // page.
 func (s *Server) tmplFor(r *http.Request) *template.Template {
 	return s.tmpls[resolveLocale(r, s.opts.Lang, s.tmpls)]
+}
+
+// httpErrorT writes a translated error. Use it ONLY for 4xx a user can
+// trigger. Internal 500s keep their raw Go error: translating them obstructs
+// debugging and puts uninterpolatable text in the catalog (spec §8).
+func (s *Server) httpErrorT(w http.ResponseWriter, r *http.Request, key string, status int) {
+	code := resolveLocale(r, s.opts.Lang, s.cats)
+	http.Error(w, s.cats[code].lookup(key), status)
 }
 
 // Handler returns the root http.Handler.

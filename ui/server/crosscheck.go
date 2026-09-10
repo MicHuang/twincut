@@ -12,7 +12,6 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 )
@@ -66,7 +65,7 @@ func (s *Server) handleCrossCheckAddBackupRow(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleCrossCheckPreview(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
 		return
 	}
 	source, backups, err := parseCrossCheckForm(r.Form)
@@ -75,12 +74,12 @@ func (s *Server) handleCrossCheckPreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if ok, err := IsAllowedPath(source); err != nil || !ok {
-		http.Error(w, "source is outside the allowlist (must be under $HOME or /Volumes)", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.sourceNotAllowed", http.StatusForbidden)
 		return
 	}
 	for _, b := range backups {
 		if ok, err := IsAllowedPath(b); err != nil || !ok {
-			http.Error(w, fmt.Sprintf("backup %q is outside the allowlist", b), http.StatusForbidden)
+			s.httpErrorT(w, r, "err.backupNotAllowed", http.StatusForbidden)
 			return
 		}
 	}
@@ -116,22 +115,22 @@ func (s *Server) handleCrossCheckPreview(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleCrossCheckApply(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
 		return
 	}
 	previewID := r.FormValue("preview_run_id")
 	if previewID == "" {
-		http.Error(w, "missing preview_run_id", http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.missingPreviewRun", http.StatusBadRequest)
 		return
 	}
 	previewRun := s.runs.Get(previewID)
 	if previewRun == nil {
-		http.Error(w, "preview run not found: "+previewID, http.StatusNotFound)
+		s.httpErrorT(w, r, "err.previewRunNotFound", http.StatusNotFound)
 		return
 	}
 	prevSnap := previewRun.Snapshot()
 	if prevSnap.Mode != "cross_check_preview" {
-		http.Error(w, "preview_run_id refers to a non-cross-check-preview run", http.StatusUnprocessableEntity)
+		s.httpErrorT(w, r, "err.wrongMode", http.StatusUnprocessableEntity)
 		return
 	}
 	if prevSnap.Status == RunStatusRunning {
@@ -158,12 +157,12 @@ func (s *Server) handleCrossCheckApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok, err := IsAllowedPath(source); err != nil || !ok {
-		http.Error(w, "source is outside the allowlist", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.sourceNotAllowed", http.StatusForbidden)
 		return
 	}
 	for _, b := range backups {
 		if ok, err := IsAllowedPath(b); err != nil || !ok {
-			http.Error(w, fmt.Sprintf("backup %q is outside the allowlist", b), http.StatusForbidden)
+			s.httpErrorT(w, r, "err.backupNotAllowed", http.StatusForbidden)
 			return
 		}
 	}

@@ -114,7 +114,7 @@ func TestHandleSelfCheckApply_RejectsWrongModePreview(t *testing.T) {
 	if strings.Contains(w.Body.String(), leakedMode) {
 		t.Fatalf("wrong-mode preview leaked internal mode in response: %q", w.Body.String())
 	}
-	if got, want := w.Body.String(), "preview_run_id refers to a non-self-check-preview run\n"; got != want {
+	if got, want := w.Body.String(), "This preview was produced by a different workflow.\n"; got != want {
 		t.Fatalf("wrong-mode response = %q, want %q", got, want)
 	}
 }

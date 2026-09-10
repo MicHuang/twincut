@@ -242,6 +242,39 @@ func TestCatalogsHaveNoUnusedKeys(t *testing.T) {
 	}
 }
 
+// TestHttpErrorTUsesRequestLocale uses the real "err.sourceNotAllowed" key
+// (not a fixture-only name) deliberately: templateKeys()'s goKeyRe scans
+// every *.go file including this one, so a literal httpErrorT(..., "key", …)
+// call right here registers "key" as used. A fixture name with no catalog
+// entry would fail TestCatalogsCoverEveryUsedKey — the fixture's TABLE
+// VALUES below are still test-only and need not match the real catalog copy.
+func TestHttpErrorTUsesRequestLocale(t *testing.T) {
+	cats := map[string]catalog{
+		"en":      {"err.sourceNotAllowed": "outside the allowlist"},
+		"zh-Hans": {"err.sourceNotAllowed": "不在允许范围内"},
+	}
+	srv := &Server{opts: Options{}}
+	srv.cats = cats
+
+	for _, tc := range []struct{ cookie, want string }{
+		{"", "outside the allowlist"},
+		{"zh-Hans", "不在允许范围内"},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		if tc.cookie != "" {
+			r.AddCookie(&http.Cookie{Name: langCookie, Value: tc.cookie})
+		}
+		w := httptest.NewRecorder()
+		srv.httpErrorT(w, r, "err.sourceNotAllowed", http.StatusForbidden)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("status = %d, want 403", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), tc.want) {
+			t.Errorf("body = %q, want it to contain %q", w.Body.String(), tc.want)
+		}
+	}
+}
+
 func TestRenderAllLocales(t *testing.T) {
 	cats, err := loadCatalogs(os.DirFS(".."))
 	if err != nil {

@@ -30,6 +30,7 @@ func newThumbTestServer(t *testing.T) *Server {
 			TwincutPath: "/dev/null",
 		},
 		tmpls:   map[string]*template.Template{defaultLocale: newTestTemplates(t)},
+		cats:    mustLoadTestCatalogs(t),
 		runs:    rm,
 		recents: NewRecentsStore(stateDir),
 	}
@@ -509,7 +510,7 @@ func TestHandleThumbnailsApply_RejectsWrongMode(t *testing.T) {
 	if strings.Contains(body, leakedMode) {
 		t.Fatalf("wrong-mode preview leaked internal mode in response: %q", body)
 	}
-	if want := "preview_run_id refers to a non-thumbnail-preview run\n"; body != want {
+	if want := "This preview was produced by a different workflow.\n"; body != want {
 		t.Fatalf("wrong-mode response = %q, want %q", body, want)
 	}
 }
