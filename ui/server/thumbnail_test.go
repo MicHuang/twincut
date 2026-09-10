@@ -360,6 +360,77 @@ func TestRunningPanelTitle_ThumbnailModes(t *testing.T) {
 	}
 }
 
+// TestRunningPanel_LangSwitcherDisabledDuringRun pins the wiring behind R13:
+// the language switcher's native `disabled` property must be toggled at the
+// same site body.dataset.runActive is set, and at both sites it is cleared.
+// This is the actual defense — a disabled <select> is removed from the tab
+// order and rejects every input method — replacing the CSS-only
+// pointer-events approach the brief originally specified, which suppressed
+// mouse targeting but left the element reachable and changeable by keyboard
+// or a screen reader, defeating the run-active disable it was meant to
+// enforce. A Go test cannot execute the client-side JS itself (a live,
+// real-browser, real-run proof of the actual runtime behavior is in
+// task-10-report.md's fix round), so this checks that the rendered source is
+// wired at all three sites, in order, as a durable CI-covering regression
+// pin against someone later touching runActive without touching disabled in
+// lockstep.
+func TestRunningPanel_LangSwitcherDisabledDuringRun(t *testing.T) {
+	srv := newThumbTestServer(t)
+	var buf strings.Builder
+	data := selfCheckRunningData{RunID: "x", Folder: "/photos", Mode: "apply", NextURL: "/api/self-check/done/x"}
+	if err := srv.tmpls[defaultLocale].ExecuteTemplate(&buf, "selfcheck_running.html", data); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	script := buf.String()
+
+	const (
+		setActive    = "document.body.dataset.runActive = '1';"
+		clearActive  = "delete document.body.dataset.runActive;"
+		disableTrue  = "if (langSelect) langSelect.disabled = true;"
+		disableFalse = "if (langSelect) langSelect.disabled = false;"
+		lookup       = "const langSelect = document.getElementById('lang-select');"
+	)
+
+	if !strings.Contains(script, lookup) {
+		t.Error("langSelect lookup missing or not captured as its own null-guardable reference")
+	}
+
+	setIdx := strings.Index(script, setActive)
+	if setIdx < 0 {
+		t.Fatal("runActive set statement not found")
+	}
+	disableIdx := strings.Index(script, disableTrue)
+	if disableIdx < 0 {
+		t.Fatal("disable-on-start statement not found")
+	}
+	if disableIdx < setIdx || disableIdx-setIdx > 200 {
+		t.Errorf("disable-on-start is not immediately after the runActive set (setIdx=%d disableIdx=%d)", setIdx, disableIdx)
+	}
+
+	if n := strings.Count(script, clearActive); n != 2 {
+		t.Fatalf("want 2 runActive clear sites (run_end + hard-close), got %d", n)
+	}
+	if n := strings.Count(script, disableFalse); n != 2 {
+		t.Fatalf("want 2 disable-clear sites matching the 2 runActive clears, got %d", n)
+	}
+
+	// Each clear site's re-enable statement must sit immediately after its
+	// own runActive clear, not just be present somewhere else in the file.
+	rest := script
+	for i := 1; i <= 2; i++ {
+		ci := strings.Index(rest, clearActive)
+		if ci < 0 {
+			t.Fatalf("clear site %d not found", i)
+		}
+		after := rest[ci+len(clearActive):]
+		ei := strings.Index(after, disableFalse)
+		if ei < 0 || ei > 200 {
+			t.Errorf("clear site %d: disable-clear is not immediately after its runActive clear (offset=%d)", i, ei)
+		}
+		rest = after
+	}
+}
+
 func TestHandleThumbnailsPreview_PassesThumbPrefixedFlags(t *testing.T) {
 	srv := newThumbTestServer(t)
 	srcPath := os.Getenv("HOME")

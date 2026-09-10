@@ -65,11 +65,17 @@
     const dupsEl = document.getElementById('counter-dups');
     const warnsEl = document.getElementById('counter-warns');
     const logEl = document.getElementById('log-pre');
+    // The switcher lives in app.html, the outer shell — not an htmx swap
+    // target, so it is normally present. Null-guarded anyway: this
+    // fragment's script must not throw if it is ever rendered without
+    // the shell.
+    const langSelect = document.getElementById('lang-select');
 
     let dups = 0, warns = 0;
 
     const es = new EventSource('/sse/' + runID);
     document.body.dataset.runActive = '1';
+    if (langSelect) langSelect.disabled = true;
     es.addEventListener('progress', (e) => {
       const p = JSON.parse(e.data);
       const phase = I18N['phase.' + p.phase] ?? p.phase;
@@ -99,6 +105,7 @@
     });
     es.addEventListener('run_end', (e) => {
       delete document.body.dataset.runActive;
+      if (langSelect) langSelect.disabled = false;
       const p = JSON.parse(e.data);
       es.close();
       progressFill.style.width = '100%';
@@ -110,6 +117,7 @@
       if (es.readyState === EventSource.CLOSED) {
         progressText.textContent += ' ' + I18N.streamClosed;
         delete document.body.dataset.runActive;
+        if (langSelect) langSelect.disabled = false;
       }
     };
   })();

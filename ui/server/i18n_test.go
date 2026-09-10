@@ -332,6 +332,16 @@ func TestSetLangCookie(t *testing.T) {
 		if !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].Path != "/" {
 			t.Errorf("cookie attributes wrong: %+v", cookies[0])
 		}
+		// R14: these two are what a session-only-cookie regression or an
+		// accidental Secure flag (which would break the cookie over plain
+		// http://localhost) would trip. Asserted separately from the block
+		// above so a failure here names the attribute, not just "wrong".
+		if want := 365 * 24 * 60 * 60; cookies[0].MaxAge != want {
+			t.Errorf("MaxAge = %d, want %d (one year)", cookies[0].MaxAge, want)
+		}
+		if cookies[0].Secure {
+			t.Error("cookie must not set Secure — this server is http://localhost by design")
+		}
 	})
 
 	t.Run("rejects an unknown locale and sets no cookie", func(t *testing.T) {
