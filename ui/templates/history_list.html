@@ -1,23 +1,23 @@
 {{define "history_list.html"}}
 <section class="tab-section">
   <header class="tab-section-header">
-    <h2>History</h2>
-    <p class="subtitle">Past de-dup applies — click any row to restore.</p>
+    <h2>{{t "history.title"}}</h2>
+    <p class="subtitle">{{t "history.subtitle"}}</p>
   </header>
 
   {{if not .Entries}}
     <div class="alert alert-info">
-      <strong>No history yet.</strong> Run a self-check or cross-check apply; this page lists what you can roll back.
+      <strong>{{t "history.empty.title"}}</strong> {{t "history.empty.body"}}
     </div>
   {{else}}
     <table class="history-table">
       <thead>
         <tr>
-          <th>When</th>
-          <th>Folder</th>
-          <th>Files</th>
-          <th>Mode</th>
-          <th>Status</th>
+          <th>{{t "history.col.when"}}</th>
+          <th>{{t "history.col.folder"}}</th>
+          <th>{{t "history.col.files"}}</th>
+          <th>{{t "history.col.mode"}}</th>
+          <th>{{t "history.col.status"}}</th>
           <th></th>
         </tr>
       </thead>
@@ -29,15 +29,15 @@
           <td>{{.MovedCount}}</td>
           <td>
             {{if eq .Mode "cross_check"}}
-              <span class="badge badge-mode-cross">cross-check</span>
+              <span class="badge badge-mode-cross">{{t "badge.crossCheck"}}</span>
             {{else}}
-              <span class="badge badge-mode-self">self-check</span>
+              <span class="badge badge-mode-self">{{t "badge.selfCheck"}}</span>
             {{end}}
           </td>
           <td>
-            {{if .Restored}}<span class="badge badge-info">restored</span>
-            {{else if eq .Status "success"}}<span class="badge badge-success">success</span>
-            {{else if eq .Status "cancelled-partial"}}<span class="badge badge-warn">partial</span>
+            {{if .Restored}}<span class="badge badge-info">{{t "badge.restored"}}</span>
+            {{else if eq .Status "success"}}<span class="badge badge-success">{{t "badge.success"}}</span>
+            {{else if eq .Status "cancelled-partial"}}<span class="badge badge-warn">{{t "badge.partial"}}</span>
             {{else}}<span class="badge badge-error">{{.Status}}</span>{{end}}
           </td>
           <td>
@@ -45,7 +45,7 @@
                hx-get="/history/{{.RunID}}/preview"
                hx-target="#tab-content"
                hx-swap="innerHTML">
-              {{if .Restored}}Inspect{{else}}Restore…{{end}}
+              {{if .Restored}}{{t "history.list.inspect"}}{{else}}{{t "history.list.restoreAction"}}{{end}}
             </a>
           </td>
         </tr>

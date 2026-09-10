@@ -230,8 +230,8 @@ func TestHandleHistoryTab_EmptyState(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d; want 200", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "No history yet") {
-		t.Errorf("missing empty-state message")
+	if !strings.Contains(w.Body.String(), "history.empty.title") {
+		t.Errorf("missing empty-state message (history.empty.title key)")
 	}
 }
 
