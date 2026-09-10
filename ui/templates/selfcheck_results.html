@@ -200,7 +200,7 @@
       </div>
 
       <div class="form-actions form-actions-sticky">
-        <button type="submit" class="btn btn-primary">{{t "button.apply"}} (<span id="apply-btn-count">{{.NumFiles}}</span> {{t "results.file"}}<span id="apply-btn-plural">{{if ne .NumFiles 1}}s{{end}}</span>)</button>
+        <button type="submit" class="btn btn-primary">{{t "button.apply"}} (<span id="apply-btn-count">{{.NumFiles}}</span> <span id="apply-btn-noun">{{if eq .NumFiles 1}}{{t "results.file.one"}}{{else}}{{t "results.file.other"}}{{end}}</span>)</button>
         <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">{{t "button.cancel"}}</a>
       </div>
     </form>
@@ -210,6 +210,8 @@
     </div>
     <script>
       (function () {
+        const I18N = {{tmap "results.file."}};
+
         // Lightbox: click any .thumb-btn → fullscreen image. Re-binds after
         // every htmx swap because this script runs each time the fragment
         // is loaded.
@@ -240,12 +242,12 @@
         // form-input state.
         const countEl = document.getElementById('apply-count');
         const btnCountEl = document.getElementById('apply-btn-count');
-        const btnPluralEl = document.getElementById('apply-btn-plural');
+        const btnNounEl = document.getElementById('apply-btn-noun');
         function refreshCount() {
           const n = document.querySelectorAll('input[name="quarantine"]:not([disabled]):checked').length;
           if (countEl) countEl.textContent = String(n);
           if (btnCountEl) btnCountEl.textContent = String(n);
-          if (btnPluralEl) btnPluralEl.textContent = (n === 1 ? '' : 's');
+          if (btnNounEl) btnNounEl.textContent = (n === 1 ? I18N.one : I18N.other);
         }
         document.querySelectorAll('.result-group').forEach(function (group) {
           const radios = group.querySelectorAll('input[type=radio][name^="keep_"]');

@@ -54,6 +54,7 @@
 
 <script>
   (function () {
+    const I18N = {{tmap "progress."}};
     const panel = document.getElementById('run-panel');
     const runID = panel.dataset.runId;
     const nextURL = panel.dataset.nextUrl;
@@ -70,12 +71,13 @@
     const es = new EventSource('/sse/' + runID);
     es.addEventListener('progress', (e) => {
       const p = JSON.parse(e.data);
+      const phase = I18N['phase.' + p.phase] ?? p.phase;
       if (p.total > 0) {
         const pct = Math.min(100, Math.round((p.done / p.total) * 100));
         progressFill.style.width = pct + '%';
-        progressText.textContent = `${p.phase}: ${p.done.toLocaleString()} / ${p.total.toLocaleString()} (${pct}%)`;
+        progressText.textContent = `${phase}: ${p.done.toLocaleString()} / ${p.total.toLocaleString()} (${pct}%)`;
       } else {
-        progressText.textContent = `${p.phase}: ${p.done.toLocaleString()}`;
+        progressText.textContent = `${phase}: ${p.done.toLocaleString()}`;
       }
       if (p.current_path) {
         progressCurrent.textContent = p.current_path.split('/').slice(-2).join('/');
@@ -92,7 +94,7 @@
     es.addEventListener('error', (e) => {
       const p = JSON.parse(e.data);
       logEl.textContent += `ERROR: ${p.code} ${p.detail}\n`;
-      progressText.textContent = 'Error';
+      progressText.textContent = I18N.error;
     });
     es.addEventListener('run_end', (e) => {
       const p = JSON.parse(e.data);
@@ -104,7 +106,7 @@
     es.onerror = () => {
       // EventSource auto-reconnects on transient errors; only log on hard close.
       if (es.readyState === EventSource.CLOSED) {
-        progressText.textContent += ' (stream closed)';
+        progressText.textContent += ' ' + I18N.streamClosed;
       }
     };
   })();
