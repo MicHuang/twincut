@@ -75,11 +75,13 @@
   "selfcheck.folderLabel": "Folder to scan",
   "selfcheck.intro": "Find duplicates inside one folder. Hash-only by default. Always previews before moving anything.",
   "selfcheck.minSize": "Min size",
+  "selfcheck.minSize.placeholder": "e.g. 300k or 1M",
   "selfcheck.previewNote": "Preview is a dry-run. Nothing is moved until you click Apply on the next screen.",
   "selfcheck.simVideo": "Similar-video detection",
   "selfcheck.simVideo.always": "Always",
   "selfcheck.simVideo.auto": "Auto (when folder has videos)",
   "selfcheck.simVideo.off": "Off",
   "selfcheck.sizeWindow": "Similarity size window (%)",
+  "selfcheck.sizeWindow.placeholder": "auto: 5 when sim-video on, else 0.5",
   "selfcheck.title": "Self-check"
 }
