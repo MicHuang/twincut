@@ -1,0 +1,43 @@
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Done</h2>
+    <p class="subtitle"><code>/tmp/g</code></p>
+  </header>
+
+  
+    <div class="alert alert-success">
+      
+        <strong>Quarantined 2 files.</strong>
+      
+      
+        <br><span class="muted small">Manifest: <code>/tmp/g/_QUARANTINE/_manifest-g1.tsv</code></span>
+        
+        <br><span class="muted small">Roll back via History or:
+          <code>twincut --restore "/tmp/g/_QUARANTINE/_manifest-g1.tsv"</code></span>
+        
+      
+    </div>
+  
+
+  
+  <details class="alert alert-warn">
+    <summary><strong>1 warning</strong></summary>
+    <ul class="warn-list">
+      <li><code>bad_video</code> · <span class="muted">/tmp/g/broken.mov</span></li>
+    </ul>
+  </details>
+  
+
+  <div class="form-actions">
+    <a href="#" class="btn btn-primary" hx-get="/tab/self-check" hx-target="#tab-content">Run another scan</a>
+    
+    <button type="button" class="btn btn-secondary"
+            hx-post="/api/open"
+            hx-vals='{"path": "/tmp/g/_QUARANTINE"}'
+            hx-swap="outerHTML"
+            hx-disabled-elt="this">
+      Open quarantine folder
+    </button>
+    
+  </div>
+</section>

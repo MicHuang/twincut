@@ -37,7 +37,7 @@
 
     {{if .NumWarnings}}
     <details class="alert alert-warn">
-      <summary><strong>{{.NumWarnings}} {{if eq .NumWarnings 1}}{{t "common.warning.one"}}{{else}}{{t "common.warning.other"}}{{end}}</strong> {{t "results.duringScan"}}</summary>
+      <summary><strong>{{.NumWarnings}}{{if eq .NumWarnings 1}}{{t "common.warning.one"}}{{else}}{{t "common.warning.other"}}{{end}}</strong>{{t "results.duringScan"}}</summary>
       <ul class="warn-list">
         {{range .Warnings}}<li><code>{{.Code}}</code> · <span class="muted">{{.Path}}</span></li>{{end}}
       </ul>
@@ -45,7 +45,7 @@
     {{end}}
 
     <p class="muted small results-help">
-      {{t "results.helpPre"}} <strong>{{t "results.keepInline"}}</strong> {{t "results.helpPost"}}
+      {{t "results.helpPre"}}<strong>{{t "results.keepInline"}}</strong>{{t "results.helpPost"}}
     </p>
 
     <form id="apply-form"
@@ -66,7 +66,7 @@
         {{range $g := .Groups}}
         <div class="result-group {{if .IsSimilar}}result-group-similar{{end}}" data-group-id="{{.GroupID}}">
           <div class="result-group-header">
-            <span class="badge badge-match">{{if eq .MatchReason "md5"}}{{t "badge.exact"}}{{else}}{{t "badge.similarVideo"}}{{end}}</span>
+            <span class="badge badge-match">{{if eq .MatchReason "md5"}}{{t "badge.exact"}}{{else if eq .MatchReason "video_fast"}}{{t "badge.similarVideo"}}{{else if eq .MatchReason "video_strict"}}{{t "badge.similarVideoStrict"}}{{else}}{{.MatchReason}}{{end}}</span>
             {{if eq .Mode "cross_check"}}
               <span class="badge badge-role-cluster">{{t "badge.crossCheck"}}</span>
             {{end}}
@@ -200,7 +200,7 @@
       </div>
 
       <div class="form-actions form-actions-sticky">
-        <button type="submit" class="btn btn-primary">{{t "button.apply"}} (<span id="apply-btn-count">{{.NumFiles}}</span> <span id="apply-btn-noun">{{if eq .NumFiles 1}}{{t "results.file.one"}}{{else}}{{t "results.file.other"}}{{end}}</span>)</button>
+        <button type="submit" class="btn btn-primary">{{t "button.apply"}}{{t "results.applyCountOpen"}}<span id="apply-btn-count">{{.NumFiles}}</span> <span id="apply-btn-noun">{{if eq .NumFiles 1}}{{t "results.file.one"}}{{else}}{{t "results.file.other"}}{{end}}</span>{{t "results.applyCountClose"}}</button>
         <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">{{t "button.cancel"}}</a>
       </div>
     </form>
@@ -247,7 +247,7 @@
           const n = document.querySelectorAll('input[name="quarantine"]:not([disabled]):checked').length;
           if (countEl) countEl.textContent = String(n);
           if (btnCountEl) btnCountEl.textContent = String(n);
-          if (btnNounEl) btnNounEl.textContent = (n === 1 ? I18N.one : I18N.other);
+          if (btnNounEl) btnNounEl.textContent = (n === 1 ? (I18N.one ?? 'file') : (I18N.other ?? 'files'));
         }
         document.querySelectorAll('.result-group').forEach(function (group) {
           const radios = group.querySelectorAll('input[type=radio][name^="keep_"]');

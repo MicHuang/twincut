@@ -1,0 +1,226 @@
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Thumbnail candidates</h2>
+    <p class="subtitle"><code>/tmp/g</code></p>
+  </header>
+
+  
+
+    <div class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-value">2</div>
+        <div class="summary-label">clusters detected</div>
+      </div>
+    </div>
+
+    
+    <details class="alert alert-warn">
+      <summary><strong>1 warning</strong> during scan</summary>
+      <ul class="warn-list">
+        <li><code>bad_thumb_candidate</code> · <span class="muted">/tmp/g/broken.jpg</span></li>
+      </ul>
+    </details>
+    
+
+    <form id="thumbnails-apply-form"
+          hx-post="/api/thumbnails/apply"
+          hx-target="#tab-content"
+          hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+      <input type="hidden" name="preview_run_id" value="g2">
+
+      
+        
+        <div class="result-group" data-group-id="l3:cafef00d">
+          <div class="result-group-header">
+            <span class="badge badge-match">
+              L3 · embedded thumb
+            </span>
+            <span class="muted small">group <code>l3:cafef00d</code></span>
+          </div>
+          <div class="cluster-cards">
+            
+              
+              <div class="cluster-card cluster-card-keeper">
+                <div class="cluster-card-badge">
+                  <span class="badge badge-role-backup">keep</span>
+                </div>
+                <button type="button" class="thumb-btn"
+                        data-thumb-src="/thumb?path=%2ftmp%2fg%2fkeeper.jpg&size=1024"
+                        data-thumb-alt="keeper">
+                  <img class="thumb" loading="lazy"
+                       src="/thumb?path=%2ftmp%2fg%2fkeeper.jpg&size=320"
+                       alt="keeper">
+                </button>
+                <div class="cluster-card-meta muted small">
+                  <code>/tmp/g/keeper.jpg</code>
+                </div>
+              </div>
+              
+            
+              
+              <div class="cluster-card cluster-card-thumb">
+                <div class="cluster-card-controls">
+                  <label class="role-checkbox">
+                    <input type="checkbox"
+                           name="group:l3:cafef00d.member1"
+                           aria-label="quarantine /tmp/g/thumb.jpg"
+                           checked>
+                    <span>Quarantine</span>
+                  </label>
+                </div>
+                <button type="button" class="thumb-btn"
+                        data-thumb-src="/thumb?path=%2ftmp%2fg%2fthumb.jpg&size=1024"
+                        data-thumb-alt="thumbnail candidate">
+                  <img class="thumb" loading="lazy"
+                       src="/thumb?path=%2ftmp%2fg%2fthumb.jpg&size=320"
+                       alt="thumbnail candidate">
+                </button>
+                <div class="cluster-card-meta muted small">
+                  <code>/tmp/g/thumb.jpg</code>
+                  <span>80×80</span>
+                </div>
+              </div>
+              
+            
+          </div>
+        </div>
+        
+      
+        
+      
+
+      
+        
+      
+        
+        <details class="l1-review-block">
+          <summary class="l1-review-summary">
+            L1 review (3 suspects, no peer)
+            <span class="muted small">— unchecked by default; opt-in to quarantine</span>
+          </summary>
+          <table class="l1-table">
+            <thead>
+              <tr>
+                <th>Preview</th>
+                <th>Path</th>
+                <th>Reason</th>
+                <th>Dimensions</th>
+                <th>Quarantine?</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+                <tr class="l1-suspect-row">
+  <td>
+    <img class="thumb-preview" loading="lazy"
+         src="/thumb?path=%2ftmp%2fg%2fs1.jpg&size=80"
+         alt="thumbnail preview"
+         width="80" height="80">
+  </td>
+  <td>
+    <code class="result-path">/tmp/g/s1.jpg</code>
+  </td>
+  <td>
+    <span class="badge badge-l1-reason">thumbnail size</span>
+  </td>
+  <td class="muted small">
+    64×64
+  </td>
+  <td>
+    <input type="checkbox"
+           name="group:l1-suspects.member0"
+           aria-label="quarantine /tmp/g/s1.jpg">
+  </td>
+</tr>
+
+              
+                <tr class="l1-suspect-row">
+  <td>
+    <img class="thumb-preview" loading="lazy"
+         src="/thumb?path=%2ftmp%2fg%2fs2.jpg&size=80"
+         alt="thumbnail preview"
+         width="80" height="80">
+  </td>
+  <td>
+    <code class="result-path">/tmp/g/s2.jpg</code>
+  </td>
+  <td>
+    <span class="badge badge-l1-reason">maybe thumbnail size</span>
+  </td>
+  <td class="muted small">
+    64×64
+  </td>
+  <td>
+    <input type="checkbox"
+           name="group:l1-suspects.member1"
+           aria-label="quarantine /tmp/g/s2.jpg">
+  </td>
+</tr>
+
+              
+                <tr class="l1-suspect-row">
+  <td>
+    <img class="thumb-preview" loading="lazy"
+         src="/thumb?path=%2ftmp%2fg%2fs3.jpg&size=80"
+         alt="thumbnail preview"
+         width="80" height="80">
+  </td>
+  <td>
+    <code class="result-path">/tmp/g/s3.jpg</code>
+  </td>
+  <td>
+    <span class="badge badge-l1-reason">perceptual-hash match</span>
+  </td>
+  <td class="muted small">
+    64×64
+  </td>
+  <td>
+    <input type="checkbox"
+           name="group:l1-suspects.member2"
+           aria-label="quarantine /tmp/g/s3.jpg">
+  </td>
+</tr>
+
+              
+            </tbody>
+          </table>
+        </details>
+        
+      
+
+      <div class="form-actions form-actions-sticky">
+        <button type="submit" class="btn btn-primary">Apply</button>
+        <a href="#" class="btn btn-secondary" hx-get="/tab/thumbnails" hx-target="#tab-content">Cancel</a>
+      </div>
+    </form>
+
+    <div id="lightbox" class="lightbox" hidden onclick="this.hidden=true; this.querySelector('img').removeAttribute('src');">
+      <img alt="">
+    </div>
+    <script>
+      (function () {
+        const lb = document.getElementById('lightbox');
+        const lbImg = lb && lb.querySelector('img');
+        if (lb && lbImg) {
+          document.querySelectorAll('.thumb-btn').forEach(function (btn) {
+            btn.addEventListener('click', function (ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              lbImg.src = btn.dataset.thumbSrc;
+              lbImg.alt = btn.dataset.thumbAlt || '';
+              lb.hidden = false;
+            });
+          });
+          document.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape' && !lb.hidden) {
+              lb.hidden = true;
+              lbImg.removeAttribute('src');
+            }
+          });
+        }
+      })();
+    </script>
+
+  
+</section>

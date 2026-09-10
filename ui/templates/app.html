@@ -14,8 +14,7 @@
       <div class="app-header-spacer"></div>
       <div class="lang-switcher" title="{{t "nav.langTitle"}}">
         <select id="lang-select" aria-label="{{t "nav.langTitle"}}">
-          <option value="en"{{if eq lang "en"}} selected{{end}}>EN</option>
-          <option value="zh-Hans"{{if eq lang "zh-Hans"}} selected{{end}}>中文</option>
+          {{range locales}}<option value="{{.Code}}"{{if eq lang .Code}} selected{{end}}>{{.Name}}</option>{{end}}
         </select>
       </div>
       <div class="app-status" title="{{t "nav.serverStatus"}}">● {{t "nav.statusReady"}}</div>

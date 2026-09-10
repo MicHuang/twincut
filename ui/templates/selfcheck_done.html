@@ -32,7 +32,7 @@
 
   {{if .NumWarnings}}
   <details class="alert alert-warn">
-    <summary><strong>{{.NumWarnings}} {{if eq .NumWarnings 1}}{{t "common.warning.one"}}{{else}}{{t "common.warning.other"}}{{end}}</strong></summary>
+    <summary><strong>{{.NumWarnings}}{{if eq .NumWarnings 1}}{{t "common.warning.one"}}{{else}}{{t "common.warning.other"}}{{end}}</strong></summary>
     <ul class="warn-list">
       {{range .Warnings}}<li><code>{{.Code}}</code> · <span class="muted">{{.Path}}</span></li>{{end}}
     </ul>

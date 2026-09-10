@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -138,6 +139,70 @@ func TestValidateCatalogsRejectsEmptyTmapPrefixSubtree(t *testing.T) {
 	}
 }
 
+// tmapRequiredSubkeys maps each {{tmap "prefix"}} call site to the literal
+// dotted subkeys its JS consumer actually reads off the resulting object
+// (I18N.<subkey>). This is a stricter, consumer-shaped pin than
+// validateCatalogs' tmap check above: that check only demands the subtree be
+// non-empty, which a single unrelated sibling key satisfies even while the
+// one subkey a script reads is missing. Consumer sites:
+//   - selfcheck_running.html: {{tmap "progress."}} — I18N.error (:104, no
+//     fallback), I18N.streamClosed (:118, no fallback),
+//     I18N['phase.' + p.phase] (:81, "?? p.phase" fallback — not required
+//     here for that reason, but the phase.* keys still are, since a bad
+//     catalog entry would render an empty string instead of falling back).
+//   - selfcheck_results.html: {{tmap "results.file."}} — I18N.one / I18N.other
+//     (:250, "??" fallback since Fix 1, but still required so a defect
+//     degrades to the hardcoded English fallback instead of silently
+//     rendering nothing).
+var tmapRequiredSubkeys = map[string][]string{
+	"progress.":     {"error", "streamClosed", "phase.scan", "phase.apply", "phase.restore"},
+	"results.file.": {"one", "other"},
+}
+
+// TestTmapBridgeRequiredSubkeys pins the tmap bridge contract at the
+// granularity its JS consumers actually read, closing the gap
+// TestValidateCatalogsAcceptsPopulatedTmapPrefix leaves open: validateCatalogs
+// only checks that a used tmap prefix's subtree is non-empty in every
+// catalog, so deleting one specific required subkey (e.g. "progress.error")
+// while a sibling key (e.g. "progress.phase.scan") survives leaves that
+// check green. This test instead asserts every subkey a real call site reads
+// is present and non-empty in every catalog.
+//
+// Red-first, verified by hand against the real catalogs (not asserted here,
+// since asserting it would just be re-deriving validateCatalogs' own
+// behavior): temporarily deleting "progress.error" from both
+// ui/locales/en.json and ui/locales/zh-Hans.json turns this test red with
+//
+//	catalog en: tmap prefix "progress." is missing required subkey "error" (read as I18N.error)
+//	catalog zh-Hans: tmap prefix "progress." is missing required subkey "error" (read as I18N.error)
+//
+// while TestCatalogsCoverEveryUsedKey, TestCatalogsHaveNoUnusedKeys, and
+// TestValidateCatalogsAcceptsPopulatedTmapPrefix-shaped coverage all stay
+// green, because "progress.phase.scan" etc. keep the subtree non-empty.
+// Restoring the key turns it green again. See final-fix-report.md for the
+// actual `go test` transcript from that run.
+func TestTmapBridgeRequiredSubkeys(t *testing.T) {
+	cats, err := loadCatalogs(os.DirFS(".."))
+	if err != nil {
+		t.Fatalf("loadCatalogs: %v", err)
+	}
+	for _, code := range sortedKeys(cats) {
+		for _, prefix := range sortedKeys(tmapRequiredSubkeys) {
+			sub := cats[code].subtree(prefix)
+			for _, k := range tmapRequiredSubkeys[prefix] {
+				v, ok := sub[k]
+				if !ok {
+					t.Errorf("catalog %s: tmap prefix %q is missing required subkey %q (read as I18N.%s)", code, prefix, k, k)
+					continue
+				}
+				if strings.TrimSpace(v) == "" {
+					t.Errorf("catalog %s: tmap prefix %q required subkey %q is empty", code, prefix, k)
+				}
+			}
+		}
+	}
+}
+
 func TestResolveLocale(t *testing.T) {
 	avail := map[string]catalog{"en": {}, "zh-Hans": {}}
 
@@ -191,12 +256,19 @@ func TestSupportedLocalesIsSorted(t *testing.T) {
 // forbids it.
 var keyLiteralRe = regexp.MustCompile(`\{\{-?\s*t(?:map)?\s+"([^"]+)"\s*-?\}\}`)
 
-// goKeyRe matches httpErrorT(w, r, key, …), where key is a quoted string
-// literal in real call sites. (Written unquoted here deliberately: this
-// package directory is itself in the *.go scan glob, and a quoted "key" in
-// this very comment would satisfy the pattern below and self-inject a
-// phantom used-key — caught by TestCatalogsCoverEveryUsedKey during TDD.)
-var goKeyRe = regexp.MustCompile(`httpErrorT\([^,]+,[^,]+,\s*"([^"]+)"`)
+// goKeyRe matches httpErrorT(w, r, key, …) and localeCatalogKey(key), where
+// key is a quoted string literal in real call sites. (Written unquoted here
+// deliberately: this package directory is itself in the *.go scan glob, and
+// a quoted "key" in this very comment would satisfy the pattern below and
+// self-inject a phantom used-key — caught by TestCatalogsCoverEveryUsedKey
+// during TDD.)
+//
+// localeCatalogKey is intentionally its own narrow alternative rather than a
+// blanket match on catalog.lookup(: several *_test.go files in this same
+// scan glob call .lookup with literal fixture strings that are not real
+// catalog keys (e.g. "a.one", "nope"); matching those would make
+// TestCatalogsCoverEveryUsedKey demand the real catalogs define them.
+var goKeyRe = regexp.MustCompile(`(?:httpErrorT\([^,]+,[^,]+,|localeCatalogKey\()\s*"([^"]+)"`)
 
 func scanKeys(src string) []string {
 	seen := map[string]bool{}
@@ -358,23 +430,133 @@ func TestSetLangCookie(t *testing.T) {
 	})
 }
 
+// lookupMarkerRe matches catalog.lookup's loud miss marker ("!" + key + "!",
+// e.g. "!progress.error!") inside rendered template output. Anchored to
+// dotted-identifier-shaped content between the bangs so it cannot fire on an
+// unrelated "!" a template might legitimately emit.
+var lookupMarkerRe = regexp.MustCompile(`![A-Za-z][A-Za-z0-9_.]*!`)
+
+// renderAllLocalesCases returns one fixture per template, built from the
+// same view types the real handlers pass to ExecuteTemplate (selfcheck.go,
+// crosscheck.go, history.go, thumbnail.go, http.go). Every field a template
+// dereferences must be set, or ExecuteTemplate fails at execute time
+// (html/template has no static field check against the concrete type).
+func renderAllLocalesCases() []struct {
+	Name string
+	Data any
+} {
+	resultsView := ResultsView{
+		RunID: "r1", Mode: "cross_check", SourcePath: "/p",
+		NumGroups: 2, NumFiles: 2, BytesHuman: "2.0 MB",
+		ApplyURL: "/api/cross-check/apply", Backups: []string{"/bk"},
+		NumWarnings: 1,
+		Warnings:    []ResultWarn{{Code: "bad_video", Path: "/p/x.mov"}},
+		Groups: []ResultGroup{
+			{
+				GroupID: 1, MatchReason: "md5", Hash: "abc123", Mode: "cross_check",
+				Keep:   ResultFile{Path: "/bk/keep.jpg", Name: "keep.jpg", SizeStr: "1.0 MB"},
+				Remove: []ResultFile{{Path: "/p/dup.jpg", Name: "dup.jpg", SizeStr: "1.0 MB"}},
+			},
+			{
+				GroupID: 2, MatchReason: "video_fast", Mode: "cross_check", IsSimilar: true,
+				Keep:   ResultFile{Path: "/bk/keep.mp4", Name: "keep.mp4", SizeStr: "10 MB", HasMedia: true, DurationStr: "1:00"},
+				Remove: []ResultFile{{Path: "/p/dup.mp4", Name: "dup.mp4", SizeStr: "9.8 MB"}},
+			},
+		},
+	}
+	doneView := resultsView
+	doneView.MovedCount = 2
+	doneView.ManifestPath = "/p/_QUARANTINE/_manifest-r1.tsv"
+	doneView.QuarantineDir = "/p/_QUARANTINE"
+
+	thumbView := ResultsView{
+		RunID: "r2", Mode: "thumbnail_detect", SourcePath: "/p",
+		NumGroups: 2, NumWarnings: 1, ApplyURL: "/api/thumbnails/apply",
+		Warnings: []ResultWarn{{Code: "bad_thumb_candidate", Path: "/p/y.jpg"}},
+		Groups: []ResultGroup{
+			{
+				StringGroupID: "l3:deadbeef",
+				Members: []ResultMember{
+					{Path: "/p/keeper.jpg", Role: "keeper"},
+					{Path: "/p/thumb.jpg", Role: "thumbnail", Width: 80, Height: 80},
+				},
+			},
+			{
+				StringGroupID: "l1-suspects",
+				Members: []ResultMember{
+					{Path: "/p/s1.jpg", Reason: "l1_only_thumb", Width: 64, Height: 64},
+					{Path: "/p/s2.jpg", Reason: "l1_only_maybe", Width: 64, Height: 64},
+					{Path: "/p/s3.jpg", Reason: "l1_phash_match", Width: 64, Height: 64},
+				},
+			},
+		},
+	}
+
+	return []struct {
+		Name string
+		Data any
+	}{
+		{"app.html", selfCheckFormData{DefaultFolder: "/tmp/g", Recents: []string{"/tmp/g"}}},
+		{"selfcheck_form.html", selfCheckFormData{DefaultFolder: "/tmp/g", Recents: []string{"/tmp/g"}}},
+		{"selfcheck_running.html", selfCheckRunningData{RunID: "r1", Folder: "/p", Mode: "apply", NextURL: "/x", ShowActions: true}},
+		{"selfcheck_results.html", resultsView},
+		{"selfcheck_done.html", doneView},
+		{"crosscheck_form.html", map[string]any{"Recents": []string{"/tmp/g"}}},
+		{"crosscheck_backup_row.html", nil},
+		{"thumbnails_form.html", map[string]any{"Recents": []string{"/tmp/g"}}},
+		{"thumbnails_results.html", thumbView},
+		{"thumbnails_l1_row.html", map[string]any{"Member": ResultMember{Path: "/p/s1.jpg", Reason: "l1_only_thumb"}, "GroupID": "l1-suspects", "Index": 0}},
+		{"history_list.html", historyView{Entries: []HistoryEntry{{RunID: "r1", Timestamp: 1, Folder: "/p", Mode: "self_check", MovedCount: 1, Status: "success"}}}},
+		{"history_restore.html", historyRestoreData{RunID: "r1", Folder: "/p", ManifestPath: "/p/_QUARANTINE/_manifest-r1.tsv", MovedCount: 1}},
+		{"debug.html", debugPageData{TwincutPath: "/usr/bin/twincut"}},
+		{"debug_run.html", debugRunPageData{RunID: "r1"}},
+		{"dir_listing.html", DirListing{Path: "/p", Parent: "/", Entries: []DirEntry{{Name: "sub", Path: "/p/sub"}}}},
+	}
+}
+
+// TestRenderAllLocales executes every template in every locale (spec §9:
+// "every locale × every template renders"), not just parses the set: the
+// pre-fix version only parsed and then re-inspected catalog *values* in
+// isolation, so it never actually called ExecuteTemplate against the real
+// zh-Hans catalog and could not catch a template that panics or errors at
+// real-data execute time, or a "!key!" lookup-miss marker that only appears
+// in *rendered output* (e.g. from an under-populated tmap subtree — see
+// TestTmapBridgeRequiredSubkeys above for why validateCatalogs' subtree
+// check alone can miss that). It intentionally does NOT catch a
+// wrong-but-present English string (that is goldenCases()' job in
+// golden_test.go, extended in this same fix wave): setting en.json's "badge.exact" to
+// "ZZZ-BROKEN" renders fine here — non-empty, not marker-shaped — and is
+// instead caught by TestEnglishRenderUnchanged/selfcheck_results.html.
 func TestRenderAllLocales(t *testing.T) {
 	cats, err := loadCatalogs(os.DirFS(".."))
 	if err != nil {
 		t.Fatalf("loadCatalogs: %v", err)
 	}
+	cases := renderAllLocalesCases()
 	for _, code := range sortedKeys(cats) {
 		cat := cats[code]
 		fm := baseFuncMap()
 		fm["t"] = cat.lookup
 		fm["tmap"] = cat.subtree
 		fm["lang"] = func() string { return code }
+		fm["locales"] = func() []localeOption { return localeOptionsFrom(cats) }
 		tmpl, err := template.New("").Funcs(fm).ParseGlob("../templates/*.html")
 		if err != nil {
 			t.Fatalf("%s: parse: %v", code, err)
 		}
 		if tmpl.Lookup("app.html") == nil {
 			t.Errorf("%s: app.html missing from the parsed set", code)
+		}
+		for _, tc := range cases {
+			t.Run(code+"/"+tc.Name, func(t *testing.T) {
+				var buf bytes.Buffer
+				if err := tmpl.ExecuteTemplate(&buf, tc.Name, tc.Data); err != nil {
+					t.Fatalf("execute %s/%s: %v", code, tc.Name, err)
+				}
+				if m := lookupMarkerRe.FindString(buf.String()); m != "" {
+					t.Errorf("%s/%s: rendered output contains a lookup-miss marker %q", code, tc.Name, m)
+				}
+			})
 		}
 		for _, k := range sortedKeys(cat) {
 			if strings.TrimSpace(cat[k]) == "" {

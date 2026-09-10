@@ -309,7 +309,14 @@ the JS bridge, the Go 4xx translations.
 
 ## 12. Switcher
 
-Two-item dropdown in the `app.html` header. `POST /api/lang` validates the
+A dropdown in the `app.html` header, data-driven from the loaded locale set
+(§2 goal 3: dropping a new `ui/locales/*.json` file in is enough, no code
+change) rather than a hard-coded pair of options — today that set has two
+members (English, 简体中文), so the dropdown has two items, but "two-item" here
+describes the current catalog set, not a limit the implementation enforces.
+Each catalog names its own display string via a `locale.name` key (e.g.
+`"English"` / `"中文"`), so the dropdown can show every locale's self-name
+regardless of which locale is currently rendering. `POST /api/lang` validates the
 submitted code, sets the cookie (`Path=/`, `SameSite=Lax`, `HttpOnly`, one year,
 no `Secure` — this is `http://localhost`), returns 204; the client calls
 `location.reload()`.

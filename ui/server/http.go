@@ -77,11 +77,16 @@ func New(opts Options) *Server {
 		panic("twincut-ui: locale catalogs: " + err.Error())
 	}
 	tmpls := make(map[string]*template.Template, len(cats))
+	// Computed once from the full catalog set (not per-locale: the switcher
+	// must list every locale regardless of which one is currently
+	// rendering) and shared by every per-locale FuncMap below.
+	localeOpts := localeOptionsFrom(cats)
 	for code, cat := range cats {
 		fm := baseFuncMap()
 		fm["t"] = cat.lookup
 		fm["tmap"] = cat.subtree
 		fm["lang"] = func() string { return code }
+		fm["locales"] = func() []localeOption { return localeOpts }
 		tm, err := template.New("").Funcs(fm).ParseFS(opts.Assets, "templates/*.html")
 		if err != nil {
 			panic("twincut-ui: parse embedded templates: " + err.Error())
@@ -254,7 +259,7 @@ func (s *Server) handleSetLang(w http.ResponseWriter, r *http.Request) {
 	}
 	code := r.FormValue("lang")
 	if _, ok := s.cats[code]; !ok {
-		http.Error(w, "unknown locale", http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.unknownLocale", http.StatusBadRequest)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{

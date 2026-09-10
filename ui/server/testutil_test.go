@@ -45,6 +45,7 @@ func newTestTemplates(t *testing.T) *template.Template {
 	fm["t"] = func(k string) string { return k }
 	fm["tmap"] = func(prefix string) map[string]string { return map[string]string{} }
 	fm["lang"] = func() string { return defaultLocale }
+	fm["locales"] = func() []localeOption { return nil }
 	tmpl, err := template.New("").Funcs(fm).ParseGlob("../templates/*.html")
 	if err != nil {
 		t.Fatalf("parse templates: %v", err)

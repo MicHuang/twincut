@@ -9,7 +9,7 @@
     <code class="result-path">{{.Member.Path}}</code>
   </td>
   <td>
-    <span class="badge badge-l1-reason">{{if eq .Member.Reason "l1_only_thumb"}}{{t "thumbnails.reason.onlyThumb"}}{{else if eq .Member.Reason "l1_only_maybe"}}{{t "thumbnails.reason.onlyMaybe"}}{{else}}{{t "thumbnails.reason.phashMatch"}}{{end}}</span>
+    <span class="badge badge-l1-reason">{{if eq .Member.Reason "l1_only_thumb"}}{{t "thumbnails.reason.onlyThumb"}}{{else if eq .Member.Reason "l1_only_maybe"}}{{t "thumbnails.reason.onlyMaybe"}}{{else if eq .Member.Reason "l1_phash_match"}}{{t "thumbnails.reason.phashMatch"}}{{else}}{{.Member.Reason}}{{end}}</span>
   </td>
   <td class="muted small">
     {{if and .Member.Width .Member.Height}}{{.Member.Width}}×{{.Member.Height}}{{else}}—{{end}}

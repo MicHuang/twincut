@@ -177,3 +177,40 @@ func SupportedLocales(fsys fs.FS) ([]string, error) {
 	}
 	return sortedKeys(cats), nil
 }
+
+// localeCatalogKey marks a catalog key that is looked up from Go code
+// outside a template's {{t}}/{{tmap}} call and outside httpErrorT — today
+// that is only localeNameKey below. It is a plain identity function so the
+// test-only coverage scanner in i18n_test.go (goKeyRe) can find the literal
+// key the same way it already finds httpErrorT's key argument, keeping this
+// consumer visible to TestCatalogsCoverEveryUsedKey and
+// TestCatalogsHaveNoUnusedKeys instead of becoming another invisible
+// tmap-bridge-shaped hole (see the tmap subtree check above).
+func localeCatalogKey(k string) string { return k }
+
+// localeNameKey is the key each locale's own catalog defines for its
+// display name in the language switcher, e.g. cats["zh-Hans"].lookup(localeNameKey)
+// == "中文" regardless of the viewer's current locale — which is exactly why
+// this cannot be expressed as an ordinary {{t "locale.name"}} template call
+// (that would only ever resolve in the CURRENT locale's catalog).
+var localeNameKey = localeCatalogKey("locale.name")
+
+// localeOption is one entry in the language switcher.
+type localeOption struct {
+	Code string
+	Name string
+}
+
+// localeOptionsFrom returns every locale's code and self-described display
+// name, sorted by code. The result is identical no matter which locale's
+// template set asks for it — the switcher must list every locale regardless
+// of which one is currently rendering — so New() computes it once from the
+// full catalog map and shares it across every per-locale FuncMap.
+func localeOptionsFrom(cats map[string]catalog) []localeOption {
+	codes := sortedKeys(cats)
+	opts := make([]localeOption, 0, len(codes))
+	for _, code := range codes {
+		opts = append(opts, localeOption{Code: code, Name: cats[code].lookup(localeNameKey)})
+	}
+	return opts
+}
