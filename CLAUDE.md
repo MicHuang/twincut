@@ -95,6 +95,15 @@ Things that are non-obvious from skimming a single function:
   canonical cross-check / self-check `dup_group` / `run_start` / `run_end`
   shapes on real runs.
 
+- **i18n is FuncMap-bound, not data-bound.** `ui/server/http.go` parses one
+  template set per locale and binds `t`/`tmap`/`lang` into each at parse time;
+  handlers render through `s.tmplFor(r)`. Adding a string means adding a key to
+  **both** `ui/locales/*.json` — `TestCatalogsCoverEveryUsedKey` and
+  `TestCatalogsHaveNoUnusedKeys` fail the build otherwise. `t` takes string
+  literals only; a computed key is invisible to that scanner. Translation lives
+  in the Go display layer — the NDJSON event contract stays English/machine
+  tokens.
+
 ## Agent operational notes
 
 These rules emerged from real session failures on this codebase. Follow them when working here.

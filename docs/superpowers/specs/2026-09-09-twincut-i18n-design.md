@@ -223,8 +223,8 @@ func (s *Server) httpErrorT(w http.ResponseWriter, r *http.Request, key string, 
 ```
 
 In scope (about a dozen of the 128 `http.Error` sites): allowlist rejection for
-source and backup paths, form-parse 400, missing `preview_run_id`,
-preview-run-not-found, wrong-mode 422.
+source, backup, self-check-folder, and open-path targets, form-parse 400,
+missing `preview_run_id`, preview-run-not-found, wrong-mode 422.
 
 `restore-conflict` was removed from this list during Task 8 (2026-09-09): it
 names `bin/twincut.sh`'s `restore_conflict` **event kind**, not an HTTP error —
@@ -269,6 +269,7 @@ once approved; the notes explain choices that are not one-to-one.
 | source | 源目录 | |
 | backup | 备份目录 | |
 | duplicate | 重复文件 | |
+| de-dup | 去重 | Deduplication used as a compound modifier (e.g. "Past de-dup applies"); distinct from *duplicate* (重复文件), the noun for a matched file. Precedent set in `history.subtitle` (Task 7); recorded here per that task's reviewer so the choice is not re-litigated. |
 | quarantine (place) / quarantine (action) | 隔离区 / 隔离 | Not 检疫; files are moved here, not destroyed. The noun names the destination folder; the verb is the checkbox/action label — do not use 隔离区 for the action (found in `results.quarantine` during Task 6 review, R8) |
 | Preview (dry-run) | 预览 | Button; body text spells out "试运行，不会移动任何文件" |
 | Apply | 执行 | Not 应用 — this is the destructive step that actually moves files |
@@ -334,8 +335,9 @@ it on `run_end` / close, and let the shell style `body[data-run-active]
 
 **Modified:** `ui/main.go` (embed directive, `--lang` validation);
 `ui/server/http.go` (`tmpls`, `tmplFor`, `New()`, `POST /api/lang`,
-`httpErrorT`, `<html lang>`); `ui/server/{selfcheck,crosscheck,history,thumbnail}.go`
-(render sites + user-facing 4xx); 13 templates; `ui/static/app.css` (switcher).
+`httpErrorT`, `<html lang>`); `ui/server/{selfcheck,crosscheck,history,thumbnail,openpath}.go`
+(render sites + user-facing 4xx — `openpath.go` added during Task 8 for the
+open-path allowlist rejection, §8); 12 templates; `ui/static/app.css` (switcher).
 
 One drive-by, user-approved: `app.html`'s sidebar footer reads `stage 8`, which
 has been wrong since Stage 9. Corrected while the file is open.
