@@ -12,6 +12,12 @@
     <header class="app-header">
       <div class="app-title">twincut</div>
       <div class="app-header-spacer"></div>
+      <div class="lang-switcher" title="Language">
+        <select id="lang-select" aria-label="Language">
+          <option value="en" selected>EN</option>
+          <option value="zh-Hans">中文</option>
+        </select>
+      </div>
       <div class="app-status" title="Server status">● ready</div>
     </header>
 
@@ -129,6 +135,14 @@
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         e.target.classList.add('active');
       }
+    });
+
+    
+    
+    document.getElementById('lang-select').addEventListener('change', async (e) => {
+      const body = new URLSearchParams({ lang: e.target.value });
+      const res = await fetch('/api/lang', { method: 'POST', body });
+      if (res.ok) location.reload();
     });
   </script>
 </body>

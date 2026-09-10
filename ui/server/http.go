@@ -162,6 +162,9 @@ func (s *Server) Handler() http.Handler {
 	// Reveal-in-Finder helper for post-apply convenience.
 	mux.HandleFunc("POST /api/open", s.handleOpenPath)
 
+	// Language switcher.
+	mux.HandleFunc("POST /api/lang", s.handleSetLang)
+
 	// Generic run-management API + SSE.
 	mux.HandleFunc("POST /api/runs", s.handleStartRun)
 	mux.HandleFunc("GET /api/runs", s.handleListRuns)
@@ -235,6 +238,35 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "twincut": s.opts.TwincutPath})
+}
+
+// ----------------------------------------------------------------------------
+// Language switcher
+// ----------------------------------------------------------------------------
+
+// handleSetLang records the viewer's language choice. It sits behind the
+// mux-wide originGuard, which enforces an Origin check on every non-GET, so it
+// needs no CSRF token of its own.
+func (s *Server) handleSetLang(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
+		return
+	}
+	code := r.FormValue("lang")
+	if _, ok := s.cats[code]; !ok {
+		http.Error(w, "unknown locale", http.StatusBadRequest)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     langCookie,
+		Value:    code,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   365 * 24 * 60 * 60,
+		// No Secure: this server is http://localhost by design.
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ----------------------------------------------------------------------------

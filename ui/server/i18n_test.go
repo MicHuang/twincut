@@ -313,6 +313,41 @@ func TestHttpErrorTUsesRequestLocale(t *testing.T) {
 	}
 }
 
+func TestSetLangCookie(t *testing.T) {
+	srv := &Server{opts: Options{}}
+	srv.cats = map[string]catalog{"en": {}, "zh-Hans": {}}
+
+	t.Run("accepts a known locale", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodPost, "/api/lang", strings.NewReader("lang=zh-Hans"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		srv.handleSetLang(w, r)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want 204", w.Code)
+		}
+		cookies := w.Result().Cookies()
+		if len(cookies) != 1 || cookies[0].Name != langCookie || cookies[0].Value != "zh-Hans" {
+			t.Fatalf("cookies = %v", cookies)
+		}
+		if !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].Path != "/" {
+			t.Errorf("cookie attributes wrong: %+v", cookies[0])
+		}
+	})
+
+	t.Run("rejects an unknown locale and sets no cookie", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodPost, "/api/lang", strings.NewReader("lang=klingon"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		srv.handleSetLang(w, r)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", w.Code)
+		}
+		if len(w.Result().Cookies()) != 0 {
+			t.Error("an unknown locale must not set a cookie")
+		}
+	})
+}
+
 func TestRenderAllLocales(t *testing.T) {
 	cats, err := loadCatalogs(os.DirFS(".."))
 	if err != nil {

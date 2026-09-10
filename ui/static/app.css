@@ -92,6 +92,12 @@ body {
 .app-header-spacer { flex: 1; }
 .app-status { color: var(--keep); font-size: 0.85rem; }
 
+.lang-switcher select { width: auto; font-size: 0.82rem; padding: 0.3rem 1.6rem 0.3rem 0.5rem; }
+body[data-run-active] .lang-switcher {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
 .app-sidebar {
   grid-area: sidebar;
   background: var(--sidebar);
