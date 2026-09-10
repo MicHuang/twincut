@@ -66,10 +66,17 @@ func loadCatalogs(fsys fs.FS) (map[string]catalog, error) {
 	return cats, nil
 }
 
-// validateCatalogs enforces the two invariants that let a missing translation
+// validateCatalogs enforces the invariants that let a missing translation
 // fail the build instead of reaching a user: every locale defines exactly the
-// default locale's key set, and every key in used is defined everywhere.
-// Iteration is sorted so the reported key is deterministic.
+// default locale's key set; every exact key in used ({{t "..."}} call sites)
+// is defined everywhere; and every tmap prefix in used ({{tmap "..."}} call
+// sites — recognisable because, unlike a t key, they end in ".") has a
+// non-empty subtree in every catalog. The last check is what stops a tmap
+// bridge from silently serving an empty {} object to the browser. It is
+// deliberately not an exact-membership check: that would instead demand a
+// literal catalog key spelled the same as the prefix (e.g. "progress."
+// itself), which is never displayed anywhere and would only exist to satisfy
+// the checker. Iteration is sorted so the reported key is deterministic.
 func validateCatalogs(cats map[string]catalog, used []string) error {
 	ref, ok := cats[defaultLocale]
 	if !ok {
@@ -94,6 +101,17 @@ func validateCatalogs(cats map[string]catalog, used []string) error {
 	sortedUsed := append([]string(nil), used...)
 	sort.Strings(sortedUsed)
 	for _, k := range sortedUsed {
+		if strings.HasSuffix(k, ".") {
+			// A tmap prefix is covered by subtree, not by exact membership:
+			// what the template actually consumes is every key beneath the
+			// prefix, not a literal key spelled the same as the prefix.
+			for _, code := range sortedKeys(cats) {
+				if len(cats[code].subtree(k)) == 0 {
+					return fmt.Errorf("catalog %s: tmap prefix %q is used but its subtree is empty", code, k)
+				}
+			}
+			continue
+		}
 		for _, code := range sortedKeys(cats) {
 			if _, ok := cats[code][k]; !ok {
 				return fmt.Errorf("catalog %s: key %q is used but not defined", code, k)

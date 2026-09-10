@@ -100,6 +100,44 @@ func TestValidateCatalogsAcceptsMatchingSets(t *testing.T) {
 	}
 }
 
+// TestValidateCatalogsAcceptsPopulatedTmapPrefix covers a {{tmap "sub."}}
+// call site: the used entry ends in ".", so it must be satisfied by subtree
+// coverage (at least one "sub.*" key in every catalog), not by demanding a
+// literal catalog key spelled "sub." itself — a key that would never be
+// displayed anywhere.
+func TestValidateCatalogsAcceptsPopulatedTmapPrefix(t *testing.T) {
+	cats := map[string]catalog{
+		"en":      {"sub.x": "X", "sub.y": "Y"},
+		"zh-Hans": {"sub.x": "X的中文", "sub.y": "Y的中文"},
+	}
+	if err := validateCatalogs(cats, []string{"sub."}); err != nil {
+		t.Fatalf("want nil for a tmap prefix whose subtree is populated in every catalog, got %v", err)
+	}
+}
+
+// TestValidateCatalogsRejectsEmptyTmapPrefixSubtree covers the failure mode
+// that actually matters: a {{tmap "sub."}} call site whose subtree has zero
+// matching keys in a catalog. Left unchecked, that call site would silently
+// serve an empty {} object to the browser instead of failing the build. The
+// error must read as a distinct defect from an exact-key miss, so this also
+// asserts on the message shape, not just err != nil.
+func TestValidateCatalogsRejectsEmptyTmapPrefixSubtree(t *testing.T) {
+	cats := map[string]catalog{
+		"en":      {"other.x": "X"},
+		"zh-Hans": {"other.x": "X的中文"},
+	}
+	err := validateCatalogs(cats, []string{"sub."})
+	if err == nil {
+		t.Fatal("want error when a used tmap prefix has no matching key in any catalog")
+	}
+	if !strings.Contains(err.Error(), "subtree") {
+		t.Errorf("error should read as an empty-subtree defect (mentioning \"subtree\"), got: %v", err)
+	}
+	if strings.Contains(err.Error(), "is used but not defined") {
+		t.Errorf("error should not read as an exact-key-miss defect: %v", err)
+	}
+}
+
 func TestResolveLocale(t *testing.T) {
 	avail := map[string]catalog{"en": {}, "zh-Hans": {}}
 
