@@ -64,7 +64,7 @@ func (s *Server) handleOpenPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !allowed {
-		http.Error(w, "path is outside the allowlist", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.pathNotAllowed", http.StatusForbidden)
 		return
 	}
 

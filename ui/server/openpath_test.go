@@ -17,6 +17,7 @@ func newOpenTestServer(t *testing.T, home string) *Server {
 			StateDir:    t.TempDir(),
 			TwincutPath: "/dev/null",
 		},
+		cats: mustLoadTestCatalogs(t),
 	}
 }
 

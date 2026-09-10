@@ -224,7 +224,13 @@ func (s *Server) httpErrorT(w http.ResponseWriter, r *http.Request, key string, 
 
 In scope (about a dozen of the 128 `http.Error` sites): allowlist rejection for
 source and backup paths, form-parse 400, missing `preview_run_id`,
-preview-run-not-found, wrong-mode 422, restore-conflict.
+preview-run-not-found, wrong-mode 422.
+
+`restore-conflict` was removed from this list during Task 8 (2026-09-09): it
+names `bin/twincut.sh`'s `restore_conflict` **event kind**, not an HTTP error —
+it has no Go handler and no status code, and reaches a user only through the
+raw NDJSON action-log stream, which §3's non-goals already keep untranslated.
+Listing it here was a category error in this spec, not an implementation gap.
 
 Out of scope: everything shaped like `http.Error(w, "render: "+err.Error(), 500)`.
 These are internal failures whose value is the raw Go error; translating them

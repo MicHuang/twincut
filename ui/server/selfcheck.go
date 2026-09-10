@@ -54,7 +54,7 @@ func (s *Server) handleSelfCheckPreview(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if ok, err := IsAllowedPath(folder); err != nil || !ok {
-		http.Error(w, "folder is outside the allowlist (must be under $HOME or /Volumes)", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.folderNotAllowed", http.StatusForbidden)
 		return
 	}
 
@@ -157,7 +157,7 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok, err := IsAllowedPath(folder); err != nil || !ok {
-		http.Error(w, "folder is outside the allowlist", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.folderNotAllowed", http.StatusForbidden)
 		return
 	}
 	view, err := BuildResults(previewRun)
