@@ -96,8 +96,8 @@ func TestHandleCrossCheckTab_RendersForm(t *testing.T) {
 	for _, fragment := range []string{
 		`name="source"`,
 		`name="backup"`,
-		`+ Add backup`,
-		`Matching mode`,
+		`crosscheck.addBackup`,
+		`crosscheck.matchingMode`,
 	} {
 		if !strings.Contains(body, fragment) {
 			t.Errorf("body missing %q", fragment)

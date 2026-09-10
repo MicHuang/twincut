@@ -1,7 +1,7 @@
 <section class="tab-section">
   <header class="tab-section-header">
-    <h2>Cross-check</h2>
-    <p class="subtitle">Find files in <strong>source</strong> that already exist in one or more <strong>backup</strong> folders, then move duplicates from source to quarantine.</p>
+    <h2>{{t "crosscheck.title"}}</h2>
+    <p class="subtitle">{{t "crosscheck.subtitle.pre"}}<strong>{{t "crosscheck.subtitle.source"}}</strong>{{t "crosscheck.subtitle.mid"}}<strong>{{t "crosscheck.subtitle.backup"}}</strong>{{t "crosscheck.subtitle.post"}}</p>
   </header>
 
   <form id="crosscheck-form"
@@ -11,7 +11,7 @@
         hx-disabled-elt="find button">
 
     <label class="field">
-      <span class="field-label">Source folder</span>
+      <span class="field-label">{{t "crosscheck.sourceFolder"}}</span>
       <div class="folder-picker">
         <input type="text" name="source" id="source-input"
                placeholder="/Users/me/Pictures/2024"
@@ -29,7 +29,7 @@
     </label>
 
     <fieldset class="field">
-      <legend class="field-label">Backup folders</legend>
+      <legend class="field-label">{{t "crosscheck.backupFolders"}}</legend>
       <div id="backup-list">
         <div class="backup-row">
           <input type="text" name="backup" placeholder="/Volumes/backup-1" autocomplete="off">
@@ -40,37 +40,37 @@
       <button type="button" class="btn btn-secondary btn-small"
               hx-get="/api/cross-check/add-backup-row"
               hx-target="#backup-list"
-              hx-swap="beforeend">+ Add backup</button>
+              hx-swap="beforeend">+ {{t "crosscheck.addBackup"}}</button>
     </fieldset>
 
     <details class="advanced">
-      <summary>Advanced options</summary>
+      <summary>{{t "selfcheck.advanced"}}</summary>
       <div class="advanced-grid">
         <label class="field">
-          <span class="field-label">Matching mode</span>
+          <span class="field-label">{{t "crosscheck.matchingMode"}}</span>
           <select name="matching_mode">
-            <option value="exact" selected>Hash-only (safest)</option>
-            <option value="default">Default (video-fast)</option>
-            <option value="strict">Strict (video-fast-strict)</option>
+            <option value="exact" selected>{{t "crosscheck.mode.exact"}}</option>
+            <option value="default">{{t "crosscheck.mode.default"}}</option>
+            <option value="strict">{{t "crosscheck.mode.strict"}}</option>
           </select>
         </label>
         <label class="field">
-          <span class="field-label">Minimum size</span>
-          <input type="text" name="min_size" placeholder="e.g. 100k or 1M">
+          <span class="field-label">{{t "crosscheck.minSize"}}</span>
+          <input type="text" name="min_size" placeholder="{{t "crosscheck.minSize.placeholder"}}">
         </label>
         <label class="field field-wide">
-          <span class="field-label">Extensions (comma-separated)</span>
-          <input type="text" name="ext" placeholder="leave blank for defaults">
+          <span class="field-label">{{t "crosscheck.extensions"}}</span>
+          <input type="text" name="ext" placeholder="{{t "crosscheck.extensions.placeholder"}}">
         </label>
         <label class="field field-wide">
-          <span class="field-label">Custom quarantine dir</span>
-          <input type="text" name="quarantine" placeholder="default: &lt;source&gt;/_QUARANTINE">
+          <span class="field-label">{{t "crosscheck.customQuarantineDir"}}</span>
+          <input type="text" name="quarantine" placeholder="{{t "crosscheck.customQuarantineDir.placeholder"}}">
         </label>
       </div>
     </details>
 
     <div class="form-actions">
-      <button type="submit" class="btn btn-primary">Preview</button>
+      <button type="submit" class="btn btn-primary">{{t "button.preview"}}</button>
     </div>
   </form>
 </section>

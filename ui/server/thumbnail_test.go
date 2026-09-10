@@ -298,7 +298,7 @@ func TestHandleThumbnailsL1Row_RendersCheckbox(t *testing.T) {
 	body := buf.String()
 	for _, want := range []string{
 		"/photos/suspect.jpg",
-		"l1_only_thumb",
+		"thumbnails.reason.onlyThumb",
 		`name="group:l1-suspects.member0"`,
 		`/thumb?path=`,
 		`200`,
