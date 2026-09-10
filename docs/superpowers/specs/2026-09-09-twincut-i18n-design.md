@@ -263,7 +263,7 @@ once approved; the notes explain choices that are not one-to-one.
 | source | 源目录 | |
 | backup | 备份目录 | |
 | duplicate | 重复文件 | |
-| quarantine | 隔离区 | Not 检疫; files are moved here, not destroyed |
+| quarantine (place) / quarantine (action) | 隔离区 / 隔离 | Not 检疫; files are moved here, not destroyed. The noun names the destination folder; the verb is the checkbox/action label — do not use 隔离区 for the action (found in `results.quarantine` during Task 6 review, R8) |
 | Preview (dry-run) | 预览 | Button; body text spells out "试运行，不会移动任何文件" |
 | Apply | 执行 | Not 应用 — this is the destructive step that actually moves files |
 | Restore | 还原 | |
