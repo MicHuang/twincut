@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{lang}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,27 +12,32 @@
     <header class="app-header">
       <div class="app-title">twincut</div>
       <div class="app-header-spacer"></div>
-      <div class="app-status" title="Server status">● ready</div>
+      <div class="lang-switcher" title="{{t "nav.langTitle"}}">
+        <select id="lang-select" aria-label="{{t "nav.langTitle"}}">
+          {{range locales}}<option value="{{.Code}}"{{if eq lang .Code}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </div>
+      <div class="app-status" title="{{t "nav.serverStatus"}}">● {{t "nav.statusReady"}}</div>
     </header>
 
     <aside class="app-sidebar">
       <nav>
         <a href="#" class="nav-item active" hx-get="/tab/self-check" hx-target="#tab-content" hx-swap="innerHTML">
-          Self-check
+          {{t "nav.selfCheck"}}
         </a>
         <a href="#" class="nav-item" hx-get="/tab/cross-check" hx-target="#tab-content" hx-swap="innerHTML">
-          Cross-check
+          {{t "nav.crossCheck"}}
         </a>
         <a href="#" class="nav-item" hx-get="/tab/thumbnails" hx-target="#tab-content" hx-swap="innerHTML">
-          Thumbnails
+          {{t "nav.thumbnails"}}
         </a>
         <hr>
         <a href="#" class="nav-item" hx-get="/tab/history" hx-target="#tab-content" hx-swap="innerHTML">
-          History
+          {{t "nav.history"}}
         </a>
       </nav>
       <div class="sidebar-footer">
-        <p class="muted">stage 8</p>
+        <p class="muted">{{t "nav.footer"}}</p>
       </div>
     </aside>
 
@@ -48,6 +53,14 @@
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         e.target.classList.add('active');
       }
+    });
+
+    // Language switcher: persist the choice server-side, then reload so
+    // every template (including inline tmap JSON) renders in the new locale.
+    document.getElementById('lang-select').addEventListener('change', async (e) => {
+      const body = new URLSearchParams({ lang: e.target.value });
+      const res = await fetch('/api/lang', { method: 'POST', body });
+      if (res.ok) location.reload();
     });
   </script>
 </body>

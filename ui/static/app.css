@@ -92,6 +92,13 @@ body {
 .app-header-spacer { flex: 1; }
 .app-status { color: var(--keep); font-size: 0.85rem; }
 
+.lang-switcher select { width: auto; font-size: 0.82rem; padding: 0.3rem 1.6rem 0.3rem 0.5rem; }
+/* Visual cue only. Actual disabling is the select's native `disabled`
+   property, toggled in selfcheck_running.html — that already removes it
+   from the tab order and blocks every input method, so pointer-events:none
+   would be redundant here and is deliberately omitted. */
+body[data-run-active] .lang-switcher { opacity: 0.5; }
+
 .app-sidebar {
   grid-area: sidebar;
   background: var(--sidebar);

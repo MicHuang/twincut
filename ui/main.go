@@ -17,6 +17,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,7 +27,7 @@ import (
 
 // All UI assets are baked into the binary. The build is a single-file drop-in.
 //
-//go:embed templates/*.html static/*
+//go:embed templates/*.html static/* locales/*.json
 var assets embed.FS
 
 func main() {
@@ -37,6 +39,16 @@ func main() {
 		twincutBin = flag.String("twincut-bin", "", "Path to twincut.sh (default: PATH lookup, then sibling of this binary)")
 	)
 	flag.Parse()
+
+	if *lang != "" {
+		locales, err := server.SupportedLocales(assets)
+		if err != nil {
+			log.Fatalf("locales: %v", err)
+		}
+		if !slices.Contains(locales, *lang) {
+			log.Fatalf("--lang %q is not supported (have: %s)", *lang, strings.Join(locales, ", "))
+		}
+	}
 
 	sd, err := resolveStateDir(*stateDir)
 	if err != nil {

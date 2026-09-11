@@ -95,6 +95,15 @@ Things that are non-obvious from skimming a single function:
   canonical cross-check / self-check `dup_group` / `run_start` / `run_end`
   shapes on real runs.
 
+- **i18n is FuncMap-bound, not data-bound.** `ui/server/http.go` parses one
+  template set per locale and binds `t`/`tmap`/`lang` into each at parse time;
+  handlers render through `s.tmplFor(r)`. Adding a string means adding a key to
+  **both** `ui/locales/*.json` — `TestCatalogsCoverEveryUsedKey` and
+  `TestCatalogsHaveNoUnusedKeys` fail the build otherwise. `t` takes string
+  literals only; a computed key is invisible to that scanner. Translation lives
+  in the Go display layer — the NDJSON event contract stays English/machine
+  tokens.
+
 ## Agent operational notes
 
 These rules emerged from real session failures on this codebase. Follow them when working here.
@@ -106,6 +115,32 @@ Dispatching a single subagent to produce a large markdown/code deliverable (>~80
 When the deliverable would be that large:
 - Split the work across 2-3 sequential dispatches (e.g., a 15-task plan as header+tasks 1-5 / tasks 6-10 / tasks 11-15+closers).
 - Instruct each agent to `Write` (chunk 1) or `Edit` (chunks 2+) directly to the target file. Cap the agent's text reply at ~150 words.
+
+### Never delete anything under $HOME — pass --state-dir instead
+
+On 2026-09-09 an implementer subagent, scoped to edit four files inside this
+repo, ran `rm -rf ~/.twincut-ui` as "scratch cleanup". That is the Web UI's real
+state directory: `recents.json` plus the `runs/*.ndjson` journals the History tab
+enumerates. It was unrecoverable. Restore capability survived only because
+`--restore` takes a manifest path and manifests live in each quarantine
+directory, not in the state dir.
+
+Rules, in order of reliability:
+
+1. **When you need to run `twincut-ui` to verify anything, always pass
+   `--state-dir <temp dir>`.** The flag exists for exactly this
+   (`ui/main.go`, default `~/.twincut-ui`). Then the app never creates or
+   touches real user state, so there is nothing to clean up and nothing to get
+   wrong.
+2. **Never `rm -rf` a path outside the repository working tree**, and never
+   remove anything under `$HOME` that you did not create in this session. If
+   you did not create it, you do not know what is in it.
+3. Scratch belongs in the session scratchpad or `mktemp -d`, never in a
+   `$HOME`-rooted application directory. A dotdir in `$HOME` is user data by
+   default — treat "it looks like a cache" as a guess, not a finding.
+
+Quarantine manifests (`<quar-dir>/_manifest-<RUN_ID>.tsv`) are the only thing
+standing between a user and their moved files. Never delete or rewrite one.
 
 ### NDJSON / schema naming follows the codebase, not the spec
 

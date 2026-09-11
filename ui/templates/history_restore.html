@@ -1,13 +1,13 @@
 {{define "history_restore.html"}}
 <section class="tab-section">
   <header class="tab-section-header">
-    <h2>Restore</h2>
+    <h2>{{t "history.restore.title"}}</h2>
     <p class="subtitle"><code>{{.Folder}}</code></p>
   </header>
 
   <div class="alert alert-info">
-    <strong>{{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}</strong> will be moved back from quarantine to their original locations.
-    <br><span class="muted small">Manifest: <code>{{.ManifestPath}}</code></span>
+    <strong>{{.MovedCount}} {{if eq .MovedCount 1}}{{t "history.restore.file.one"}}{{else}}{{t "history.restore.file.other"}}{{end}}</strong> {{t "history.restore.willBeMoved"}}
+    <br><span class="muted small">{{t "done.manifestLabel"}} <code>{{.ManifestPath}}</code></span>
   </div>
 
   <div class="form-actions">
@@ -16,12 +16,12 @@
             hx-target="#tab-content"
             hx-swap="innerHTML"
             hx-disabled-elt="this">
-      Restore {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}
+      {{t "history.restore.action"}} {{.MovedCount}} {{if eq .MovedCount 1}}{{t "history.restore.file.one"}}{{else}}{{t "history.restore.file.other"}}{{end}}
     </button>
     <a href="#" class="btn btn-secondary"
        hx-get="/tab/history"
        hx-target="#tab-content"
-       hx-swap="innerHTML">Cancel</a>
+       hx-swap="innerHTML">{{t "button.cancel"}}</a>
   </div>
 </section>
 {{end}}

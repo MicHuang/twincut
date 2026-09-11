@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"html/template"
 	"io"
 	"net/http"
@@ -20,27 +19,6 @@ func newThumbTestServer(t *testing.T) *Server {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	funcMap := template.FuncMap{
-		"dict": func(args ...any) (map[string]any, error) {
-			if len(args)%2 != 0 {
-				return nil, fmt.Errorf("dict requires even number of args")
-			}
-			m := make(map[string]any, len(args)/2)
-			for i := 0; i < len(args); i += 2 {
-				key, ok := args[i].(string)
-				if !ok {
-					return nil, fmt.Errorf("dict key %v is not a string", args[i])
-				}
-				m[key] = args[i+1]
-			}
-			return m, nil
-		},
-		"hasPrefix": strings.HasPrefix,
-	}
-	tmpl, err := template.New("").Funcs(funcMap).ParseGlob("../templates/*.html")
-	if err != nil {
-		t.Fatalf("parse templates: %v", err)
-	}
 	stateDir := t.TempDir()
 	rm, err := NewRunManager(stateDir, "/dev/null")
 	if err != nil {
@@ -51,7 +29,8 @@ func newThumbTestServer(t *testing.T) *Server {
 			StateDir:    stateDir,
 			TwincutPath: "/dev/null",
 		},
-		tmpl:    tmpl,
+		tmpls:   map[string]*template.Template{defaultLocale: newTestTemplates(t)},
+		cats:    mustLoadTestCatalogs(t),
 		runs:    rm,
 		recents: NewRecentsStore(stateDir),
 	}
@@ -314,13 +293,13 @@ func TestHandleThumbnailsL1Row_RendersCheckbox(t *testing.T) {
 		Index:   0,
 	}
 	var buf strings.Builder
-	if err := srv.tmpl.ExecuteTemplate(&buf, "thumbnails_l1_row.html", data); err != nil {
+	if err := srv.tmpls[defaultLocale].ExecuteTemplate(&buf, "thumbnails_l1_row.html", data); err != nil {
 		t.Fatalf("execute template: %v", err)
 	}
 	body := buf.String()
 	for _, want := range []string{
 		"/photos/suspect.jpg",
-		"l1_only_thumb",
+		"thumbnails.reason.onlyThumb",
 		`name="group:l1-suspects.member0"`,
 		`/thumb?path=`,
 		`200`,
@@ -349,8 +328,8 @@ func TestAppHTML_ThumbnailsNavLink(t *testing.T) {
 	if strings.Contains(body, `muted-tag`) {
 		t.Error("sidebar still has muted-tag soon badge (stale)")
 	}
-	if !strings.Contains(body, "stage 8") {
-		t.Error("footer still says stage 4 or other old value")
+	if !strings.Contains(body, "nav.footer") {
+		t.Error("footer no longer renders the nav.footer key")
 	}
 }
 
@@ -360,8 +339,8 @@ func TestRunningPanelTitle_ThumbnailModes(t *testing.T) {
 		mode string
 		want string
 	}{
-		{"thumbnail_detect_preview", "Detecting thumbnails"},
-		{"thumbnail_detect_apply", "Confirming thumbnail moves"},
+		{"thumbnail_detect_preview", "running.mode.thumbnailPreview"},
+		{"thumbnail_detect_apply", "running.mode.thumbnailApply"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			var buf strings.Builder
@@ -371,13 +350,84 @@ func TestRunningPanelTitle_ThumbnailModes(t *testing.T) {
 				Mode:    tc.mode,
 				NextURL: "/api/thumbnails/results/x",
 			}
-			if err := srv.tmpl.ExecuteTemplate(&buf, "selfcheck_running.html", data); err != nil {
+			if err := srv.tmpls[defaultLocale].ExecuteTemplate(&buf, "selfcheck_running.html", data); err != nil {
 				t.Fatalf("execute: %v", err)
 			}
 			if !strings.Contains(buf.String(), tc.want) {
 				t.Errorf("running panel title missing %q for mode=%s", tc.want, tc.mode)
 			}
 		})
+	}
+}
+
+// TestRunningPanel_LangSwitcherDisabledDuringRun pins the wiring behind R13:
+// the language switcher's native `disabled` property must be toggled at the
+// same site body.dataset.runActive is set, and at both sites it is cleared.
+// This is the actual defense — a disabled <select> is removed from the tab
+// order and rejects every input method — replacing the CSS-only
+// pointer-events approach the brief originally specified, which suppressed
+// mouse targeting but left the element reachable and changeable by keyboard
+// or a screen reader, defeating the run-active disable it was meant to
+// enforce. A Go test cannot execute the client-side JS itself (a live,
+// real-browser, real-run proof of the actual runtime behavior is in
+// task-10-report.md's fix round), so this checks that the rendered source is
+// wired at all three sites, in order, as a durable CI-covering regression
+// pin against someone later touching runActive without touching disabled in
+// lockstep.
+func TestRunningPanel_LangSwitcherDisabledDuringRun(t *testing.T) {
+	srv := newThumbTestServer(t)
+	var buf strings.Builder
+	data := selfCheckRunningData{RunID: "x", Folder: "/photos", Mode: "apply", NextURL: "/api/self-check/done/x"}
+	if err := srv.tmpls[defaultLocale].ExecuteTemplate(&buf, "selfcheck_running.html", data); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	script := buf.String()
+
+	const (
+		setActive    = "document.body.dataset.runActive = '1';"
+		clearActive  = "delete document.body.dataset.runActive;"
+		disableTrue  = "if (langSelect) langSelect.disabled = true;"
+		disableFalse = "if (langSelect) langSelect.disabled = false;"
+		lookup       = "const langSelect = document.getElementById('lang-select');"
+	)
+
+	if !strings.Contains(script, lookup) {
+		t.Error("langSelect lookup missing or not captured as its own null-guardable reference")
+	}
+
+	setIdx := strings.Index(script, setActive)
+	if setIdx < 0 {
+		t.Fatal("runActive set statement not found")
+	}
+	disableIdx := strings.Index(script, disableTrue)
+	if disableIdx < 0 {
+		t.Fatal("disable-on-start statement not found")
+	}
+	if disableIdx < setIdx || disableIdx-setIdx > 200 {
+		t.Errorf("disable-on-start is not immediately after the runActive set (setIdx=%d disableIdx=%d)", setIdx, disableIdx)
+	}
+
+	if n := strings.Count(script, clearActive); n != 2 {
+		t.Fatalf("want 2 runActive clear sites (run_end + hard-close), got %d", n)
+	}
+	if n := strings.Count(script, disableFalse); n != 2 {
+		t.Fatalf("want 2 disable-clear sites matching the 2 runActive clears, got %d", n)
+	}
+
+	// Each clear site's re-enable statement must sit immediately after its
+	// own runActive clear, not just be present somewhere else in the file.
+	rest := script
+	for i := 1; i <= 2; i++ {
+		ci := strings.Index(rest, clearActive)
+		if ci < 0 {
+			t.Fatalf("clear site %d not found", i)
+		}
+		after := rest[ci+len(clearActive):]
+		ei := strings.Index(after, disableFalse)
+		if ei < 0 || ei > 200 {
+			t.Errorf("clear site %d: disable-clear is not immediately after its runActive clear (offset=%d)", i, ei)
+		}
+		rest = after
 	}
 }
 
@@ -531,7 +581,7 @@ func TestHandleThumbnailsApply_RejectsWrongMode(t *testing.T) {
 	if strings.Contains(body, leakedMode) {
 		t.Fatalf("wrong-mode preview leaked internal mode in response: %q", body)
 	}
-	if want := "preview_run_id refers to a non-thumbnail-preview run\n"; body != want {
+	if want := "This preview was produced by a different workflow.\n"; body != want {
 		t.Fatalf("wrong-mode response = %q, want %q", body, want)
 	}
 }

@@ -1,52 +1,43 @@
 <section class="tab-section">
   <header class="tab-section-header">
-    <h2>
-      {{- if eq .Mode "apply" -}}{{t "running.mode.apply"}}
-      {{- else if eq .Mode "cross_check_apply" -}}{{t "running.mode.crossCheckApply"}}
-      {{- else if eq .Mode "cross_check_preview" -}}{{t "running.mode.crossCheckPreview"}}
-      {{- else if eq .Mode "thumbnail_detect_preview" -}}{{t "running.mode.thumbnailPreview"}}
-      {{- else if eq .Mode "thumbnail_detect_apply" -}}{{t "running.mode.thumbnailApply"}}
-      {{- else if eq .Mode "restore" -}}{{t "running.mode.restore"}}
-      {{- else -}}{{t "running.mode.previewing"}}
-      {{- end -}}
-    </h2>
-    <p class="subtitle"><code>{{.Folder}}</code></p>
+    <h2>Applying…</h2>
+    <p class="subtitle"><code>/tmp/g</code></p>
   </header>
 
   <div class="run-panel" id="run-panel"
-       data-run-id="{{.RunID}}"
-       data-next-url="{{.NextURL}}"
-       data-show-actions="{{.ShowActions}}">
+       data-run-id="g1"
+       data-next-url="/api/self-check/done/g1"
+       data-show-actions="true">
 
     <div class="progress">
       <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
       <div class="progress-stats">
-        <span id="progress-text">{{t "running.starting"}}</span>
+        <span id="progress-text">Starting…</span>
         <span class="muted" id="progress-current"></span>
       </div>
     </div>
 
     <div class="run-counters">
       <div class="counter">
-        <span class="counter-label">{{t "running.dupsFound"}}</span>
+        <span class="counter-label">duplicates found</span>
         <span class="counter-value" id="counter-dups">0</span>
       </div>
       <div class="counter">
-        <span class="counter-label">{{t "running.warnings"}}</span>
+        <span class="counter-label">warnings</span>
         <span class="counter-value" id="counter-warns">0</span>
       </div>
     </div>
 
     <details class="log-panel">
-      <summary>{{t "running.showLog"}}</summary>
+      <summary>Show log</summary>
       <pre class="log-pre" id="log-pre"></pre>
     </details>
 
     <div class="form-actions">
       <button type="button" class="btn btn-tertiary"
-              hx-post="/api/runs/{{.RunID}}/cancel"
-              hx-swap="none">{{t "button.cancel"}}</button>
-      <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">{{t "button.backToForm"}}</a>
+              hx-post="/api/runs/g1/cancel"
+              hx-swap="none">Cancel</button>
+      <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">Back to form</a>
     </div>
 
   </div>
@@ -54,7 +45,7 @@
 
 <script>
   (function () {
-    const I18N = {{tmap "progress."}};
+    const I18N = {"error":"Error","phase.apply":"Applying","phase.restore":"Restoring","phase.scan":"Scanning","streamClosed":"(stream closed)"};
     const panel = document.getElementById('run-panel');
     const runID = panel.dataset.runId;
     const nextURL = panel.dataset.nextUrl;
@@ -65,10 +56,10 @@
     const dupsEl = document.getElementById('counter-dups');
     const warnsEl = document.getElementById('counter-warns');
     const logEl = document.getElementById('log-pre');
-    // The switcher lives in app.html, the outer shell — not an htmx swap
-    // target, so it is normally present. Null-guarded anyway: this
-    // fragment's script must not throw if it is ever rendered without
-    // the shell.
+    
+    
+    
+    
     const langSelect = document.getElementById('lang-select');
 
     let dups = 0, warns = 0;
@@ -109,11 +100,11 @@
       const p = JSON.parse(e.data);
       es.close();
       progressFill.style.width = '100%';
-      // Hand off: GET the appropriate next-screen fragment.
+      
       htmx.ajax('GET', nextURL, { target: '#tab-content', swap: 'innerHTML' });
     });
     es.onerror = () => {
-      // EventSource auto-reconnects on transient errors; only log on hard close.
+      
       if (es.readyState === EventSource.CLOSED) {
         progressText.textContent += ' ' + (I18N.streamClosed ?? '(stream closed)');
         delete document.body.dataset.runActive;

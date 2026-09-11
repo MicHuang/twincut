@@ -26,7 +26,7 @@ type selfCheckRunningData struct {
 	ShowActions bool
 }
 
-func (s *Server) handleSelfCheckTab(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleSelfCheckTab(w http.ResponseWriter, r *http.Request) {
 	data := selfCheckFormData{}
 	if recents, err := s.recents.List(); err == nil {
 		data.Recents = recents
@@ -35,7 +35,7 @@ func (s *Server) handleSelfCheckTab(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_form.html", data); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_form.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -45,7 +45,7 @@ func (s *Server) handleSelfCheckTab(w http.ResponseWriter, _ *http.Request) {
 // fragment when run_end arrives.
 func (s *Server) handleSelfCheckPreview(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
 		return
 	}
 	folder := strings.TrimSpace(r.FormValue("folder"))
@@ -54,7 +54,7 @@ func (s *Server) handleSelfCheckPreview(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if ok, err := IsAllowedPath(folder); err != nil || !ok {
-		http.Error(w, "folder is outside the allowlist (must be under $HOME or /Volumes)", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.folderNotAllowed", http.StatusForbidden)
 		return
 	}
 
@@ -84,7 +84,7 @@ func (s *Server) handleSelfCheckPreview(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      folder,
 		Mode:        "preview",
@@ -110,7 +110,7 @@ func (s *Server) handleSelfCheckResults(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_results.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_results.html", view); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -121,22 +121,22 @@ func (s *Server) handleSelfCheckResults(w http.ResponseWriter, r *http.Request) 
 // keeper). Returns the running-panel template with Mode="apply".
 func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "form parse: "+err.Error(), http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
 		return
 	}
 	previewID := r.FormValue("preview_run_id")
 	if previewID == "" {
-		http.Error(w, "preview_run_id is required", http.StatusBadRequest)
+		s.httpErrorT(w, r, "err.missingPreviewRun", http.StatusBadRequest)
 		return
 	}
 	previewRun := s.runs.Get(previewID)
 	if previewRun == nil {
-		http.Error(w, "preview run not found", http.StatusNotFound)
+		s.httpErrorT(w, r, "err.previewRunNotFound", http.StatusNotFound)
 		return
 	}
 	prevSnap := previewRun.Snapshot()
 	if prevSnap.Mode != "self_check_preview" {
-		http.Error(w, "preview_run_id refers to a non-self-check-preview run", http.StatusUnprocessableEntity)
+		s.httpErrorT(w, r, "err.wrongMode", http.StatusUnprocessableEntity)
 		return
 	}
 	if prevSnap.Status == RunStatusRunning {
@@ -157,7 +157,7 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok, err := IsAllowedPath(folder); err != nil || !ok {
-		http.Error(w, "folder is outside the allowlist", http.StatusForbidden)
+		s.httpErrorT(w, r, "err.folderNotAllowed", http.StatusForbidden)
 		return
 	}
 	view, err := BuildResults(previewRun)
@@ -184,7 +184,7 @@ func (s *Server) handleSelfCheckApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      folder,
 		Mode:        "apply",
@@ -209,7 +209,7 @@ func (s *Server) handleSelfCheckDone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -277,7 +277,7 @@ func (s *Server) handleFsList(w http.ResponseWriter, r *http.Request) {
 
 	// Empty path → show the allowlist roots.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "dir_listing.html", listing); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "dir_listing.html", listing); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

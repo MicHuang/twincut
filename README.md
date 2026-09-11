@@ -56,6 +56,11 @@ extension filters, hash algo, and more.
 twincut-ui              # opens http://localhost:7681 in your browser
 ```
 
+The UI ships in English and Simplified Chinese. It follows your browser's
+`Accept-Language` by default; the header switcher overrides that and is
+remembered in a cookie. `twincut-ui --lang zh-Hans` sets the default for a
+machine that has no cookie yet.
+
 Local-only (binds 127.0.0.1). Each scan runs `twincut.sh` as a subprocess
 and streams progress over Server-Sent Events. The Apply step uses an
 explicit move list so you can override which file in each cluster is

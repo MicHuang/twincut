@@ -33,16 +33,17 @@ type Options struct {
 // Server is the long-lived HTTP layer.
 type Server struct {
 	opts    Options
-	tmpl    *template.Template
+	tmpls   map[string]*template.Template
+	cats    map[string]catalog
 	runs    *RunManager
 	recents *RecentsStore
 }
 
-// New constructs a Server from the given options. Panics on template parse
-// errors — these are baked-in assets, so failure means the binary itself is
-// broken.
-func New(opts Options) *Server {
-	funcMap := template.FuncMap{
+// baseFuncMap holds the template helpers that do not depend on locale. New()
+// adds t/tmap/lang per locale on top; tests build from the same base so the
+// two cannot drift.
+func baseFuncMap() template.FuncMap {
+	return template.FuncMap{
 		"dict": func(args ...any) (map[string]any, error) {
 			if len(args)%2 != 0 {
 				return nil, fmt.Errorf("dict requires even number of args")
@@ -59,9 +60,38 @@ func New(opts Options) *Server {
 		},
 		"hasPrefix": strings.HasPrefix,
 	}
-	tmpl, err := template.New("").Funcs(funcMap).ParseFS(opts.Assets, "templates/*.html")
+}
+
+// New constructs a Server from the given options. Panics on template parse
+// errors — these are baked-in assets, so failure means the binary itself is
+// broken.
+func New(opts Options) *Server {
+	cats, err := loadCatalogs(opts.Assets)
 	if err != nil {
-		panic("twincut-ui: parse embedded templates: " + err.Error())
+		panic("twincut-ui: load locale catalogs: " + err.Error())
+	}
+	// Key coverage is asserted by TestCatalogsCoverEveryUsedKey, which scans the
+	// working tree. New() only checks that the locales agree with each other —
+	// the shipped binary has no source to scan.
+	if err := validateCatalogs(cats, nil); err != nil {
+		panic("twincut-ui: locale catalogs: " + err.Error())
+	}
+	tmpls := make(map[string]*template.Template, len(cats))
+	// Computed once from the full catalog set (not per-locale: the switcher
+	// must list every locale regardless of which one is currently
+	// rendering) and shared by every per-locale FuncMap below.
+	localeOpts := localeOptionsFrom(cats)
+	for code, cat := range cats {
+		fm := baseFuncMap()
+		fm["t"] = cat.lookup
+		fm["tmap"] = cat.subtree
+		fm["lang"] = func() string { return code }
+		fm["locales"] = func() []localeOption { return localeOpts }
+		tm, err := template.New("").Funcs(fm).ParseFS(opts.Assets, "templates/*.html")
+		if err != nil {
+			panic("twincut-ui: parse embedded templates: " + err.Error())
+		}
+		tmpls[code] = tm
 	}
 	rm, err := NewRunManager(opts.StateDir, opts.TwincutPath)
 	if err != nil {
@@ -69,10 +99,26 @@ func New(opts Options) *Server {
 	}
 	return &Server{
 		opts:    opts,
-		tmpl:    tmpl,
+		tmpls:   tmpls,
+		cats:    cats,
 		runs:    rm,
 		recents: NewRecentsStore(opts.StateDir),
 	}
+}
+
+// tmplFor returns the template set for the request's locale. Because t is
+// bound into each set at parse time, a handler cannot render a mixed-language
+// page.
+func (s *Server) tmplFor(r *http.Request) *template.Template {
+	return s.tmpls[resolveLocale(r, s.opts.Lang, s.tmpls)]
+}
+
+// httpErrorT writes a translated error. Use it ONLY for 4xx a user can
+// trigger. Internal 500s keep their raw Go error: translating them obstructs
+// debugging and puts uninterpolatable text in the catalog (spec §8).
+func (s *Server) httpErrorT(w http.ResponseWriter, r *http.Request, key string, status int) {
+	code := resolveLocale(r, s.opts.Lang, s.cats)
+	http.Error(w, s.cats[code].lookup(key), status)
 }
 
 // Handler returns the root http.Handler.
@@ -120,6 +166,9 @@ func (s *Server) Handler() http.Handler {
 
 	// Reveal-in-Finder helper for post-apply convenience.
 	mux.HandleFunc("POST /api/open", s.handleOpenPath)
+
+	// Language switcher.
+	mux.HandleFunc("POST /api/lang", s.handleSetLang)
 
 	// Generic run-management API + SSE.
 	mux.HandleFunc("POST /api/runs", s.handleStartRun)
@@ -187,13 +236,42 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "app.html", data); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "app.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "twincut": s.opts.TwincutPath})
+}
+
+// ----------------------------------------------------------------------------
+// Language switcher
+// ----------------------------------------------------------------------------
+
+// handleSetLang records the viewer's language choice. It sits behind the
+// mux-wide originGuard, which enforces an Origin check on every non-GET, so it
+// needs no CSRF token of its own.
+func (s *Server) handleSetLang(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.httpErrorT(w, r, "err.formParse", http.StatusBadRequest)
+		return
+	}
+	code := r.FormValue("lang")
+	if _, ok := s.cats[code]; !ok {
+		s.httpErrorT(w, r, "err.unknownLocale", http.StatusBadRequest)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     langCookie,
+		Value:    code,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   365 * 24 * 60 * 60,
+		// No Secure: this server is http://localhost by design.
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ----------------------------------------------------------------------------
@@ -255,13 +333,13 @@ type debugPageData struct {
 	Runs        []Snapshot
 }
 
-func (s *Server) handleDebug(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleDebug(w http.ResponseWriter, r *http.Request) {
 	data := debugPageData{
 		TwincutPath: s.opts.TwincutPath,
 		Runs:        s.runs.List(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "debug.html", data); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "debug.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -277,7 +355,7 @@ func (s *Server) handleDebugRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "debug_run.html", debugRunPageData{RunID: id}); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "debug_run.html", debugRunPageData{RunID: id}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

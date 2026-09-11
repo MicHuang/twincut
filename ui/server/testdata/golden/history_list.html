@@ -1,0 +1,22 @@
+
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>History</h2>
+    <p class="subtitle">Past de-dup applies — click any row to restore.</p>
+  </header>
+
+  
+    <div class="alert alert-info">
+      <strong>No history yet.</strong> Run a self-check or cross-check apply; this page lists what you can roll back.
+    </div>
+  
+</section>
+
+<script>
+  document.querySelectorAll('time[data-ts]').forEach(function (el) {
+    const ts = parseInt(el.dataset.ts, 10);
+    if (!ts) return;
+    const d = new Date(ts * 1000);
+    el.textContent = d.toLocaleString();
+  });
+</script>

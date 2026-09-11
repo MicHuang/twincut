@@ -17,14 +17,14 @@ type historyView struct {
 	Entries []HistoryEntry
 }
 
-func (s *Server) handleHistoryTab(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleHistoryTab(w http.ResponseWriter, r *http.Request) {
 	entries, err := collectHistory(s.opts.StateDir)
 	if err != nil {
 		http.Error(w, "collect history: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "history_list.html", historyView{Entries: entries}); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "history_list.html", historyView{Entries: entries}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -247,7 +247,7 @@ func (s *Server) handleHistoryPreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "history_restore.html", historyRestoreData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "history_restore.html", historyRestoreData{
 		RunID:        id,
 		Folder:       entry.Folder,
 		ManifestPath: manifest,
@@ -275,7 +275,7 @@ func (s *Server) handleHistoryRestore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_running.html", selfCheckRunningData{
 		RunID:       run.ID,
 		Folder:      manifest,
 		Mode:        "restore",
@@ -302,7 +302,7 @@ func (s *Server) handleHistoryRestoreDone(w http.ResponseWriter, r *http.Request
 	}
 	view.Mode = "restore"
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
+	if err := s.tmplFor(r).ExecuteTemplate(w, "selfcheck_done.html", view); err != nil {
 		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
 	}
 }

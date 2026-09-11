@@ -1,0 +1,244 @@
+<section class="tab-section">
+  <header class="tab-section-header">
+    <h2>Preview results</h2>
+    <p class="subtitle"><code>/tmp/g</code></p>
+  </header>
+
+  
+
+    <div class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-value">2</div>
+        <div class="summary-label">duplicate groups</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-value" id="apply-count">2</div>
+        <div class="summary-label">files to quarantine</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-value">2.0 MB</div>
+        <div class="summary-label">reclaimable</div>
+      </div>
+    </div>
+
+    
+    <details class="alert alert-warn">
+      <summary><strong>1 warning</strong> during scan</summary>
+      <ul class="warn-list">
+        <li><code>bad_video</code> · <span class="muted">/tmp/g/broken.mov</span></li>
+      </ul>
+    </details>
+    
+
+    <p class="muted small results-help">
+      Each cluster picks one file to <strong>keep</strong> by default — change the radio to keep a different file, or uncheck a row to skip the move entirely.
+    </p>
+
+    <form id="apply-form"
+          hx-post="/api/self-check/apply"
+          hx-target="#tab-content"
+          hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+      
+      <input type="hidden" name="folder" value="/tmp/g">
+      
+      <input type="hidden" name="preview_run_id" value="g1">
+
+      <div class="results-list">
+        
+        <div class="result-group " data-group-id="1">
+          <div class="result-group-header">
+            <span class="badge badge-match">exact</span>
+            
+            <span class="muted small">group 1 · hash <code class="hash">deadbeef</code></span>
+          </div>
+
+          
+            
+            
+              
+              <div class="result-row">
+                <label class="role-radio">
+                  <input type="radio" name="keep_1" value="/tmp/g/keep.jpg" checked>
+                  <span>Keep</span>
+                </label>
+                <label class="role-checkbox">
+                  <input type="checkbox" name="quarantine" value="/tmp/g/keep.jpg" disabled>
+                  <span>Quarantine</span>
+                </label>
+                <code class="path">/tmp/g/keep.jpg</code>
+                <span class="size muted">1.0 MB</span>
+              </div>
+              
+              <div class="result-row">
+                <label class="role-radio">
+                  <input type="radio" name="keep_1" value="/tmp/g/dup.jpg">
+                  <span>Keep</span>
+                </label>
+                <label class="role-checkbox">
+                  <input type="checkbox" name="quarantine" value="/tmp/g/dup.jpg" checked>
+                  <span>Quarantine</span>
+                </label>
+                <code class="path">/tmp/g/dup.jpg</code>
+                <span class="size muted">1.0 MB</span>
+              </div>
+              
+            
+          
+        </div>
+        
+        <div class="result-group result-group-similar" data-group-id="2">
+          <div class="result-group-header">
+            <span class="badge badge-match">similar video (strict)</span>
+            
+            <span class="muted small">group 2</span>
+          </div>
+
+          
+            
+            
+              
+              <div class="cluster-cards">
+                <div class="cluster-card">
+                  <div class="cluster-card-controls">
+                    <label class="role-radio">
+                      <input type="radio" name="keep_2" value="/tmp/g/keep.mp4" checked>
+                      <span>Keep</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" name="quarantine" value="/tmp/g/keep.mp4" disabled>
+                      <span>Quarantine</span>
+                    </label>
+                  </div>
+                  <button type="button" class="thumb-btn"
+                          data-thumb-src="/thumb?path=%2ftmp%2fg%2fkeep.mp4&size=1024"
+                          data-thumb-alt="keep.mp4">
+                    <img class="thumb" loading="lazy"
+                         src="/thumb?path=%2ftmp%2fg%2fkeep.mp4&size=320"
+                         alt="keep.mp4">
+                  </button>
+                  <div class="cluster-card-name">keep.mp4</div>
+                  <div class="cluster-card-meta">
+                    <span>10.0 MB</span>
+                    <span>· 1920x1080</span>
+                    <span>· 1:00</span>
+                    
+                    
+                  </div>
+                  <details class="cluster-card-path"><summary class="muted small">path</summary>
+                    <code>/tmp/g/keep.mp4</code>
+                  </details>
+                </div>
+
+                
+                <div class="cluster-card">
+                  <div class="cluster-card-controls">
+                    <label class="role-radio">
+                      <input type="radio" name="keep_2" value="/tmp/g/dup.mp4">
+                      <span>Keep</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" name="quarantine" value="/tmp/g/dup.mp4" checked>
+                      <span>Quarantine</span>
+                    </label>
+                  </div>
+                  <button type="button" class="thumb-btn"
+                          data-thumb-src="/thumb?path=%2ftmp%2fg%2fdup.mp4&size=1024"
+                          data-thumb-alt="dup.mp4">
+                    <img class="thumb" loading="lazy"
+                         src="/thumb?path=%2ftmp%2fg%2fdup.mp4&size=320"
+                         alt="dup.mp4">
+                  </button>
+                  <div class="cluster-card-name">dup.mp4</div>
+                  <div class="cluster-card-meta">
+                    <span>9.5 MB</span>
+                    
+                    <span>· 1:00</span>
+                    
+                    
+                  </div>
+                  <details class="cluster-card-path"><summary class="muted small">path</summary>
+                    <code>/tmp/g/dup.mp4</code>
+                  </details>
+                </div>
+                
+              </div>
+            
+          
+        </div>
+        
+      </div>
+
+      <div class="form-actions form-actions-sticky">
+        <button type="submit" class="btn btn-primary">Apply (<span id="apply-btn-count">2</span> <span id="apply-btn-noun">files</span>)</button>
+        <a href="#" class="btn btn-secondary" hx-get="/tab/self-check" hx-target="#tab-content">Cancel</a>
+      </div>
+    </form>
+
+    <div id="lightbox" class="lightbox" hidden onclick="this.hidden=true; this.querySelector('img').removeAttribute('src');">
+      <img alt="">
+    </div>
+    <script>
+      (function () {
+        const I18N = {"one":"file","other":"files"};
+
+        
+        
+        
+        const lb = document.getElementById('lightbox');
+        const lbImg = lb && lb.querySelector('img');
+        if (lb && lbImg) {
+          document.querySelectorAll('.thumb-btn').forEach(function (btn) {
+            btn.addEventListener('click', function (ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              lbImg.src = btn.dataset.thumbSrc;
+              lbImg.alt = btn.dataset.thumbAlt || '';
+              lb.hidden = false;
+            });
+          });
+          document.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape' && !lb.hidden) {
+              lb.hidden = true;
+              lbImg.removeAttribute('src');
+            }
+          });
+        }
+
+        
+        
+        
+        
+        
+        const countEl = document.getElementById('apply-count');
+        const btnCountEl = document.getElementById('apply-btn-count');
+        const btnNounEl = document.getElementById('apply-btn-noun');
+        function refreshCount() {
+          const n = document.querySelectorAll('input[name="quarantine"]:not([disabled]):checked').length;
+          if (countEl) countEl.textContent = String(n);
+          if (btnCountEl) btnCountEl.textContent = String(n);
+          if (btnNounEl) btnNounEl.textContent = (n === 1 ? (I18N.one ?? 'file') : (I18N.other ?? 'files'));
+        }
+        document.querySelectorAll('.result-group').forEach(function (group) {
+          const radios = group.querySelectorAll('input[type=radio][name^="keep_"]');
+          const checks = group.querySelectorAll('input[type=checkbox][name="quarantine"]');
+          radios.forEach(function (radio) {
+            radio.addEventListener('change', function () {
+              checks.forEach(function (cb) {
+                const isKeeper = cb.value === radio.value;
+                cb.disabled = isKeeper;
+                cb.checked = !isKeeper;
+              });
+              refreshCount();
+            });
+          });
+          checks.forEach(function (cb) {
+            cb.addEventListener('change', refreshCount);
+          });
+        });
+        refreshCount();
+      })();
+    </script>
+
+  
+</section>

@@ -1,29 +1,29 @@
 <section class="tab-section">
   <header class="tab-section-header">
-    <h2>Done</h2>
+    <h2>{{t "done.title"}}</h2>
     <p class="subtitle"><code>{{.SourcePath}}</code></p>
   </header>
 
   {{if .HasError}}
     <div class="alert alert-error">
-      <strong>Apply failed:</strong> {{.ErrorMessage}}
+      <strong>{{t "done.applyFailed"}}</strong> {{.ErrorMessage}}
     </div>
   {{else if .Cancelled}}
     <div class="alert alert-warn">
-      <strong>Cancelled.</strong> {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}} were moved before you stopped.
-      You can use Restore from History to roll those back.
+      <strong>{{t "done.cancelledTitle"}}</strong> {{.MovedCount}} {{if eq .MovedCount 1}}{{t "done.cancelledBody.one"}}{{else}}{{t "done.cancelledBody.other"}}{{end}}
+      {{t "done.rollBackHint"}}
     </div>
   {{else}}
     <div class="alert alert-success">
       {{if eq .Mode "restore"}}
-        <strong>Restored {{.RestoredCount}} file{{if ne .RestoredCount 1}}s{{end}}.</strong>
+        <strong>{{t "done.restoredPrefix"}} {{.RestoredCount}} {{if eq .RestoredCount 1}}{{t "done.file.one"}}{{else}}{{t "done.file.other"}}{{end}}</strong>
       {{else}}
-        <strong>Quarantined {{.MovedCount}} file{{if ne .MovedCount 1}}s{{end}}.</strong>
+        <strong>{{t "done.quarantinedPrefix"}} {{.MovedCount}} {{if eq .MovedCount 1}}{{t "done.file.one"}}{{else}}{{t "done.file.other"}}{{end}}</strong>
       {{end}}
       {{if .ManifestPath}}
-        <br><span class="muted small">Manifest: <code>{{.ManifestPath}}</code></span>
+        <br><span class="muted small">{{t "done.manifestLabel"}} <code>{{.ManifestPath}}</code></span>
         {{if ne .Mode "restore"}}
-        <br><span class="muted small">Roll back via History or:
+        <br><span class="muted small">{{t "done.rollBackViaHistory"}}
           <code>twincut --restore "{{.ManifestPath}}"</code></span>
         {{end}}
       {{end}}
@@ -32,7 +32,7 @@
 
   {{if .NumWarnings}}
   <details class="alert alert-warn">
-    <summary><strong>{{.NumWarnings}} warning{{if ne .NumWarnings 1}}s{{end}}</strong></summary>
+    <summary><strong>{{.NumWarnings}}{{if eq .NumWarnings 1}}{{t "common.warning.one"}}{{else}}{{t "common.warning.other"}}{{end}}</strong></summary>
     <ul class="warn-list">
       {{range .Warnings}}<li><code>{{.Code}}</code> · <span class="muted">{{.Path}}</span></li>{{end}}
     </ul>
@@ -40,14 +40,14 @@
   {{end}}
 
   <div class="form-actions">
-    <a href="#" class="btn btn-primary" hx-get="/tab/self-check" hx-target="#tab-content">Run another scan</a>
+    <a href="#" class="btn btn-primary" hx-get="/tab/self-check" hx-target="#tab-content">{{t "done.runAnotherScan"}}</a>
     {{if and .QuarantineDir (gt .MovedCount 0)}}
     <button type="button" class="btn btn-secondary"
             hx-post="/api/open"
             hx-vals='{"path": "{{.QuarantineDir}}"}'
             hx-swap="outerHTML"
             hx-disabled-elt="this">
-      Open quarantine folder
+      {{t "done.openQuarantineFolder"}}
     </button>
     {{end}}
   </div>

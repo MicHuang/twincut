@@ -1,6 +1,6 @@
 <div class="dir-listing">
   {{if .Roots}}
-    <p class="muted small">Pick a starting location:</p>
+    <p class="muted small">{{t "dirlisting.pickLocation"}}</p>
     {{range .Roots}}
       <button type="button" class="dir-entry"
               hx-get="/fs/list?path={{.Path}}"
@@ -17,11 +17,11 @@
           <button type="button" class="btn btn-tertiary"
                   hx-get="/fs/list?path={{.Parent}}"
                   hx-target="#folder-tree"
-                  hx-swap="innerHTML">↑ up</button>
+                  hx-swap="innerHTML">↑ {{t "dirlisting.up"}}</button>
         {{end}}
         <button type="button" class="btn btn-secondary"
                 onclick="document.getElementById('folder-input').value='{{.Path}}'; document.getElementById('folder-tree').innerHTML='';">
-          Use this folder
+          {{t "dirlisting.useThisFolder"}}
         </button>
       </div>
     </div>
@@ -36,7 +36,7 @@
           </button>
         {{end}}
       {{else}}
-        <p class="muted small">No subdirectories.</p>
+        <p class="muted small">{{t "dirlisting.noSubdirs"}}</p>
       {{end}}
     </div>
   {{end}}
