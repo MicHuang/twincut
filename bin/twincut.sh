@@ -80,7 +80,28 @@ BPS_PCT=${BPS_PCT:-0.5}        # bitrate tolerance in %
 REBUILD_VMETA=false
 
 # vid_eq helper / lib loading
-SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# Resolve this script's own directory, following symlinks at the FINAL path
+# component too. `cd -P` alone resolves the containing directory but leaves
+# the last component symbolic, so invoking the installed
+# ~/.local/bin/twincut symlink (installers/install.sh) put SELF_DIR in
+# ~/.local/bin, the ../lib lookup below missed, and lib/events.sh was never
+# sourced — the Web UI's whole event channel, gone silently.
+# `readlink -f` / `realpath` would be one line, but both postdate the macOS
+# system bash 3.2 floor this repo targets (see CLAUDE.md). No hop limit is
+# needed: the kernel already resolved this chain to exec the script, so a
+# cycle cannot reach here. `case` rather than `[[ ]] && …` because the script
+# runs under `set -euo pipefail`.
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _self_dir="$(cd -- "$(dirname -- "$_self")" && pwd -P)"
+  _self="$(readlink -- "$_self")"
+  case "$_self" in
+    /*) ;;
+    *) _self="$_self_dir/$_self" ;;
+  esac
+done
+SELF_DIR="$(cd -- "$(dirname -- "$_self")" && pwd -P)"
+unset _self _self_dir
 LIB_DIR=""
 if   [[ -d "$SELF_DIR/../lib" ]]; then LIB_DIR="$(cd -- "$SELF_DIR/../lib" && pwd -P)"
 elif [[ -d "$SELF_DIR/lib"     ]]; then LIB_DIR="$(cd -- "$SELF_DIR/lib"     && pwd -P)"
