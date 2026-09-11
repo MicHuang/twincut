@@ -43,6 +43,7 @@ jobs:
           bash tests/p1_stage9_smoke.sh
           bash tests/p0_smoke.sh
           bash tests/p1_stage11_smoke.sh
+          bash tests/installed_symlink_smoke.sh
           bash tests/vid_eq_smoke.sh
           bash tests/backup_selfcheck_smoke.sh
           bash tests/keep_policy_smoke.sh
@@ -82,3 +83,9 @@ jobs:
         run: |
           bash tests/p1_thumb_smoke.sh
           bash tests/p1_thumb_phash_smoke.sh
+      - name: Run the installed-symlink suite (BSD readlink)
+        # Not sips-dependent, and it also runs on Linux. It runs here too
+        # because path resolution is precisely where the two platforms
+        # diverge: this is the only job with BSD readlink, and the SELF_DIR
+        # loop in bin/twincut.sh has to behave identically under both.
+        run: bash tests/installed_symlink_smoke.sh

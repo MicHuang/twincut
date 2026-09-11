@@ -80,7 +80,47 @@ BPS_PCT=${BPS_PCT:-0.5}        # bitrate tolerance in %
 REBUILD_VMETA=false
 
 # vid_eq helper / lib loading
-SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# Resolve this script's own directory, following symlinks at the FINAL path
+# component too. `cd -P` alone resolves the containing directory but leaves
+# the last component symbolic, so invoking the installed
+# ~/.local/bin/twincut symlink (installers/install.sh) put SELF_DIR in
+# ~/.local/bin, the ../lib lookup below missed, and lib/events.sh was never
+# sourced — the Web UI's whole event channel, gone silently.
+#
+# Why the loop rather than one line: `realpath` and GNU `readlink -f` are
+# coreutils, not present by default on macOS. Worse than absent, Darwin's
+# own `readlink -f` exists and means something else — "do not fail if the
+# argument is not a symlink" — so it would appear to work and quietly not
+# canonicalize. Plain `readlink` is the portable subset.
+#
+# `case` rather than `[[ ]] && …` because this script runs under
+# `set -euo pipefail`. `pwd -P` on the dirname is deliberate: a relative
+# link target resolves against the link's *inode* parent, which is what the
+# kernel uses; `pwd -L` would be wrong when a parent is itself a symlink.
+#
+# The hop cap cannot fire on a real chain: the kernel already resolved this
+# one to open the file, and its own SYMLOOP_MAX (32 on both macOS and Linux)
+# is below the cap, so anything legitimate is far under it and anything
+# cyclic could never have started us. What it bounds is the other failure —
+# this loop reconstructs a chain by string join rather than walking the
+# kernel's, and a bug in that join should surface as an error, not a hang.
+_self="${BASH_SOURCE[0]}"
+_hops=0
+while [[ -L "$_self" ]]; do
+  _hops=$((_hops + 1))
+  if [[ $_hops -gt 40 ]]; then
+    echo "twincut: too many symlink hops resolving ${BASH_SOURCE[0]}" >&2
+    exit 1
+  fi
+  _self_dir="$(cd -- "$(dirname -- "$_self")" && pwd -P)"
+  _self="$(readlink -- "$_self")"
+  case "$_self" in
+    /*) ;;
+    *) _self="$_self_dir/$_self" ;;
+  esac
+done
+SELF_DIR="$(cd -- "$(dirname -- "$_self")" && pwd -P)"
+unset _self _self_dir _hops
 LIB_DIR=""
 if   [[ -d "$SELF_DIR/../lib" ]]; then LIB_DIR="$(cd -- "$SELF_DIR/../lib" && pwd -P)"
 elif [[ -d "$SELF_DIR/lib"     ]]; then LIB_DIR="$(cd -- "$SELF_DIR/lib"     && pwd -P)"
@@ -95,6 +135,10 @@ if [[ -n "$LIB_DIR" && -f "$LIB_DIR/thumb.sh" ]]; then
   source "$LIB_DIR/thumb.sh"
   THUMB_LIB_LOADED=true
 fi
+# SELF_DIR is now the real script directory, so this probe finds the repo's
+# bin/vid_eq.sh rather than a sibling of the installed symlink. Same helper
+# for a stock install.sh layout, but a prefix-local override placed next to
+# the symlink is no longer picked up — set V_EQ_BIN to override.
 if [[ -z "${V_EQ_BIN:-}" ]]; then
   if   [[ -x "$SELF_DIR/vid_eq"      ]]; then V_EQ_BIN="$SELF_DIR/vid_eq"
   elif [[ -x "$SELF_DIR/vid_eq.sh"   ]]; then V_EQ_BIN="$SELF_DIR/vid_eq.sh"

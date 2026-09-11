@@ -32,6 +32,7 @@ test-smoke:
 	@bash tests/p0_smoke.sh
 	@bash tests/p1_stage9_smoke.sh
 	@bash tests/p1_stage11_smoke.sh
+	@bash tests/installed_symlink_smoke.sh
 	@bash tests/vid_eq_smoke.sh
 	@bash tests/backup_selfcheck_smoke.sh
 	@bash tests/keep_policy_smoke.sh
